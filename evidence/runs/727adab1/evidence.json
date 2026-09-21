@@ -1,0 +1,1 @@
+{"artifact": {"matches_tested": false, "sha256": "4e2c26e6a43eeb66b58197021dcfbe62864a0f9167c893606af4d11757644b31"}, "governance": {"bound_to_target": true, "status": "APPROVED"}, "review": {"verdict": "PASS"}, "tests": {"exit_code": 0, "failed": 0}}

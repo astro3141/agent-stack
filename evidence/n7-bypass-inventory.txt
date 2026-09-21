@@ -1,0 +1,55 @@
+# N7 — provider/tool bypass inventory
+# Provider under test: Conductor claude-agent-sdk (v0.1.37) + Claude Code 2.1.278
+# Posture: governed container, no egress, Preloop gateway + MCP firewall configured.
+
+ACTION PATH                                   TRAVERSES PRELOOP?   MECHANISM / EVIDENCE
+--------------------------------------------  -------------------  ----------------------------------------
+Model inference (all agent turns)             YES                  env ANTHROPIC_BASE_URL -> gateway;
+                                                                   proven by access logs on both hops and by
+                                                                   zero-egress topology (F13, F18)
+
+MCP tools declared in runtime.mcp_servers      YES                  routed to Preloop /mcp/v1; policy deny
+                                                                   blocks the underlying effect (F14, N1)
+
+MCP servers NOT declared in the workflow       N/A - cannot attach  provider sets strict_mcp_config=True, so
+                                                                   ambient .mcp.json / user-global / plugin
+                                                                   servers never load
+
+Native built-in tools: Read, Write, Edit,      *** NO ***           provider sets permission_mode=
+Bash, WebFetch, ... (the `claude_code` preset)                      "bypassPermissions" whenever an agent
+                                                                   omits `tools:`
+                                                                   (providers/claude_agent_sdk.py:1697)
+                                                                   -> the Preloop PreToolUse hook never runs
+
+MEASURED, not inferred:
+  A run that exercised Read + Bash + file write + one MCP tool produced
+    Conductor tool events : Read, Bash, Bash, mcp__preloop__list_markers, StructuredOutput
+    PreToolUse hook log   : 0 invocations
+  The hook was wrapped with a pass-through logger for the test and restored afterwards.
+
+  Upstream source states the intent plainly:
+    # Omitted -> default claude_code preset (filesystem/bash/web).
+    return _DEFAULT_TOOL_PRESET, "bypassPermissions"
+  and, two lines above the SDK call:
+    # ... permission_mode bypasses approval for whatever they expose.
+
+THE TRADE THIS PROVIDER OFFERS
+  agent omits `tools:`   -> full claude_code preset, permission system BYPASSED
+  agent sets `tools: []` -> no permission bypass, but also no built-in tools at all
+                            (cannot read or edit the repository it is meant to work on)
+  There is no setting on this provider that keeps the built-in tools AND submits them to
+  the hook. A narrowing per-server `tools:` filter is also refused on this provider.
+
+HEADLESS ALTERNATIVE - NOT AVAILABLE HERE
+  Preloop's onboarding suggests `claude -p --permission-prompt-tool
+  mcp__preloop__permission_prompt` for headless runs. Conductor drives the Agent SDK, not
+  the CLI flag surface, and exposes no equivalent option. Tried directly on the CLI in this
+  container it failed anyway: "MCP tool mcp__preloop__permission_prompt (passed via
+  --permission-prompt-tool) not found. Available MCP tools: none".
+
+CONCLUSION
+  The claim "all agent actions are governed" is FALSE for this provider as configured.
+  Model calls and declared MCP tool calls are governed. Native file and shell tools are not.
+  An agent in this topology can read and write any file its working directory grants and run
+  arbitrary shell commands with no Preloop mediation, while remaining unable to reach the
+  network. Network isolation, not Preloop, is what bounds those actions here.

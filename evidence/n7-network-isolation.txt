@@ -1,0 +1,34 @@
+# N7 pre-evidence — governed workload network isolation
+captured: 2026-09-20T08:50:35Z  docker 29.8.0
+
+## agent container routing table (only member of cadp278-governed, internal: true)
+172.19.0.0/16 dev eth0 proto kernel scope link src 172.19.0.3 
+  -> no default route: the container has no path off its own subnet.
+
+## reachable (in-network)
+http://console/                                200
+http://gateway:8000/openai/v1/models           401
+http://console/mcp/v1                          401
+http://mlflow:5000/health                      200
+  -> 401 = route exists, credential required (not an outage).
+
+## NOT reachable (external)
+https://api.anthropic.com/v1/models            http=000 curl_exit=6
+https://claude.ai                              http=000 curl_exit=6
+https://pypi.org                               http=000 curl_exit=6
+  -> curl exit 6 = could not resolve host; failure occurs at the network layer,
+     not because a direct-provider endpoint happens to be unconfigured.
+
+## network membership
+preloop-oss-console-1 172.19.0.5/16
+cadp278-agent 172.19.0.3/16
+cadp278-mlflow 172.19.0.2/16
+preloop-oss-api-1 172.19.0.4/16
+preloop-oss-gateway-1 172.19.0.6/16
+
+## dual-homed members (i.e. containers with any external path)
+cadp278-agent              cadp278-governed 
+cadp278-mlflow             cadp278-governed cadp278-observe 
+preloop-oss-gateway-1      cadp278-governed preloop-oss_default 
+preloop-oss-api-1          cadp278-governed preloop-oss_default 
+preloop-oss-console-1      cadp278-governed preloop-oss_default 

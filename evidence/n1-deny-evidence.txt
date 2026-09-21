@@ -1,0 +1,29 @@
+# §4.2 + N1 evidence — governed MCP tool call and policy deny
+captured: 2026-09-20T09:29:16Z
+
+## Topology
+agent (cadp278-governed) --/mcp/v1--> preloop api --> toolsvc (cadp278-toolnet)
+The agent is NOT a member of cadp278-toolnet:
+  agent -> toolsvc direct: http=000 curl_exit=6
+
+## ALLOW path (§4.2)
+Conductor agent called write_marker + list_markers through Preloop.
+  workflow output: markers = "allow-path.txt"
+  underlying effect observed on the host bind mount: allow-path.txt existed
+
+## DENY path (N1)
+Policy applied: policy/n1-deny.yaml (condition expression 'true' -> action deny)
+
+Preloop MCP firewall decision log:
+  {"asctime": "2026-09-20 09:27:18,916", "name": "preloop.services.policy_evaluator", "levelname": "INFO", "message": "Policy evaluation for 'write_marker': found 1 access rules, tool_config.approval_workflow_id=None"}
+  {"asctime": "2026-09-20 09:27:18,916", "name": "preloop.services.policy_evaluator", "levelname": "INFO", "message": "Rule matched: N1 control \u2014 deny every write_marker call -> action=deny"}
+  {"asctime": "2026-09-20 09:27:18,916", "name": "preloop.services.dynamic_fastmcp", "levelname": "INFO", "message": "Policy evaluation for 'write_marker': action=deny, workflow_id=None, reason=N1 control \u2014 deny every write_marker call"}
+
+Allowed tool in the SAME run reached the external server:
+  {"asctime": "2026-09-20 09:25:31,702", "name": "preloop.services.dynamic_fastmcp", "levelname": "INFO", "message": "Tool write_marker executed successfully on external server"}
+  {"asctime": "2026-09-20 09:25:33,673", "name": "preloop.services.dynamic_fastmcp", "levelname": "INFO", "message": "Tool list_markers executed successfully on external server"}
+
+Underlying effect after the denied call:
+  marker files on host:      0
+  marker files in toolsvc:   0
+  => the deny prevented the effect, not just the report of it
