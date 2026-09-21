@@ -224,7 +224,10 @@ Public record: #278 (receipt, corrections, findings log F1–F25), #279 (CADP TD
 - `review.verdict` carries no artifact binding.
 - Preloop tool-policy decisions are enforced but exist only in the api container's log.
 - Successful agent model calls produce no Preloop usage row.
-- Neither workspace is under version control, so "revision" cannot currently be recorded for
-  workflows, the Gate or policies. (Addressed at the start of #281 — see §7 when written.)
+- Revisions are now recordable. Baseline snapshot before #281:
+  `poc-278 @ 9cce003`, `research-280 @ ecccc6e`,
+  fixture (its own repo) `@ e41c407`. `core.autocrlf` is off in both so
+  hash-pinned files (Gate, checkers) keep their exact bytes on checkout — with it on, a fresh
+  checkout would change `sha256(gate.py)` and break every manifest that pins it.
 - The Conductor `claude-agent-sdk` provider offers only two tool configurations; a
   "tools present, not bypass" posture is not expressible.
