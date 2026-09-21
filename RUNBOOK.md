@@ -36,14 +36,16 @@ Windows 11 host
 | Preloop server | 0.15.0 (`ghcr.io/preloop/preloop:0.15.0`) | preloop-oss compose |
 | MLflow | 3.16.1 | cadp278-mlflow |
 | SymPy | 1.14.0 | agent container `/opt/venv` |
-| node | **not installed** | — |
-| codex | **not installed** | — |
+| node | 22.14.0 | agent container `/opt/node` |
+| acpx / claude-agent-acp / codex-acp | 0.18.0 / 0.79.0 / 1.12.0 | agent container `/opt/npm-global` |
+| codex | 0.155.1 | agent container (not logged in) |
+| CodexBar CLI | 0.63.0 musl | agent container `/opt/codexbar` (no egress, so guard returns 69) |
 
 ### Image IDs
 
 | Image | ID (short) |
 |---|---|
-| cadp278/governed-runtime:local | `0da188833195` |
+| cadp278/governed-runtime:local | `72d6e4cb395e` (was `0da188833195` before #281) |
 | cadp278/mlflow:3.16.1 | `57a342f2b725` |
 | cadp278/toolsvc:local | `38b87dca3845` |
 | ghcr.io/preloop/preloop:0.15.0 | `82728945c4b6` |

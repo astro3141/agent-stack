@@ -52,5 +52,22 @@ USER root
 RUN python -m venv /opt/venv     && /opt/venv/bin/pip install --no-cache-dir -q pytest 'sympy==1.14.0'     && chmod -R a+rX /opt/venv
 USER agent
 
+# ---- #281: common agent execution layer -------------------------------------------------
+# Everything lives under /opt, never $HOME: $HOME is a volume, and a tool baked under it would
+# be pinned to the image as it was when the volume was first created (measured in #280).
+#
+# Versions are pinned. acpx's built-in profiles would otherwise run `npx -y <adapter>` at
+# launch, which cannot work here: the governed runtime has no egress. Adapters are installed
+# ahead of time and invoked by path.
+USER root
+ARG NODE_VERSION=22.14.0
+RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz       | tar -xz -C /opt     && ln -s /opt/node-v${NODE_VERSION}-linux-x64 /opt/node
+ENV PATH=/opt/node/bin:/opt/npm-global/bin:/opt/codexbar:$PATH     NPM_CONFIG_PREFIX=/opt/npm-global
+RUN npm install -g --no-fund --no-audit       acpx@0.18.0       @agentclientprotocol/claude-agent-acp@0.79.0       @agentclientprotocol/codex-acp@1.12.0       @openai/codex@0.155.1     && chmod -R a+rX /opt/npm-global
+# CodexBar CLI (quota observation). Static musl build: the glibc build needs GLIBC_2.38, bookworm has 2.36. No Windows build exists.
+ARG CODEXBAR_VERSION=0.63.0
+RUN mkdir -p /opt/codexbar     && curl -fsSL -o /tmp/cb.tgz https://github.com/steipete/CodexBar/releases/download/v${CODEXBAR_VERSION}/CodexBarCLI-v${CODEXBAR_VERSION}-linux-musl-x86_64.tar.gz     && curl -fsSL -o /tmp/cb.sha https://github.com/steipete/CodexBar/releases/download/v${CODEXBAR_VERSION}/CodexBarCLI-v${CODEXBAR_VERSION}-linux-musl-x86_64.tar.gz.sha256     && (cd /tmp && echo "$(awk '{print $1}' cb.sha)  cb.tgz" | sha256sum -c -)     && tar -xzf /tmp/cb.tgz -C /opt/codexbar     && rm -f /tmp/cb.tgz /tmp/cb.sha     && chmod -R a+rX /opt/codexbar
+USER agent
+
 WORKDIR /work
 CMD ["sleep", "infinity"]

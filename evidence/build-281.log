@@ -1,0 +1,90 @@
+ Image cadp278/governed-runtime:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 522B 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from agent.Dockerfile
+#2 transferring dockerfile: 4.66kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.13-slim-bookworm
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [ 1/15] FROM docker.io/library/python:3.13-slim-bookworm@sha256:2325bb286ec344af3e5898cc224b5844e2707ac6e26b1632516fd3edc84a5e26
+#5 resolve docker.io/library/python:3.13-slim-bookworm@sha256:2325bb286ec344af3e5898cc224b5844e2707ac6e26b1632516fd3edc84a5e26 0.0s done
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 65B done
+#6 DONE 0.0s
+
+#7 [ 9/15] RUN curl -fsSL https://preloop.ai/install/cli -o /tmp/preloop-cli.sh     && INSTALL_DIR=/home/agent/.local/bin sh /tmp/preloop-cli.sh < /dev/null || true
+#7 CACHED
+
+#8 [ 7/15] RUN pip install --no-cache-dir --user uv
+#8 CACHED
+
+#9 [ 3/15] COPY ca/kaspersky-root.crt /usr/local/share/ca-certificates/kaspersky-root.crt
+#9 CACHED
+
+#10 [ 6/15] RUN curl -fsSL https://claude.ai/install.sh | bash
+#10 CACHED
+
+#11 [ 5/15] RUN useradd -m -u 1000 -s /bin/bash agent
+#11 CACHED
+
+#12 [ 2/15] RUN apt-get update && apt-get install -y --no-install-recommends       curl ca-certificates git jq procps iproute2 dnsutils     && rm -rf /var/lib/apt/lists/*
+#12 CACHED
+
+#13 [ 8/15] RUN uv tool install 'conductor-cli[telemetry,claude-agent-sdk] @ git+https://github.com/microsoft/conductor.git'
+#13 CACHED
+
+#14 [10/15] RUN test -x /home/agent/.local/bin/preloop
+#14 CACHED
+
+#15 [ 4/15] RUN update-ca-certificates
+#15 CACHED
+
+#16 [11/15] RUN python -m venv /opt/venv     && /opt/venv/bin/pip install --no-cache-dir -q pytest 'sympy==1.14.0'     && chmod -R a+rX /opt/venv
+#16 CACHED
+
+#17 [12/15] RUN curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.gz       | tar -xz -C /opt     && ln -s /opt/node-v22.14.0-linux-x64 /opt/node
+#17 DONE 4.3s
+
+#18 [13/15] RUN npm install -g --no-fund --no-audit       acpx@0.18.0       @agentclientprotocol/claude-agent-acp@0.79.0       @agentclientprotocol/codex-acp@1.12.0       @openai/codex@0.155.1     && chmod -R a+rX /opt/npm-global
+#18 14.41 
+#18 14.41 added 168 packages in 14s
+#18 14.41 npm notice
+#18 14.41 npm notice New major version of npm available! 10.9.2 -> 12.0.2
+#18 14.41 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+#18 14.41 npm notice To update run: npm install -g npm@12.0.2
+#18 14.41 npm notice
+#18 DONE 15.0s
+
+#19 [14/15] RUN mkdir -p /opt/codexbar     && curl -fsSL -o /tmp/cb.tgz https://github.com/steipete/CodexBar/releases/download/v0.63.0/CodexBarCLI-v0.63.0-linux-x86_64.tar.gz     && curl -fsSL -o /tmp/cb.sha https://github.com/steipete/CodexBar/releases/download/v0.63.0/CodexBarCLI-v0.63.0-linux-x86_64.tar.gz.sha256     && (cd /tmp && echo "$(awk '{print $1}' cb.sha)  cb.tgz" | sha256sum -c -)     && tar -xzf /tmp/cb.tgz -C /opt/codexbar     && rm -f /tmp/cb.tgz /tmp/cb.sha     && chmod -R a+rX /opt/codexbar
+#19 6.063 cb.tgz: OK
+#19 DONE 7.1s
+
+#20 [15/15] WORKDIR /work
+#20 DONE 0.0s
+
+#21 exporting to image
+#21 exporting layers
+#21 exporting layers 30.6s done
+#21 exporting manifest sha256:432ce5d68f7ab42d3e331788720ae647ddbab6aeecb0aea04ffa294d6fb874fb 0.0s done
+#21 exporting config sha256:5010a38d0ddc828cef9589512bf8eae1063f12ffbf1fc66645de9f8929fd1129 done
+#21 exporting attestation manifest sha256:70a53f61656ae906ad66da4e841d300529e3b0af7a6e6cc4e3579b66ed6e4559 0.0s done
+#21 exporting manifest list sha256:e50ba0e36ae30faff2089753e792844aa4c467c3bbe28e7812c6b23f8db80c2d done
+#21 naming to docker.io/cadp278/governed-runtime:local done
+#21 unpacking to docker.io/cadp278/governed-runtime:local
+#21 unpacking to docker.io/cadp278/governed-runtime:local 8.7s done
+#21 DONE 39.4s
+
+#22 resolving provenance for metadata file
+#22 DONE 0.0s
+ Image cadp278/governed-runtime:local Built 
+exit=0
