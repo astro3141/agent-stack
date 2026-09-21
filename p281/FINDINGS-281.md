@@ -157,8 +157,200 @@ Every change made to run a given vendor through the common layer, recorded as it
 | # | What | Why | Vendor-specific? |
 |---|---|---|---|
 | 1 | node + acpx + both ACP adapters + codex in the image | egress 0 forbids launch-time `npx` | no (shared) |
-| 2 | inject 3 gateway env vars per run | acpx excludes user settings | **Claude-specific** (Anthropic env names) |
+| 2 | inject gateway env per run: base URL, key, `ANTHROPIC_MODEL`, and the three `ANTHROPIC_DEFAULT_*_MODEL` alias mappings | acpx excludes user settings; without the mappings the ACP adapter picks its own default model (404) | **Claude-specific**, confined to `PROVIDERS.claude` |
 | 3 | fresh named session per run | session key lacks account/policy | no (shared) |
-| 4 | `--approve-*` / `--deny-all` per run | permission policy is per invocation | no (shared) |
+| 4 | `onPermissionRequest` → Preloop `permission-check`, fallback `deny-all` | acpx policy is not Preloop's | shared; only the Preloop `source` label differs per vendor |
+| 5 | result normalization (`DENIED`, `CONTROL_UNAVAILABLE`) | acpx reports a refused turn as `completed` | no (shared) |
 
 Codex not yet run — blocked on a container-side Codex login.
+
+---
+
+## Target (restated 2026-09-21, after review)
+
+The goal is not vendor-switch convenience but **removing per-vendor wiring from every other
+component**. Responsibilities:
+
+| Component | Owns |
+|---|---|
+| Conductor | order, branching, retries |
+| routing/execution layer (`run-agent.mjs` over acpx) | choice of provider/model/account, run and cancel, one result shape |
+| quota collector (CodexBar) | per-account remaining, observation time, source |
+| Preloop | policy and approval on requests in the common shape |
+| MLflow | results, usage, evaluation |
+
+"The others do not know the provider" means they carry no **vendor execution code**; MLflow may
+record the real provider and model, Preloop may receive attributes it needs for policy.
+
+**Success test for this phase:** the same Conductor request, the same Preloop policy and the
+same MLflow recording path, with only the routing layer's choice changing, runs Claude and runs
+Codex. If every vendor difference then sits inside the routing layer, the separation holds.
+Until Codex has run, the change ledger below is **one path's increment**, not a generalization.
+
+---
+
+## Phase 3b — ACP permission requests decided by Preloop
+
+### What Preloop 0.15.0 actually offers for native tools
+
+`POST /api/v1/agents/permission-check` — "Decide whether an onboarded agent's native tool call may
+proceed." Request: `tool_name`, `tool_input`, `source`, `session_id`, `cwd`, `agent_reasoning`,
+`client_decision`. Response: `decision` (`allow`|`deny`), `reason`, `request_id`, `timed_out`.
+This is the endpoint Preloop's own `permission-hook` calls; authenticated with the agent's
+enrolment token from `~/.preloop/agents/<id>/permission_hook.json`.
+
+Measured, with the policy `n7-native-deny.yaml` (a `Bash`/`builtin` rule with `action: deny`)
+applied:
+
+| request | response |
+|---|---|
+| `Bash`, `client_decision=allow` | `allow` — **the deny rule did not apply** |
+| `Bash`, `client_decision=deny` | `deny`, "Denied by client policy" |
+| `Write`, `client_decision=allow` | `allow` |
+| `Bash`, no `client_decision` | held open → a pending approval request |
+
+The pending request records its own basis:
+
+> `rule_context.explanation`: "The agent's own permission hook escalated this call for human
+> approval. **No Preloop access rule was evaluated for it.**"
+
+So on this build, for native tools, **Preloop is an approval channel, not a policy engine**:
+the client's decision is taken as given, and Preloop's contribution is to hold an `ask` open for
+a human. This is the same mechanism behind F22's "hook returned local allow and never contacted
+Preloop" — the hook computed `allow` locally, and even had it asked, a client `allow` is final.
+
+Consequence for the target table: "Preloop owns the policy decision" holds today only for tools
+reaching it over **MCP** (N1, rule-evaluated). For native tools the choice is between
+(a) every native action escalates to a human through Preloop, or (b) a rule set somewhere else
+decides `allow`/`deny` and Preloop only records the escalations. (b) is the second policy
+engine the issue forbids. The adapter below does (a).
+
+### The adapter — `run-agent.mjs`
+
+One entry point, request JSON in, one normalized result JSON out. Vendor-specific material is
+confined to a `PROVIDERS` table (agent name, Preloop `source` label, child-only env).
+
+- `onPermissionRequest` → `permission-check` with **no** `client_decision`: the adapter holds
+  no policy.
+- Any error on that path → `reject_once`. acpx falls back to the configured policy when the
+  handler throws or returns `undefined`, so the configured policy is `deny-all`.
+- Fresh session key per run.
+- Normalized `status`: `COMPLETED` | `DENIED` | `CONTROL_UNAVAILABLE` | `FAILED` | `CANCELLED`.
+  `DENIED` and `CONTROL_UNAVAILABLE` are never `retryable_elsewhere`.
+
+### Results — Claude, task "create marker.txt with your file-writing tool"
+
+| case | Preloop | adapter status | exit | file | acpx's own `turn.status` |
+|---|---|---|---|---|---|
+| approve | request `2164ac02…`, approved by a second party over HTTP | `COMPLETED` | 0 | `P4` | `completed` |
+| decline | request `8ac33c24…`, declined | `DENIED` | 3 | absent | `completed` |
+| Preloop unreachable | `fetch failed` | `CONTROL_UNAVAILABLE` | 1 | absent | `completed` |
+
+Every row carries the Preloop `request_id` (or the transport error) bound to the exact
+`Write marker.txt` request, in `permissions.jsonl` under the run's evidence directory.
+
+**Why the normalization is not optional:** in the decline and the unreachable cases acpx
+reports `turn.status: completed, stopReason: end_turn`. The agent simply ends its turn saying
+it was not allowed. A caller that reads acpx's status sees success. Without the adapter's
+`DENIED`, a router would mark the run done — or, reading the text, treat it as a failure and
+retry on another provider, which turns "not approved" into "ask someone else".
+
+In the unreachable case the agent tells the user the write "was blocked by your permission
+settings". The real cause was that the approval service was down. The explanation an agent
+gives for a refusal is not evidence of why it was refused; the adapter's record is.
+
+### Model identity, revisited
+
+The Phase 2 404 is explained. The container's onboarding state maps `sonnet` to
+`ANTHROPIC_DEFAULT_SONNET_MODEL=anthropic/claude-sonnet-4-5` (and likewise opus/haiku). Phase 2
+passed only `ANTHROPIC_MODEL=sonnet`, so the ACP adapter fell back to its own default
+`claude-sonnet-5`, which the gateway could not serve. With the three `DEFAULT_*` mappings also
+passed: requests go out as `anthropic/claude-sonnet-4-5` (+ `claude-haiku-4-5` for a small
+auxiliary call), and the gateway logged **9 × 200, 0 × 404** for the three runs.
+
+Three levels, kept apart:
+
+| level | value | source |
+|---|---|---|
+| requested (by the caller) | none — alias `sonnet` from settings | request / env |
+| adapter-reported | `anthropic/claude-sonnet-4-5` | acpx `_meta.quota.model_usage` |
+| served | **unknown** | nothing on this path reports it |
+
+Adapter-reported is what the client asked the gateway for, not what answered. Model selection
+does not count as working until served identity is observable.
+
+### Approval authority — a hole to record
+
+The token that asks for approval (`permission_hook.json`) can also **resolve** approval
+requests: both the approve and the decline in this phase were issued with it. It lives in the
+agent's `$HOME`, mode 600, owned by the same uid the agent runs as. So an agent that has been
+granted one shell command can read it and approve its own subsequent requests. Not exploited
+here; the second party in these tests is a script (`approver.py`) standing in for a human.
+Requester and approver credentials must be separated before this path counts as an approval
+control — in the product (a scope on the enrolment token) or in placement (the approver
+credential never inside the governed runtime).
+
+### Stale state
+
+Approval requests from 2026-09-20 still show `status: pending` after their `expires_at`. Expiry
+is not written back to the record; a consumer listing "pending" must also check `expires_at`.
+
+### Approval timeout — the proxy expires first
+
+An escalated request nobody answers:
+
+| path | after | client receives |
+|---|---|---|
+| `http://console/api/…` (nginx proxy) | 300.0 s | `504 Gateway Time-out` HTML page |
+| `http://api:8000/api/…` (direct) | 302.5 s | `{"decision":"deny","reason":"Approval request timed out","timed_out":true}` |
+
+Preloop's approval window is 300 s (`timeout_seconds` in the hook config, `expires_at` = request
++ 5 min) and it answers a moment after the window closes. The console proxy's own 300 s read
+timeout fires first. Through the proxy, the adapter still refuses (a 504 is an error, and errors
+reject) but classifies an **expired approval** as **control unavailable**. The adapter now calls
+the api directly; the agent reaches it by the `api` alias on `cadp278-governed`.
+
+After the server answered `timed_out`, the request record still read `status: pending`,
+`resolved_at: null` — the stale-state issue above, confirmed on a request whose expiry was
+observed.
+
+### Approval expiry through the adapter — three clocks, all had to be fixed
+
+The first three end-to-end expiry runs were all misclassified as `CONTROL_UNAVAILABLE` (still
+refused, never allowed), each by a different clock that fired before Preloop's ~302 s answer:
+
+| run | what cut it | fix |
+|---|---|---|
+| `p4-expire` | acpx run deadline 240 s | classify as `TIMED_OUT` (below); keep run deadline > approval window |
+| `p4-expire2` | nginx console proxy, 504 at 300 s | call `api:8000` directly — but the container's `PRELOOP_URL=http://console` (set for the Preloop CLI) overrode the new default; the adapter now reads its own `PRELOOP_API_URL` |
+| `p4-expire3` | Node `fetch` (undici) default `headersTimeout` 300 s | `node:http` for this call; the run deadline is the only bound |
+| `p4-expire4` | — | **`DENIED`, `denial: approval_expired`, request `ab85cc10…`**, 314 s, no file |
+
+Deadline shorter than the approval window, `p4-deadline` (60 s): **`TIMED_OUT`,
+`run_ended_awaiting_approval`**, no file, not retryable elsewhere.
+
+Default timeouts of 300 s sit on both sides of a 300 s approval window. Any layer added
+between the adapter and Preloop (a proxy, a service mesh, an HTTP client upgrade) can move an
+expiry back into "unavailable". Worth a regression check whenever the path changes.
+
+**Orphaned approval.** After `p4-deadline` ended, its Preloop request `1d8e1412…` was still
+`pending` and approvable for four more minutes. Approving it would record an approval that
+authorised nothing. Preloop 0.15.0 exposes approve/decline/decide but no withdraw; the adapter
+does not decline on its own, since declining is a decision. Open item: a withdraw/cancel on
+run end, or a record the approver sees saying the requester is gone.
+
+Regression after the client change: `p4-approve2` → `COMPLETED`, file `P4`, request `f42db1e3…`.
+
+### Phase 3 status for Claude
+
+| requirement | status |
+|---|---|
+| native Write routed to Preloop through the common layer | **done** — every case carries the Preloop `request_id` |
+| approve → action happens | done |
+| decline → action does not happen, result `DENIED` | done |
+| approval expires → `DENIED` (`approval_expired`) | done, after three clock fixes |
+| Preloop unreachable → refused, `CONTROL_UNAVAILABLE` | done |
+| run deadline during approval → refused, `TIMED_OUT` | done |
+| Preloop **policy** (rules) decides native actions | **not available** in 0.15.0 — approval channel only |
+| requester cannot approve itself | **not met** — same token does both |
+| shell route (`Bash`) through the adapter | covered by acpx in Phase 3; not yet re-run through Preloop |
