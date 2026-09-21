@@ -44,7 +44,10 @@ const PROVIDERS = {
   codex: {
     agent: "codex",
     preloopSource: "codex_cli",
-    env() { return {}; },   // filled in when Codex is logged in and its route is measured
+    // Gateway route comes from ~/.codex/config.toml (Preloop onboarding), which codex-acp
+    // reads — unlike acpx's Claude profile. The default ACP mode "agent" hands approvals to
+    // Codex's own Guardian reviewer model; "read-only" hands them to the ACP client.
+    env() { return { INITIAL_AGENT_MODE: "read-only" }; },
   },
 };
 // -----------------------------------------------------------------------------------------
@@ -74,7 +77,16 @@ async function askPreloop(req, { provider, runId, cwd, signal, log }) {
   const tc = req.raw.toolCall ?? {};
   const body = {
     tool_name: tc.title?.split(" ")[0] || tc.kind || "unknown",
-    tool_input: { ...(tc.rawInput ?? {}), _acp_kind: tc.kind ?? req.inferredKind, _acp_title: tc.title },
+    // What the approver sees. Claude puts the target in rawInput; Codex sends rawInput null
+    // and carries the edit as ACP diff content + locations. Forward both, so an approver is
+    // never asked to approve "Edit files" with no file named.
+    tool_input: {
+      ...(tc.rawInput ?? {}),
+      _acp_kind: tc.kind ?? req.inferredKind, _acp_title: tc.title,
+      _acp_locations: (tc.locations ?? []).map((l) => l.path),
+      _acp_diffs: (tc.content ?? []).filter((c) => c.type === "diff")
+        .map((c) => ({ path: c.path, new_text: (c.newText ?? "").slice(0, 4000), is_new: c.oldText == null })),
+    },
     source: PROVIDERS[provider].preloopSource,
     session_id: runId,
     cwd,
@@ -94,7 +106,7 @@ async function askPreloop(req, { provider, runId, cwd, signal, log }) {
   } catch (e) { err = String(e?.message ?? e); }
   const ev = {
     at: new Date().toISOString(), ms: Date.now() - started,
-    acp_kind: tc.kind ?? req.inferredKind ?? null, title: tc.title ?? null, input: tc.rawInput ?? null,
+    acp_kind: tc.kind ?? req.inferredKind ?? null, title: tc.title ?? null, input: body.tool_input,
     preloop: ans ?? null, error: err ?? null,
     outcome: ans?.decision === "allow" ? "allow_once" : "reject_once",
     denial: ans?.decision === "allow" ? null

@@ -2,7 +2,7 @@
 # usage: .p4run.sh <case> <approve|decline|none> [PRELOOP_URL]
 C=$1; W=/tmp/p281/ws-$C; rm -rf $W /tmp/p281/runs/$C; mkdir -p $W
 cat > /tmp/p281/req-$C.json <<J
-{"run_id":"$C","provider":"claude","cwd":"$W","timeout_ms":${TMO:-240000},
+{"run_id":"$C","provider":"${PROV:-claude}","cwd":"$W","timeout_ms":${TMO:-240000},
  "prompt":"Create a file named marker.txt in the current directory containing exactly: P4. Use your file-writing tool. Do not do anything else."}
 J
 [ "$2" != none ] && { python3 /work/p281/approver.py $W $2 200 > /tmp/p281/approver-$C.out & }

@@ -354,3 +354,103 @@ Regression after the client change: `p4-approve2` → `COMPLETED`, file `P4`, re
 | Preloop **policy** (rules) decides native actions | **not available** in 0.15.0 — approval channel only |
 | requester cannot approve itself | **not met** — same token does both |
 | shell route (`Bash`) through the adapter | covered by acpx in Phase 3; not yet re-run through Preloop |
+
+---
+
+## Phase 2–3 for Codex — same adapter, same Preloop, provider switched in the request
+
+Codex logged in inside the container (`codex login --device-auth`, ChatGPT account, own
+credential lineage; temporary egress detached afterwards, isolation re-verified).
+
+### Model route
+
+- Bare (`c0`): no gateway configured → `failed to lookup address information`; nothing left
+  the container. Fails closed, like Claude case A.
+- Preloop's `discover` did not list Codex until `~/.codex/config.toml` existed (an empty file
+  suffices). Then: `Codex CLI · full · ChatGPT OAuth tokens present in auth.json`.
+- `preloop agents onboard codex` (inside the container, **without** `--approvals` — approvals go
+  through the adapter; a second hook would double-ask) wrote `model_provider = 'preloop'`,
+  `base_url = 'http://console/openai/v1'`, `wire_api = 'responses'`, model
+  `openai/gpt-6-astra`, and took custody of the ChatGPT OAuth credential. Undo:
+  `preloop agents offboard "Codex CLI"` (backup saved).
+- Preloop forwards `/openai/v1/responses` to `chatgpt.com/backend-api/codex/responses` with the
+  custodied credential and `chatgpt-account-id` (gateway source,
+  `_create_openai_codex_response`).
+- `c1`: `C1_OK`, gateway `POST /openai/v1/responses 200`. **No adapter change**: codex-acp reads
+  `~/.codex/config.toml`, whereas acpx's Claude profile skips Claude's user settings. The two
+  vendors differ in *where* the route has to be put, not in the adapter's interface.
+- codex-acp runs its **bundled** Codex (`client_version=0.154.0` on the wire), not the
+  separately installed `@openai/codex@0.155.1`. The version that runs is the adapter's
+  dependency; pin it there (`CODEX_PATH` can override).
+
+### Approvals — Codex does not ask the client by default
+
+First attempt (`c2`/`c3`, default mode): **no ACP permission request at all.** codex-acp's
+default mode `agent` sets `approvalsReviewer: auto_review`, i.e. Codex's own **Guardian**
+reviewer model decides escalations. Its model was not registered in Preloop → gateway 404 →
+Guardian denied. The adapter saw a `completed` turn with no permission events and reported
+`COMPLETED` while the file was absent — neither approval nor denial ever reached Preloop.
+
+codex-acp modes (from its source):
+
+| mode | approval policy | reviewer | sandbox |
+|---|---|---|---|
+| `read-only` | on-request | **user** (the ACP client) | workspace-write |
+| `agent` (default) | on-request | **auto_review** (Guardian model) | workspace-write |
+| `agent-full-access` | never | user | none |
+
+`PROVIDERS.codex.env = { INITIAL_AGENT_MODE: "read-only" }` → escalations become ACP
+permission requests → Preloop:
+
+| run | Preloop | status | file |
+|---|---|---|---|
+| `c4-approve` | Edit `dbdb6ab4…` approved, Run `c044f956…` approved | `COMPLETED` | `P4` |
+| `c5-decline` | Edit `a6e89631…` declined | `DENIED` (exit 3) | absent |
+| `c6-approve` | Edit `d4c3bb13…`, Run `2569a26b…` approved | `COMPLETED` | `P4` |
+
+**The same adapter, the same Preloop endpoint and the same normalized result**, with the
+provider named only in the request.
+
+Lesson for the result contract: a vendor's *internal* reviewer can refuse an action without
+any permission event reaching the client. "No denial observed" is not "nothing was denied";
+the router must know which approval mode each vendor is in, and that knowledge belongs in
+the provider profile.
+
+### Codex's sandbox does not work in this container
+
+`bwrap: No permissions to create a new namespace` — Docker's default profile blocks
+unprivileged user namespaces. Every sandboxed Codex shell command fails first, and Codex then
+asks to run it **outside** the sandbox, which becomes a Preloop approval (`Run command`). So
+here every Codex shell command is human-approved, and approving it means unsandboxed
+execution inside the (network-isolated) container. Not changed: enabling userns in the
+container is a security-profile change.
+
+### What the approver sees — fixed in the shared part
+
+Codex sends an edit's permission request with `rawInput: null`; the target is in the ACP
+`locations` and diff `content`. The first Codex approvals therefore reached Preloop as
+"Edit files" with **no file named** — an approver cannot meaningfully approve that. The
+adapter now forwards `_acp_locations` and `_acp_diffs` for every vendor. After the fix:
+
+- Claude: path + full new content (`is_new: true`, `"P4"`).
+- Codex: path only (`/…/marker.txt`); its request carries no diff content. The content of a
+  Codex edit is **not** visible to the approver at approval time.
+
+### Change ledger — updated with Codex
+
+| # | change | where | vendor-specific? |
+|---|---|---|---|
+| 1 | node, acpx, both ACP adapters in the image | image | shared |
+| 2 | Claude gateway env (base URL, key, alias + 3 mappings) | `PROVIDERS.claude` | Claude |
+| 3 | fresh session key per run | adapter | shared |
+| 4 | `onPermissionRequest` → Preloop, fail closed | adapter | shared (`source` label per vendor) |
+| 5 | result normalization | adapter | shared |
+| 6 | forward ACP `locations` / diffs to the approver | adapter | shared (found via Codex) |
+| 7 | Codex gateway route: `config.toml` via Preloop onboarding (+ empty file so discover sees Codex) | container Codex config | Codex, **outside** the routing layer |
+| 8 | `INITIAL_AGENT_MODE=read-only` | `PROVIDERS.codex` | Codex |
+
+Against the success test: Conductor was not in these runs yet (the adapter was invoked
+directly), and MLflow recording is not wired. Within the routing layer, every vendor
+difference is confined to `PROVIDERS` **except #7**, which lives in the container's Codex
+config written by Preloop onboarding. Moving it into the profile (codex-acp `CODEX_CONFIG` /
+`MODEL_PROVIDER`) would make the separation complete; not yet tried.
