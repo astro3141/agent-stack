@@ -251,3 +251,12 @@ Public record: #278 (receipt, corrections, findings log F1–F25), #279 (CADP TD
   `http://api:8000`), not the console proxy.
 - Do **not** put Claude managed settings in this image: they apply container-wide and strip
   Write/Bash from the #278/#280 workflows.
+- **Docker Desktop won't start, "rename …sock … The file cannot be accessed by the system"**: stop
+  Docker Desktop and `wsl --shutdown`, rename `%LOCALAPPDATA%\Docker\run` and
+  `%LOCALAPPDATA%\docker-secrets-engine` aside, start again. Never "Reset to factory defaults"
+  (erases `cadp278-agent-home` and Preloop's database). PoC containers then need `docker start`
+  and the network re-attach.
+- **Idle sleep**: `tools/keep-awake.ps1` (start/stop commands in its header) blocks idle sleep while
+  it runs; no power settings are changed.
+- **#281 routing workflow**: `conductor run p281/workflows/route.yaml -i provider=claude|codex`
+  (optional `-i file_name=… -i content=…`); records to MLflow experiment `p281-routing`.

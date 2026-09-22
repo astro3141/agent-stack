@@ -12,3 +12,6 @@ evidence/incident-20260920/
 
 # scratch
 *.tmp
+
+# #281 run evidence (raw ACP events, permission requests)
+evidence/p281/

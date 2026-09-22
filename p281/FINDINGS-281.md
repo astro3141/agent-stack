@@ -542,3 +542,67 @@ Preloop evaluating rules on the native permission check.
 | 11 | remove native write/shell | `PROVIDERS.*.disableNative` | per vendor |
 | 12 | don't double-ask for Preloop MCP calls | `PROVIDERS.claude.governedDownstream` / Codex config | per vendor |
 | 13 | detect MCP rule denials by text | adapter | shared, fragile |
+
+---
+
+## Phase 4 — one Conductor workflow, Gate and MLflow record; provider chosen by input
+
+`p281/workflows/route.yaml`: `execute` (script → `run-agent.mjs`) → `check` (deterministic:
+the file on disk, not the agent's account) → `record` (MLflow REST) → terminate. The only
+thing that differs between runs is `-i provider=…`.
+
+| run | Conductor run | adapter status | Gate | file | tokens | MLflow run |
+|---|---|---|---|---|---|---|
+| claude, `routed.txt` | `4f0b4e59` | `COMPLETED` | `PASS` | `R1` | 69,424 | `38ee8cff…` |
+| codex, `routed.txt` | `03096e3f` | `COMPLETED` | `PASS` | `R1` | 11,420 | `af01a6c6…` |
+| claude, `forbidden.txt` | `a3b87a82` | `DENIED` (Preloop rule) | `DENIED` | absent | 69,379 | `f65d9830…` |
+| codex, `forbidden.txt` | `4978e1ea` | `DENIED` (Preloop rule) | `DENIED` | absent | 11,397 | `5918c572…` |
+
+No human approval in any run (`approvals_requested = 0`); every decision is a Preloop rule
+evaluation at the MCP proxy.
+
+MLflow (experiment `p281-routing`): each run carries provider, status, Gate decision and
+reason, the three model levels, token and wall-time metrics, the evidence path, and the
+adapter's full `result.json` as an artifact. Each is tagged `conductor.run_id`; **all four**
+IDs are found in Conductor's own OTel traces in experiment `1`, so the routed execution and
+the workflow trace join on it without a collector.
+
+**The success test, measured.** Workflow YAML and the three step scripts contain **no vendor
+name** (`grep` for claude/codex/anthropic/openai/gpt/sonnet: only the usage example in a
+comment). All vendor material is in `run-agent.mjs` (`PROVIDERS` and its comments, 25 lines
+mentioning a vendor), plus one item outside it: Codex's gateway route in the container's
+`~/.codex/config.toml`, written by Preloop onboarding (ledger #7).
+
+What the record also makes visible: the same task cost ~69k tokens on Claude and ~11k on
+Codex. Most of Claude's is cached input (the Claude Code system prompt and tool definitions);
+this is a per-run fixed cost of the agent, not of the task, and is the kind of number the
+router's choice should see.
+
+Model identity is still `served: unknown` for both: nothing on these paths reports what
+actually answered. The MLflow record keeps the requested/adapter-reported/served split.
+
+---
+
+## Operations note — Docker Desktop failed to start after an idle period (2026-09-22)
+
+Docker Desktop stopped (the host had been idle) and then would not start:
+
+```
+starting services: initializing Ingest server: listening on unix://…/Docker/run/sailor-ingest.sock:
+rename …sailor-ingest.sock …sailor-ingest.sock.stale: The file cannot be accessed by the system.
+```
+
+Stale AF_UNIX socket files left by the previous run could be neither renamed nor moved
+(`Error 1920`), even after `wsl --shutdown`; the second start failed the same way on
+`docker-secrets-engine/engine.sock`, and a third on the socket the failed second start had
+itself left behind. Fix: stop Docker Desktop and WSL, rename the **directories**
+`%LOCALAPPDATA%\Docker\run` and `%LOCALAPPDATA%\docker-secrets-engine` aside (a directory
+rename succeeds where the socket file cannot be touched), start once cleanly. Nothing was
+deleted; the renamed directories are kept. The error dialog's "Reset to factory defaults"
+would have erased the volumes holding the container logins and Preloop's database.
+
+After the restart the PoC containers were `Exited (255)` (no restart policy); `docker start`
+plus the network re-attach restored everything, isolation re-verified.
+
+Idle sleep is now blocked while `tools/keep-awake.ps1` runs (`SetThreadExecutionState`,
+`ES_CONTINUOUS | ES_SYSTEM_REQUIRED`; no power setting changed; ends with the process).

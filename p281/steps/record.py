@@ -1,0 +1,47 @@
+"""Conductor script step: record one routed execution in MLflow (REST, no client library).
+
+Reads the execute and check outputs as JSON on stdin. Vendor-neutral: provider and model are
+recorded as data. Tagged with conductor.run_id, the same attribute Conductor's own OTel traces
+carry (#278 F1), so the run and its trace join on it.
+"""
+import json, os, sys, time, urllib.request
+
+MLFLOW = os.environ.get("MLFLOW_URL", "http://mlflow:5000")
+EXPERIMENT = "p281-routing"
+d = json.load(sys.stdin)
+ex, ck = d["execute"], d["check"]
+
+def call(path, body=None, method="POST"):
+    r = urllib.request.Request(MLFLOW + path, method=method,
+        data=None if body is None else json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"})
+    return json.load(urllib.request.urlopen(r, timeout=20))
+
+try:
+    exp_id = call(f"/api/2.0/mlflow/experiments/get-by-name?experiment_name={EXPERIMENT}", method="GET")["experiment"]["experiment_id"]
+except urllib.error.HTTPError:
+    exp_id = call("/api/2.0/mlflow/experiments/create", {"name": EXPERIMENT})["experiment_id"]
+
+now = int(time.time() * 1000)
+run = call("/api/2.0/mlflow/runs/create", {"experiment_id": exp_id, "start_time": now,
+           "run_name": ex["run_id"]})["run"]["info"]
+rid = run["run_id"]
+tags = {"conductor.run_id": os.environ.get("CONDUCTOR_SELF_RUN_ID", ""),
+        "provider": ex["provider"], "status": ex["status"], "gate.decision": ck["decision"],
+        "gate.reason": ck["reason"], "model.session_reported": ex["model_session_reported"],
+        "model.adapter_reported": ex["model_adapter_reported"], "model.served": ex["model_served"],
+        "evidence_dir": ex["evidence_dir"], "file_sha256": ck["file_sha256"]}
+call("/api/2.0/mlflow/runs/log-batch", {"run_id": rid,
+     "params": [{"key": "provider", "value": ex["provider"]}, {"key": "native_tools", "value": "false"}],
+     "tags": [{"key": k, "value": str(v)[:5000]} for k, v in tags.items()],
+     "metrics": [{"key": k, "value": float(ex[k]), "timestamp": now, "step": 0}
+                 for k in ("total_tokens", "wall_ms", "approvals_requested", "mcp_rule_denials")]})
+# The adapter's full result as an artifact (served by the tracking server's artifact proxy).
+res = os.path.join(ex["evidence_dir"], "result.json")
+if os.path.exists(res):
+    urllib.request.urlopen(urllib.request.Request(
+        f"{MLFLOW}/api/2.0/mlflow-artifacts/artifacts/{exp_id}/{rid}/artifacts/result.json",
+        data=open(res, "rb").read(), method="PUT"), timeout=20)
+call("/api/2.0/mlflow/runs/update", {"run_id": rid, "status": "FINISHED",
+     "end_time": int(time.time() * 1000)})
+print(json.dumps({"mlflow_run_id": rid, "experiment_id": exp_id}))
