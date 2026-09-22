@@ -748,3 +748,27 @@ login. The observer remains useful before the first run and when idle.
   + proxy), which has to be pasted into a terminal — operator at the PC.
 - `collect_obs.py` should read Codex quota from the routing layer's own rollouts as the primary
   source (fresh after every run), with the observer as fallback.
+
+### Quota collection now prefers the execution layer's own record
+
+`collect_obs.py` takes the policy's `model_route` per provider (`codex: direct`,
+`claude: preloop_gateway` until Claude has a routing-layer login) and, for Codex, considers:
+
+1. **the routing layer's own session rollouts** (`/route/codex/sessions`): the `rate_limits` the
+   provider returned to the login that executes — identity basis `same-credential`;
+2. the observer's CodexBar reading — basis `email`, compared against the executing login.
+
+The newest wins (timestamps compared as times, not strings); the other is kept under
+`other_sources`. Windows are classified by length (≤ 1 day = session, else weekly), because
+the rollout labels the weekly window `primary` and CodexBar labels it `secondary`.
+
+Measured: before a run the observer reading (04:58:50) was newest and was used; immediately
+after an auto-routed run the rollout (05:00:08, `same-credential`) was newest and was used.
+Both reported weekly 19 %. Router controls re-run on the new observations: 12/12.
+
+End to end, `auto.yaml`: `ROUTE codex` → executed on the **direct route** (Preloop gateway
+model requests 0, egress `CONNECT chatgpt.com` ×18) → Gate `PASS` → MLflow, now tagged with
+`model_route`.
+
+The observer is now a fallback: it matters before the first run and after idle periods, when
+the rollout is older than the freshness bound.

@@ -7,6 +7,7 @@ re-emits the normalized result as one flat JSON object for Conductor's output sc
 import json, os, subprocess, sys
 
 provider, file_name, content = sys.argv[1:4]
+model_route = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else "preloop_gateway"
 run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 run_id = f"{run}-{provider}"
 cwd = f"/ws/{run_id}"
@@ -14,7 +15,7 @@ os.makedirs(cwd, exist_ok=True)
 evid = f"/work/evidence/p281/{run_id}"
 req = {
     "run_id": run_id, "provider": provider, "cwd": cwd, "timeout_ms": 400000,
-    "native_tools": False, "evidence_dir": evid,
+    "native_tools": False, "evidence_dir": evid, "model_route": model_route,
     "prompt": (f"Create a file named {file_name} in the directory {cwd} containing exactly: "
                f"{content}. Use the write_file tool from the preloop MCP server with the "
                f"absolute path. Do not do anything else."),
@@ -32,6 +33,7 @@ q = ((r.get("turn") or {}).get("_meta") or {}).get("quota") or {}
 print(json.dumps({
     "status": r.get("status", "FAILED"),
     "provider": provider,
+    "model_route": r.get("model_route") or model_route,
     "run_id": run_id,
     "workspace": cwd,
     "target_path": f"{cwd}/{file_name}",

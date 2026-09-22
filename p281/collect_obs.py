@@ -4,7 +4,9 @@ usage: collect_obs.py <out-dir>
 Runs in the governed agent container. Vendor-specific by design — this is the collector, the
 place where each source's shape is translated; router.py sees only the common format.
 
-  codex  : CodexBar in the observer container (own login, egress) → /obs/codex.raw.json
+  codex  : (1) the execution layer's own session rollouts — rate_limits the provider returned to
+               the very login that executes (direct route), basis "same-credential"
+           (2) CodexBar in the observer container (own login, egress) → /obs/codex.raw.json
            observed account = CodexBar's identity.accountEmail (fingerprinted)
            executing account = the id_token email in this container's ~/.codex/auth.json,
            whose credential Preloop custodies for execution (fingerprinted)       → basis "email"
@@ -32,35 +34,100 @@ def iso_from_epoch(v):
         return None
 
 
+# Which model route each provider will execute on (policy "model_route"); it decides whose
+# login is the executing account.
+ROUTES = json.loads(os.environ.get("P281_MODEL_ROUTES", "{}"))
+
+
 # ---- codex ------------------------------------------------------------------------------
-def codex_executing_account():
-    a = json.load(open(os.path.expanduser("~/.codex/auth.json")))
+CODEX_HOME = "/route/codex" if ROUTES.get("codex") == "direct" else os.path.expanduser("~/.codex")
+
+
+def codex_email_fp(home):
+    a = json.load(open(os.path.join(home, "auth.json")))
     part = ((a.get("tokens") or {}).get("id_token") or "..").split(".")[1]
     claims = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
     return fp(claims.get("email", ""))
 
 
-try:
+def window_name(minutes):
+    # Sources label windows differently (the rollout calls the weekly window "primary", CodexBar
+    # calls it "secondary"), so classify by length, not by label.
+    if minutes is None:
+        return None
+    return "session" if minutes <= 24 * 60 else "weekly"
+
+
+def codex_from_rollouts(home):
+    """Newest rate_limits the execution layer itself received, from its own session rollouts."""
+    best = None
+    for f in sorted(glob.glob(os.path.join(home, "sessions", "**", "*.jsonl"), recursive=True))[-20:]:
+        for line in open(f, encoding="utf-8", errors="replace"):
+            if '"rate_limits"' not in line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            rl = (ev.get("payload") or {}).get("rate_limits") or {}
+            wins = {}
+            for k in ("primary", "secondary"):
+                w = rl.get(k)
+                if w and w.get("used_percent") is not None:
+                    wins[window_name(w.get("window_minutes"))] = {
+                        "used_percent": w["used_percent"], "resets_at": iso_from_epoch(w.get("resets_at")),
+                        "window_minutes": w.get("window_minutes")}
+            if wins and (best is None or ev["timestamp"] > best["observed_at"]):
+                best = {"observed_at": ev["timestamp"], "windows": wins, "file": os.path.basename(f)}
+    return best
+
+
+def codex_from_observer():
     raw = json.load(open("/obs/codex.raw.json"))
     item = next((x for x in (raw.get("payload") or []) if x.get("provider") == "codex"), None)
-    u = (item or {}).get("usage") or {}
-    win = lambda w: None if not u.get(w) else {"used_percent": u[w].get("usedPercent"),
-                                                "resets_at": u[w].get("resetsAt"),
-                                                "window_minutes": u[w].get("windowMinutes")}
-    windows = {k: v for k, v in {"session": win("primary"), "weekly": win("secondary")}.items() if v}
-    write("codex", {
-        "provider": "codex", "source": f"codexbar:{(item or {}).get('source')}",
-        # the provider-side timestamp, not when the file was written
-        "observed_at": u.get("updatedAt") or raw.get("collected_at"),
-        "observed_account": fp((u.get("identity") or {}).get("accountEmail") or u.get("accountEmail") or ""),
-        "executing_account": codex_executing_account(),
-        "identity_basis": "email",
-        "windows": windows,
-    } if item else {"provider": "codex", "source": "codexbar", "observed_at": raw.get("collected_at"),
-                    "observed_account": None, "executing_account": codex_executing_account(),
-                    "identity_basis": "email", "windows": {}, "error": f"codexbar exit {raw.get('exit')}"})
+    if not item:
+        return {"observed_at": raw.get("collected_at"), "windows": {}, "account": None,
+                "error": f"codexbar exit {raw.get('exit')}"}
+    u = item.get("usage") or {}
+    wins = {}
+    for k in ("primary", "secondary"):
+        w = u.get(k)
+        if w and w.get("usedPercent") is not None:
+            wins[window_name(w.get("windowMinutes"))] = {"used_percent": w["usedPercent"],
+                "resets_at": w.get("resetsAt"), "window_minutes": w.get("windowMinutes")}
+    return {"observed_at": u.get("updatedAt") or raw.get("collected_at"), "windows": wins,
+            "account": fp((u.get("identity") or {}).get("accountEmail") or u.get("accountEmail") or ""),
+            "source": f"codexbar:{item.get('source')}"}
+
+
+try:
+    executing = codex_email_fp(CODEX_HOME)
+except Exception:
+    executing = None
+cands = []
+try:
+    r = codex_from_rollouts(CODEX_HOME)
+    if r:
+        # Same credential that executes: the quota the provider returned to *this* login.
+        cands.append({"source": f"rollout:{r['file']}", "observed_at": r["observed_at"],
+                      "observed_account": executing, "identity_basis": "same-credential",
+                      "windows": r["windows"]})
+except Exception as e:
+    pass
+try:
+    o = codex_from_observer()
+    cands.append({"source": o.get("source", "codexbar"), "observed_at": o["observed_at"],
+                  "observed_account": o.get("account"), "identity_basis": "email",
+                  "windows": o["windows"], **({"error": o["error"]} if o.get("error") else {})})
 except FileNotFoundError:
-    pass  # no observation → router treats codex as unknown
+    pass
+if cands:
+    ts = lambda c: datetime.fromisoformat((c["observed_at"] or "1970-01-01T00:00:00Z").replace("Z", "+00:00"))
+    pick = max(cands, key=ts)
+    write("codex", {"provider": "codex", **pick, "executing_account": executing,
+                    "model_route": ROUTES.get("codex", "preloop_gateway"),
+                    "other_sources": [{k: c[k] for k in ("source", "observed_at")} for c in cands if c is not pick]})
+# no candidates → no file → router treats codex as unknown
 
 
 # ---- claude -----------------------------------------------------------------------------
@@ -74,7 +141,8 @@ try:
              and ((s.get("rate_limit") or {}).get("headers") or {}).get("anthropic-ratelimit-unified-5h-utilization")]
     s = max(snaps, key=lambda s: s["observed_at"]) if snaps else None
     base = (json.load(open(os.path.expanduser("~/.claude/settings.json"))).get("env") or {}).get("ANTHROPIC_BASE_URL", "")
-    executing = "preloop-custody:anthropic-oauth" if base.startswith("http://console") else None
+    executing = ("preloop-custody:anthropic-oauth" if base.startswith("http://console")
+                 and ROUTES.get("claude", "preloop_gateway") == "preloop_gateway" else None)
     if s:
         h = s["rate_limit"]["headers"]
         pct = lambda k: round(float(h[k]) * 100, 1) if h.get(k) is not None else None

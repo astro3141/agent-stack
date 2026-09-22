@@ -33,6 +33,7 @@ agents:
       provider: {type: string}
       reason: {type: string}
       evaluated: {type: string}
+      model_route: {type: string}
       evidence_dir: {type: string}
     routes:
       - to: execute
@@ -44,11 +45,12 @@ agents:
     description: Run the task through the routing/execution layer (acpx + Preloop)
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/execute.py", "{{ route.output.provider }}",
-           "{{ workflow.input.file_name }}", "{{ workflow.input.content }}"]
+           "{{ workflow.input.file_name }}", "{{ workflow.input.content }}", "{{ route.output.model_route }}"]
     timeout: 600
     output:
       status: {type: string}
       provider: {type: string}
+      model_route: {type: string}
       run_id: {type: string}
       workspace: {type: string}
       target_path: {type: string}

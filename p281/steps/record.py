@@ -44,7 +44,7 @@ run = call("/api/2.0/mlflow/runs/create", {"experiment_id": exp_id, "start_time"
            "run_name": ex["run_id"]})["run"]["info"]
 rid = run["run_id"]
 tags = {"conductor.run_id": os.environ.get("CONDUCTOR_SELF_RUN_ID", ""),
-        "provider": ex["provider"], "status": ex["status"], "gate.decision": ck["decision"],
+        "provider": ex["provider"], "model_route": ex.get("model_route", ""), "status": ex["status"], "gate.decision": ck["decision"],
         "gate.reason": ck["reason"], "model.session_reported": ex["model_session_reported"],
         "model.adapter_reported": ex["model_adapter_reported"], "model.served": ex["model_served"],
         "evidence_dir": ex["evidence_dir"], "file_sha256": ck["file_sha256"],

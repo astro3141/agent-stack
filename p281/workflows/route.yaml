@@ -37,6 +37,7 @@ agents:
     output:
       status: {type: string}
       provider: {type: string}
+      model_route: {type: string}
       run_id: {type: string}
       workspace: {type: string}
       target_path: {type: string}
