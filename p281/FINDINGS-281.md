@@ -1230,3 +1230,42 @@ Measured through the API:
 
 Not yet exercised: a real account connection completed through the API (needs the operator);
 planned through the UI in step 4.
+
+## UX track, step 4 — one screen from account to result (2026-09-22)
+
+`cadp278-hub` (`docker/hub.Dockerfile`, `hub/server.py`, `hub/index.html`): serves one page and
+forwards `/api/*` to the ops API. **No mounts, no Docker access, no credentials** (checked by
+`up.sh`). Published on `127.0.0.1:8780`. The page reads state from the owning systems via ops and
+hands actions to them; it keeps none of its own.
+
+Screens (Korean):
+
+- **계정·상태** — for the selected profile: each provider's connection state, route and plan;
+  whether the executing account equals the observed account (and on what basis); weekly / 5 h
+  use ("보고 안 됨" when the provider does not report a window); observation age; usable now or
+  why not; the router's current choice. "계정 연결 / 재연결" starts the provider's official
+  login: the device URL and code for Codex / Grok, a code field for Claude; polled until
+  `connected`. Settings targets with 적용됨 / 저장됨 (미적용) / 변경됨 — 적용 필요 / 적용 실패 and an
+  apply button. Pending Preloop approvals (read-only; expired ones hidden), with the Preloop
+  console link — approving stays in Preloop.
+- **워크플로 실행** — template (`auto`, `research-r`), inputs, profile; **실행 전 검사** (settings
+  valid, all applied, predicted provider or HOLD) gates the run button.
+- **실행 기록 / 상세** — steps as they happen, current step, chosen provider and why, the reason it
+  stopped (router HOLD with each provider's reason; "Preloop 승인 대기" with the pending tool and
+  target when a run's workspace has a pending approval), decision, output, record error, links to
+  the MLflow run and the Preloop console, Conductor run id.
+
+Measured in the browser (built-in browser pane):
+
+| action | shown |
+|---|---|
+| open the page | 3 providers connected, accounts match, quota + age, usable; config 4 × 적용됨 |
+| profile `cost-first`, template `research-r`, 실행 전 검사 | 설정 유효 · 모두 적용됨 · 예상 제공자 codex |
+| 실행 | live steps `route → stage_in → propose → … → review → … → admitted`; then **ADMIT**, reason, `codex direct`, candidate `829946630c89…`, MLflow link |
+| a run under a temporary profile with every limit at 1 % (via API, viewed in the UI) | **HOLD**, "라우터가 실행을 보류했습니다: codex … 26.0% ≥ 1%; grok … 2% ≥ 1%; claude … 60% ≥ 1%", `route → record_hold → held`, MLflow link |
+
+Fixed on the way: an explicitly failed terminate (HOLD/BLOCK/DENIED) carries the workflow output
+in Conductor's `workflow_failed` event; the view now shows it as output, not as an error.
+
+Not yet done against the first UX completion criterion: **an account connection completed by the
+operator through this screen** (every login so far was made before the screen existed).

@@ -18,6 +18,7 @@ Routes
   POST /api/accounts/<provider>/cancel    body {"login": optional}
   GET  /api/runs                          POST /api/runs  body {"workflow","profile","inputs":{}}
   GET  /api/runs/<ui-id>
+  GET  /api/approvals                     pending approval requests (read-only)
 """
 import json, os, re, secrets, subprocess, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -123,6 +124,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, jexec([PY, "/work/p281/login_helper.py", "status", prov, login]))
         if p == "/api/runs":
             return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "list"]))
+        if p == "/api/approvals":          # read-only; approving stays in Preloop's console
+            return self._send(200, jexec([PY, "/work/p281/approvals.py"]))
         m = re.fullmatch(r"/api/runs/([a-z0-9-]{6,40})", p)
         if m:
             return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "show", m.group(1)]))

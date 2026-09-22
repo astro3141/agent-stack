@@ -66,7 +66,8 @@ def events_for(meta):
 
 def view(meta):
     out = {**meta, "steps": [], "current_step": None, "route": None, "terminated_at": None,
-           "termination_reason": None, "output": None, "conductor_run": None, "error": None}
+           "termination_reason": None, "output": None, "conductor_run": None, "error": None,
+           "mlflow": None, "workspace": None}
     p = events_for(meta)
     if p:
         out["conductor_run"] = p.name.split("-")[-1].split(".")[0]
@@ -85,13 +86,30 @@ def view(meta):
                     out["route"] = {k: r.get(k) for k in ("decision", "provider", "reason", "model_route", "profile")}
                 except Exception:
                     pass
+            elif t == "script_completed" and d.get("agent_name") in ("record", "record_hold"):
+                try:
+                    r = json.loads(d.get("stdout") or "{}")
+                    out["mlflow"] = {"run_id": r.get("mlflow_run_id"), "experiment_id": r.get("experiment_id"),
+                                     "error": r.get("record_error")}
+                except Exception:
+                    pass
+            elif t == "script_completed" and d.get("agent_name") in ("execute", "propose"):
+                try:
+                    out["workspace"] = json.loads(d.get("stdout") or "{}").get("workspace")
+                except Exception:
+                    pass
             elif t == "agent_completed" and d.get("agent_type") == "terminate":
                 out["terminated_at"] = d.get("agent_name")
                 out["termination_reason"] = d.get("termination_reason")
             elif t == "workflow_completed":
                 out["output"] = d.get("output")
             elif t in ("workflow_failed", "agent_failed", "script_failed"):
-                out["error"] = json.dumps(d)[:500]
+                # an explicit failed terminate (HOLD, BLOCK, DENIED …) carries the workflow output
+                # here; show it as the output, and keep only a genuine error as an error
+                if isinstance(d.get("output"), dict):
+                    out["output"] = d["output"]
+                if not d.get("is_explicit"):
+                    out["error"] = json.dumps(d)[:500]
     if meta.get("state") == "finished" and not out["output"]:
         log = RUNS / f"{meta['ui_id']}.log"
         out["error"] = out["error"] or (log.read_text(errors="replace")[-600:] if log.exists() else "no output")

@@ -1,0 +1,17 @@
+{
+  "profile": "zz-hold-demo",
+  "route": "HOLD: no eligible provider: codex=exhausted: weekly 26.0% >= 1%; grok=exhausted: weekly 2% >= 1%; claude=exhausted: weekly 60% >= 1%",
+  "provider": "",
+  "model_route": "",
+  "decision": "",
+  "reason": "",
+  "candidate_sha256": "",
+  "primary_status": "",
+  "independent_status": "",
+  "review_status": "",
+  "mlflow_run_id": "0fa823c70ca44dd1b4b7db856c2b5ea3",
+  "record_error": ""
+}
+Workflow terminated at 'held': Router HOLD: no eligible provider: 
+codex=exhausted: weekly 26.0% >= 1%; grok=exhausted: weekly 2% >= 1%; 
+claude=exhausted: weekly 60% >= 1%

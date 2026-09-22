@@ -201,3 +201,18 @@ services:
       OPS_AGENT_CONTAINER: cadp278-agent
     ports:
       - "127.0.0.1:8781:8781"
+
+  # UX track: the UI. Talks only to the ops API; holds no Docker access and no credentials.
+  hub:
+    build:
+      context: ..
+      dockerfile: docker/hub.Dockerfile
+    image: cadp278/hub:local
+    container_name: cadp278-hub
+    restart: unless-stopped
+    networks:
+      - opsnet
+    environment:
+      HUB_OPS_URL: http://cadp278-ops:8781
+    ports:
+      - "127.0.0.1:8780:8780"

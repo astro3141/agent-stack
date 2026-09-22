@@ -43,6 +43,8 @@ check "Preloop MCP (auth required)"      401 "$(in_agent 'curl -s -o /dev/null -
 check "Preloop api"                      200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} http://api:8000/api/v1/openapi.json')"
 check "MLflow"                           200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} http://mlflow:5000/health')"
 check "ops API (127.0.0.1:8781)"          true "$(curl -s --max-time 5 http://127.0.0.1:8781/api/health | grep -q '"ok": true' && echo true || echo false)"
+check "hub UI (127.0.0.1:8780)"            200 "$(curl -s -o /dev/null -w %{http_code} --max-time 5 http://127.0.0.1:8780/)"
+check "hub has no Docker access"          none "$(docker inspect cadp278-hub --format '{{if .Mounts}}mounted{{else}}none{{end}}' 2>/dev/null)"
 check "provider host via proxy (TLS up)" yes "$(in_agent 'c=$(curl -s -o /dev/null -w %{http_code} --max-time 10 -x http://egress:8888 https://api.anthropic.com); [ "$c" != 000 ] && echo yes || echo no')"
 check "fsmcp tools exposed via Preloop"  yes "$(in_agent 'python3 /work/p281/mcp_list.py claude | grep -q write_file && echo yes || echo no')"
 echo "== logins (routing layer)"
