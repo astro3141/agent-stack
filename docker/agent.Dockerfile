@@ -49,7 +49,7 @@ RUN test -x /home/agent/.local/bin/preloop
 # sympy must be baked in at all: the governed runtime has no egress, so installing it at
 # run time fails by design.
 USER root
-RUN python -m venv /opt/venv     && /opt/venv/bin/pip install --no-cache-dir -q pytest 'sympy==1.14.0'     && chmod -R a+rX /opt/venv
+RUN python -m venv /opt/venv     && /opt/venv/bin/pip install --no-cache-dir -q pytest 'sympy==1.14.0' 'PyYAML==6.0.2'     && chmod -R a+rX /opt/venv
 USER agent
 
 # ---- #281: common agent execution layer -------------------------------------------------

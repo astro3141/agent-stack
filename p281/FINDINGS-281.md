@@ -1129,3 +1129,54 @@ override; the observer wrote a fresh observation seconds after its recreate.
 
 Not covered: a Docker Desktop restart (the stale-socket failure seen earlier is a Docker
 Desktop issue outside the stack; its workaround is in the RUNBOOK).
+
+## UX track, step 2 — settings model (2026-09-22)
+
+Goal: settings are not repeated per solution × per workflow. Three layers, one source of truth,
+generated settings kept apart, and a visible difference between *saved*, *applied* and *apply
+failed*.
+
+| layer | file (source, edited by hand or UI) | holds |
+|---|---|---|
+| environment | `config/environment.yaml` | Preloop api / MCP addresses, MLflow address, egress proxy + no_proxy, workspace / evidence / observation / login roots |
+| profile | `config/profiles/<name>.yaml` | providers in preference order, each with route and login; quota limits; tool policy (native tools, Preloop policy file); execution timeout; MLflow experiment |
+| workflow | `p281/workflows/*.yaml` | steps, and one input: `-i profile=<name>` (default `research-default`) |
+
+`p281/cfg.py` (PyYAML 6.0.2 added to the image's venv):
+
+- `validate` — known providers, route supported by that provider (Grok: direct only), numbers
+  in range, login present (warning if not), policy file exists; and **all profiles must name the
+  same Preloop policy**, because Preloop 0.15.0 applies one policy per account (two different
+  ones would overwrite each other on apply).
+- `generate` — `config/generated/runtime.json` and `config/generated/profiles/<name>.json`,
+  each stamped with the sha256 of the source it came from and "edit config/*.yaml instead".
+  `config/generated/` is git-ignored (derived).
+- `apply` — what lives in another solution: `preloop policy apply` + the MCP scan Preloop needs
+  before new tools are visible. Records `applied_sha256` / `applied_at` / `apply_error`.
+- `status` — per target: `saved`, `applied`, `changed_since_apply`, `apply_failed` (+ error).
+
+Consumers now read the generated settings, with the old literals only as fallback:
+`run-agent.mjs` (Preloop addresses, egress, login root + the profile's login name),
+`collect_obs.py`, `steps/route.py` (the profile's routing policy; `ROUTING_POLICY` still
+overrides for tests), `steps/execute.py` / `steps/agent_task.py` (timeout, native-tools flag,
+workspace and evidence roots, login), `steps/record.py` (MLflow address, the profile's
+experiment; `MLFLOW_URL` still overrides for failure tests).
+
+Profiles shipped: `research-default` (claude → codex → grok, as before) and `cost-first`
+(codex → grok → claude).
+
+Measured:
+
+| check | result |
+|---|---|
+| validate → generate → apply | 4 targets `applied` (runtime, two profiles, the Preloop policy — applied and scanned) |
+| edit a profile, no regenerate | that profile `changed_since_apply`; others unchanged |
+| regenerate | back to `applied` |
+| temporary profile naming a malformed Preloop policy, apply | that policy `apply_failed` with Preloop's validation error; the real policy stays `applied` |
+| two profiles naming different Preloop policies | `validate` fails with the conflict named |
+| `auto.yaml -i profile=cost-first` | `ROUTE codex` → PASS → MLflow (tagged `profile=cost-first`) |
+| `auto.yaml -i profile=no-such-profile` | HOLD "unknown profile" — no guessing — recorded in MLflow |
+| `research-r.yaml -i profile=cost-first` | `ROUTE codex` → **ADMIT**, candidate `829946630c89…`; the request carried the profile's login, timeout and native-tools setting |
+
+Limitation: `applied` for the Preloop policy is what *this tool* last applied. A policy applied
+to Preloop by other means is not detected (no drift check against Preloop's current policy).
