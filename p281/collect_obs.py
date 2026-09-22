@@ -162,40 +162,73 @@ if ROUTES.get("grok") == "direct":
 
 
 # ---- claude -----------------------------------------------------------------------------
-try:
-    # `preloop auth token` refreshes an expired CLI token; reading config.yaml directly returned
-    # a stale one (measured: 401).
+# Direct route: CodexBar with the routing layer's own Claude login (CLAUDE_CONFIG_DIR=/route/claude)
+# through the proxy — fresh, the executing credential itself ("same-credential").
+def codexbar_claude_direct():
     import subprocess
-    tok = subprocess.run(["preloop", "auth", "token"], capture_output=True, text=True, timeout=30).stdout.strip().split()[-1]
-    d = json.load(urllib.request.urlopen(urllib.request.Request(
-        "http://api:8000/api/v1/account/gateway-usage/rate-limits",
-        headers={"Authorization": "Bearer " + tok}), timeout=20))
-    snaps = [s for s in d.get("latest_snapshots", []) if s.get("provider_name") == "anthropic"
-             and ((s.get("rate_limit") or {}).get("headers") or {}).get("anthropic-ratelimit-unified-5h-utilization")]
-    s = max(snaps, key=lambda s: s["observed_at"]) if snaps else None
-    base = (json.load(open(os.path.expanduser("~/.claude/settings.json"))).get("env") or {}).get("ANTHROPIC_BASE_URL", "")
-    executing = ("preloop-custody:anthropic-oauth" if base.startswith("http://console")
-                 and ROUTES.get("claude", "preloop_gateway") == "preloop_gateway" else None)
-    if s:
-        h = s["rate_limit"]["headers"]
-        pct = lambda k: round(float(h[k]) * 100, 1) if h.get(k) is not None else None
-        write("claude", {
-            "provider": "claude", "source": f"preloop-gateway:{s['model_alias']}",
-            # Preloop stores naive UTC timestamps
-            "observed_at": s["observed_at"] + ("" if s["observed_at"].endswith("Z") or "+" in s["observed_at"] else "+00:00"),
-            "observed_account": f"preloop-custody:anthropic-{s.get('upstream_credential_type')}",
-            "executing_account": executing,
-            "identity_basis": "structural",
-            "windows": {
-                "session": {"used_percent": pct("anthropic-ratelimit-unified-5h-utilization"),
-                            "resets_at": iso_from_epoch(h.get("anthropic-ratelimit-unified-5h-reset"))},
-                "weekly": {"used_percent": pct("anthropic-ratelimit-unified-7d-utilization"),
-                           "resets_at": iso_from_epoch(h.get("anthropic-ratelimit-unified-7d-reset"))},
-            },
-        })
-except Exception as e:
-    write("claude", {"provider": "claude", "source": "preloop-gateway", "observed_at": None,
-                     "observed_account": None, "executing_account": None,
-                     "identity_basis": "structural", "windows": {}, "error": str(e)[:200]})
+    p = subprocess.run(["codexbar", "usage", "--provider", "claude", "--source", "oauth", "--json"],
+                       capture_output=True, text=True, timeout=60,
+                       env={**os.environ, "CLAUDE_CONFIG_DIR": "/route/claude",
+                            "HTTPS_PROXY": "http://egress:8888", "https_proxy": "http://egress:8888",
+                            "HTTP_PROXY": "http://egress:8888", "NO_PROXY": "console,api,mlflow,localhost"})
+    item = next((x for x in json.loads(p.stdout or "[]") if x.get("provider") == "claude"), None)
+    u = (item or {}).get("usage") or {}
+    wins = {}
+    for k in ("primary", "secondary"):
+        w = u.get(k)
+        if w and w.get("usedPercent") is not None:
+            wins[window_name(w.get("windowMinutes"))] = {"used_percent": w["usedPercent"],
+                "resets_at": w.get("resetsAt"), "window_minutes": w.get("windowMinutes")}
+    ident = "route-login:claude:" + (json.load(open("/route/claude/.claude.json")).get("oauthAccount") or {}).get("organizationUuid", "unknown")
+    return {"provider": "claude", "source": f"codexbar:{(item or {}).get('source')}",
+            "observed_at": u.get("updatedAt"), "observed_account": ident if item else None,
+            "executing_account": ident, "identity_basis": "same-credential", "model_route": "direct",
+            "windows": wins, "extra_windows": u.get("extraRateWindows") or [],
+            **({} if item else {"error": (p.stderr or p.stdout or "")[-200:]})}
+
+
+if ROUTES.get("claude") == "direct":
+    try:
+        write("claude", codexbar_claude_direct())
+    except Exception as e:
+        write("claude", {"provider": "claude", "source": "codexbar", "observed_at": None,
+                         "observed_account": None, "executing_account": None,
+                         "identity_basis": "same-credential", "windows": {}, "error": str(e)[:200]})
+else:
+  try:
+      # `preloop auth token` refreshes an expired CLI token; reading config.yaml directly returned
+      # a stale one (measured: 401).
+      import subprocess
+      tok = subprocess.run(["preloop", "auth", "token"], capture_output=True, text=True, timeout=30).stdout.strip().split()[-1]
+      d = json.load(urllib.request.urlopen(urllib.request.Request(
+          "http://api:8000/api/v1/account/gateway-usage/rate-limits",
+          headers={"Authorization": "Bearer " + tok}), timeout=20))
+      snaps = [s for s in d.get("latest_snapshots", []) if s.get("provider_name") == "anthropic"
+               and ((s.get("rate_limit") or {}).get("headers") or {}).get("anthropic-ratelimit-unified-5h-utilization")]
+      s = max(snaps, key=lambda s: s["observed_at"]) if snaps else None
+      base = (json.load(open(os.path.expanduser("~/.claude/settings.json"))).get("env") or {}).get("ANTHROPIC_BASE_URL", "")
+      executing = ("preloop-custody:anthropic-oauth" if base.startswith("http://console")
+                   and ROUTES.get("claude", "preloop_gateway") == "preloop_gateway" else None)
+      if s:
+          h = s["rate_limit"]["headers"]
+          pct = lambda k: round(float(h[k]) * 100, 1) if h.get(k) is not None else None
+          write("claude", {
+              "provider": "claude", "source": f"preloop-gateway:{s['model_alias']}",
+              # Preloop stores naive UTC timestamps
+              "observed_at": s["observed_at"] + ("" if s["observed_at"].endswith("Z") or "+" in s["observed_at"] else "+00:00"),
+              "observed_account": f"preloop-custody:anthropic-{s.get('upstream_credential_type')}",
+              "executing_account": executing,
+              "identity_basis": "structural",
+              "windows": {
+                  "session": {"used_percent": pct("anthropic-ratelimit-unified-5h-utilization"),
+                              "resets_at": iso_from_epoch(h.get("anthropic-ratelimit-unified-5h-reset"))},
+                  "weekly": {"used_percent": pct("anthropic-ratelimit-unified-7d-utilization"),
+                             "resets_at": iso_from_epoch(h.get("anthropic-ratelimit-unified-7d-reset"))},
+              },
+          })
+  except Exception as e:
+      write("claude", {"provider": "claude", "source": "preloop-gateway", "observed_at": None,
+                       "observed_account": None, "executing_account": None,
+                       "identity_basis": "structural", "windows": {}, "error": str(e)[:200]})
 
 print(json.dumps({"out": out, "files": sorted(os.listdir(out))}))

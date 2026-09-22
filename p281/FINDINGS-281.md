@@ -910,3 +910,58 @@ remember_tool_approvals = false
 For Grok the residual that remains for Codex's `apply_patch` is closed: there is no native
 write path left that a human approval could open. Deny rules win over every other rule and
 mode in Grok's documented evaluation order.
+
+---
+
+## Claude on the direct route — separation complete for all three providers (2026-09-22)
+
+- Routing-layer login: `CLAUDE_CONFIG_DIR=/route/claude claude auth login --claudeai` through the
+  allowlist proxy (operator at the PC). `claude auth status`: logged in, `claude.ai`, Max,
+  `configDirectory: /route/claude`. A lineage separate from the credential Preloop custodies.
+- Profile: `directEnv = {CLAUDE_CONFIG_DIR, proxy}`, and on this route the gateway variables
+  (`ANTHROPIC_BASE_URL`, gateway key, model aliases) are **not** passed. `CLAUDE_CONFIG_DIR` also
+  moves Claude's user tier away from `~/.claude`, where onboarding installed the Preloop hook
+  and MCP entry — the same class of leak Grok showed.
+
+| run | outcome | file | Preloop gateway | egress |
+|---|---|---|---|---|
+| MCP `ok.txt` | `COMPLETED`, 9 s | `C1` | 0 | `api.anthropic.com` |
+| MCP `forbidden.txt` | `DENIED` by the Preloop rule | absent | 0 | `api.anthropic.com` |
+
+Adapter-reported models: `claude-opus-5[1m]` (the Max default) and `claude-haiku-4-5`. Served
+model still not observable.
+
+**Account connectors blocked by the allowlist.** Claude tried `mcp-proxy.anthropic.com` — the
+claude.ai account's own MCP connectors — and was refused ("authorize it in your claude.ai
+connector settings" in its reply). Had it been allowed, those connectors would have been a
+tool path that does not pass through Preloop. Kept refused on purpose. Also refused:
+`http-intake.logs.us5.datadoghq.com` (telemetry).
+
+**Quota, fresh.** CodexBar honours `CLAUDE_CONFIG_DIR`: with the routing login, through the
+proxy, inside the agent container — session (5 h) 9 %, weekly 55 %, plus a "Fable only" weekly
+window 36 % (kept as `extra_windows`), `updatedAt` current. Basis `same-credential`; identity is
+the login's organisation UUID. The stale Preloop-snapshot source is no longer used when Claude
+routes directly.
+
+**Routing with three fresh providers.** Policy `model_route` = direct for all three. Live:
+claude 9 % / 55 %, codex 19 %, grok 2 % → `ROUTE claude` (first in preference and within limits).
+`auto.yaml` end to end: `ROUTE claude` → Claude direct (Preloop gateway model requests 0,
+`api.anthropic.com` ×14) → Gate `PASS` → MLflow.
+
+Router controls rewritten to set Claude's state explicitly rather than rely on it being
+stale: **15 / 15** (claude stale / session-exhausted / account-mismatch each fall to codex;
+every codex fault with claude out falls to grok; all stale → HOLD; all exhausted → HOLD;
+codex and grok exhausted → claude).
+
+### Status against the goal — final for this PoC
+
+| | Claude | Codex | Grok |
+|---|---|---|---|
+| model path + login owned by the routing layer | ✅ | ✅ | ✅ |
+| quota observed outside Preloop, same credential | ✅ | ✅ (+ observer) | ✅ |
+| tools governed by Preloop rules (MCP) | ✅ | ✅ | ✅ |
+| native write/shell | off (project deny) | shell off; `apply_patch` → human approval | off (own deny rules) |
+| Preloop gateway on the model path | no | no | no |
+
+Conductor, Preloop and MLflow no longer own any provider. The Preloop gateway and its
+custodied credentials are now used only by the #278 Conductor-provider path.

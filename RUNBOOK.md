@@ -267,3 +267,9 @@ Public record: #278 (receipt, corrections, findings log F1–F25), #279 (CADP TD
   (until then the router sees `stale` and holds).
 - **#281 auto-routing**: `conductor run p281/workflows/auto.yaml`; policy `p281/routing-policy.json`
   (override with `ROUTING_POLICY=`); controls `python3 p281/router_controls.py <obs-dir>`.
+- **Routing-layer logins** (volume `cadp278-route-creds`, `/route`): Claude `CLAUDE_CONFIG_DIR=/route/claude`,
+  Codex `CODEX_HOME=/route/codex`, Grok `GROK_HOME=/route/grok` + `HOME=/route/grok/home` (Grok
+  permission rules live in `/route/grok/config.toml`). All log in through the allowlist proxy
+  (`cadp278-egress`, list in `docker/egress/allow`); e.g. Claude:
+  `docker exec -it -e CLAUDE_CONFIG_DIR=/route/claude -e HTTPS_PROXY=http://egress:8888 -e NO_PROXY=console,api,mlflow,localhost cadp278-agent claude auth login --claudeai`.
+- **Policy** `p281/routing-policy.json`: `model_route` direct for claude, codex, grok.

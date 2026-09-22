@@ -49,6 +49,13 @@ const PROVIDERS = {
         "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL"];
       return Object.fromEntries(keep.filter((k) => s[k]).map((k) => [k, s[k]]));
     },
+    // Option B: the routing layer's own Claude login (CLAUDE_CONFIG_DIR=/route/claude, a lineage
+    // separate from the one Preloop custodies) through the allowlist proxy. The gateway variables
+    // from env() are NOT passed on this route (directReplacesEnv), so nothing points at Preloop's
+    // gateway. CLAUDE_CONFIG_DIR also moves Claude's user tier (settings, .claude.json) away from
+    // ~/.claude, where onboarding installed the Preloop hook and MCP entry.
+    directEnv() { return { CLAUDE_CONFIG_DIR: "/route/claude", ...EGRESS }; },
+    directReplacesEnv: true,
     // This principal's Preloop MCP bearer (onboarding wrote it into ~/.claude.json).
     mcpAuth() {
       return JSON.parse(readFileSync(join(homedir(), ".claude.json"), "utf8")).mcpServers.preloop.headers.Authorization;
@@ -250,7 +257,7 @@ async function main() {
   const runtime = createAcpRuntime({
     cwd: req.cwd,
     mcpServers,
-    agentProcessEnv: { ...prof.env(), ...extraEnv, ...routeEnv },
+    agentProcessEnv: { ...(direct && prof.directReplacesEnv ? {} : prof.env()), ...extraEnv, ...routeEnv },
     sessionStore: createRuntimeStore({ stateDir: join(evDir, "acpx-state") }),
     agentRegistry: createAgentRegistry(prof.argv ? { overrides: { [prof.agent]: prof.argv } } : undefined),
     permissionMode: "deny-all",                 // fallback if the handler throws / returns undefined
