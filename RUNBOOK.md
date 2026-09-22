@@ -260,3 +260,10 @@ Public record: #278 (receipt, corrections, findings log F1–F25), #279 (CADP TD
   it runs; no power settings are changed.
 - **#281 routing workflow**: `conductor run p281/workflows/route.yaml -i provider=claude|codex`
   (optional `-i file_name=… -i content=…`); records to MLflow experiment `p281-routing`.
+- **Quota observer `cadp278-quota`** (egress on `cadp278-quotanet` only; own logins in
+  `cadp278-quota-home`; writes `cadp278-quota-obs`, mounted read-only in the agent at `/obs`).
+  Codex logged in by device code (`codex login --device-auth`). After any restart, restart the
+  loop: `docker cp p281/observer_loop.sh cadp278-quota:/tmp/ && docker exec -d cadp278-quota sh /tmp/observer_loop.sh`
+  (until then the router sees `stale` and holds).
+- **#281 auto-routing**: `conductor run p281/workflows/auto.yaml`; policy `p281/routing-policy.json`
+  (override with `ROUTING_POLICY=`); controls `python3 p281/router_controls.py <obs-dir>`.

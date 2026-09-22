@@ -10,6 +10,10 @@
 name: cadp278
 
 networks:
+  # #281 quota observer: ordinary bridge (egress) for the observer ONLY. The agent is never on
+  # it; observations reach the agent through a read-only volume, not over the network.
+  quotanet:
+    name: cadp278-quotanet
   governed:
     name: cadp278-governed
     internal: true
@@ -37,6 +41,12 @@ volumes:
   # file tools served over MCP act on the same files.
   ws:
     name: cadp278-ws
+  # #281 quota observer: its own credentials (a separate login lineage), and the observation
+  # files it writes (mounted read-only in the agent).
+  quota-home:
+    name: cadp278-quota-home
+  quota-obs:
+    name: cadp278-quota-obs
 
 services:
   agent:
@@ -59,6 +69,7 @@ services:
       # Container-only HOME. The host's ~/.claude is NEVER mounted here.
       - agent-home:/home/agent
       - ws:/ws
+      - quota-obs:/obs:ro
     environment:
       POC_DIR: /work
       POC_PY: /opt/venv/bin/python
@@ -125,3 +136,16 @@ services:
       - toolnet
     volumes:
       - ws:/ws
+
+  # #281 quota observer. Same image (codex, CodexBar), different network, volume and logins.
+  # Holds provider credentials and has egress, so it runs no service and joins no network the
+  # agent is on; it only writes observation files into quota-obs.
+  quota:
+    image: cadp278/governed-runtime:local
+    container_name: cadp278-quota
+    networks:
+      - quotanet
+    volumes:
+      - quota-home:/home/agent
+      - quota-obs:/obs
+    command: ["sleep", "infinity"]

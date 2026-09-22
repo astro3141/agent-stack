@@ -606,3 +606,79 @@ plus the network re-attach restored everything, isolation re-verified.
 
 Idle sleep is now blocked while `tools/keep-awake.ps1` runs (`SetThreadExecutionState`,
 `ES_CONTINUOUS | ES_SYSTEM_REQUIRED`; no power setting changed; ends with the process).
+
+---
+
+## Phase 5 — quota-based routing
+
+### Observation sources
+
+| provider | source | account binding | freshness |
+|---|---|---|---|
+| codex | CodexBar 0.63.0 in the **observer container** `cadp278-quota` (egress, own `codex login --device-auth` — done by the operator from a phone; passkey login worked) | observer's `identity.accountEmail` vs the id_token email of the agent's `~/.codex/auth.json`, compared as sha256 fingerprints — **basis "email"**; matched | provider `updatedAt`, re-collected every 300 s |
+| claude | Preloop gateway's stored upstream headers (`anthropic-ratelimit-unified-5h/7d-utilization`, via `GET /api/v1/account/gateway-usage/rate-limits`) — **no new login needed** | the Preloop-custodied OAuth credential is both the observed and the executing account — **basis "structural"**, no email on either side | only when Preloop writes a usage row |
+
+- Observer placement: the observer has egress and credentials, so it joins no network the
+  agent is on and runs no service. It writes `/obs/codex.raw.json`; the agent mounts that
+  volume **read-only** (`touch` → "Read-only file system"). Agent isolation re-verified.
+- The two containers were confirmed to be the same ChatGPT account before use (email and
+  account-id fingerprints equal) without either email leaving the stack.
+- **Codex reports no session (5 h) window** for this account (`primary: null`); only weekly.
+  The policy requires `weekly`; an unreported optional window is recorded as "not reported",
+  never assumed empty.
+- **Codex quota is invisible on the execution path**: Preloop keeps only headers containing
+  `ratelimit` (Codex's are not), and Codex's own rollout records `rate_limits` with every
+  field `null` behind the gateway. Hence the observer.
+- **Claude's Preloop-sourced observation goes stale**: snapshots ride on usage rows, and
+  successful agent calls write none (#278 F25). The newest Anthropic snapshot was ~16.7 h old
+  despite many successful Claude runs today. With a 30-minute freshness bound Claude is
+  never eligible from this source — the router says so rather than using the old number.
+
+### Router (`router.py`, no vendor code) and policy (`routing-policy.json`)
+
+Per candidate, in preference order (`claude`, `codex`): no observation → unknown;
+observed ≠ executing account → `account_mismatch`; older than 1800 s → `stale`; future
+timestamp → unknown; required window missing → unknown; any reported window ≥ its limit
+(session 80 %, weekly 90 %) → `exhausted`. First eligible wins; none → **HOLD, nothing runs**.
+
+### Fault injection (`router_controls.py`, deterministic): 12 / 12
+
+| case | expected | got |
+|---|---|---|
+| live observations | ROUTE codex | ROUTE codex (claude stale 60 271 s) |
+| claude made fresh | ROUTE claude | ROUTE claude |
+| claude fresh, session 85 % | ROUTE codex | ROUTE codex |
+| **codex account mismatch** | HOLD | HOLD |
+| codex mismatch, claude fresh | ROUTE claude | ROUTE claude — never the mismatched one |
+| codex executing account unknown | HOLD | HOLD |
+| **codex stale (2 h), numbers fine** | HOLD | HOLD |
+| codex timestamp 1 h in the future | HOLD | HOLD |
+| codex required weekly window missing | HOLD | HOLD |
+| codex weekly 95 % | HOLD | HOLD |
+| observer down (no file) | HOLD | HOLD |
+| both fresh, both exhausted | HOLD | HOLD |
+
+### End to end — `p281/workflows/auto.yaml`
+
+`route` (collect + decide) → `execute` → `check` → `record`, or `route` → `record_hold` →
+`held`.
+
+| run | route | outcome | MLflow |
+|---|---|---|---|
+| live policy | `ROUTE codex: within limits` (claude stale) | `COMPLETED`, Gate `PASS` | recorded with the router's evaluation |
+| strict test policy (weekly ≤ 10 %) | `HOLD: claude=stale; codex=exhausted: weekly 19% >= 10%` | not started — **0 gateway requests** in the window | recorded as `HOLD / NOT_RUN` |
+
+The first HOLD run left no MLflow record (the record step was on the execute path only);
+a `record_hold` step was added, because not starting is a result that has to be auditable.
+
+Workflow and router contain no vendor name; vendor translation lives in the collector
+(`collect_obs.py`) and the execution profile (`run-agent.mjs`).
+
+### Not established
+
+- Claude quota from a first-hand source (a CodexBar Claude login in the observer needs the
+  operator at the PC; the Preloop source is stale by construction on this build).
+- The Claude identity binding is structural (single custodied credential), not a compared
+  identity.
+- Observer liveness: the loop runs via `docker exec -d` and does not survive a container
+  restart; a restart shows up as `stale` (fail closed), not as wrong numbers.

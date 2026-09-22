@@ -9,7 +9,7 @@ import json, os, sys, time, urllib.request
 MLFLOW = os.environ.get("MLFLOW_URL", "http://mlflow:5000")
 EXPERIMENT = "p281-routing"
 d = json.load(sys.stdin)
-ex, ck = d["execute"], d["check"]
+ex, ck, rt = d.get("execute"), d.get("check"), d.get("route") or {}
 
 def call(path, body=None, method="POST"):
     r = urllib.request.Request(MLFLOW + path, method=method,
@@ -23,6 +23,23 @@ except urllib.error.HTTPError:
     exp_id = call("/api/2.0/mlflow/experiments/create", {"name": EXPERIMENT})["experiment_id"]
 
 now = int(time.time() * 1000)
+cid = os.environ.get("CONDUCTOR_SELF_RUN_ID", "")
+
+if ex is None:
+    # HOLD: the router started nothing. That decision is a result too, so it is recorded.
+    rid = call("/api/2.0/mlflow/runs/create", {"experiment_id": exp_id, "start_time": now,
+               "run_name": f"{cid}-hold"})["run"]["info"]["run_id"]
+    call("/api/2.0/mlflow/runs/log-batch", {"run_id": rid, "tags": [
+        {"key": k, "value": str(v)[:5000]} for k, v in {
+            "conductor.run_id": cid, "provider": "none", "status": "HOLD",
+            "gate.decision": "NOT_RUN", "route.decision": rt.get("decision"),
+            "route.reason": rt.get("reason"), "route.evaluated": rt.get("evaluated"),
+            "evidence_dir": rt.get("evidence_dir")}.items()]})
+    call("/api/2.0/mlflow/runs/update", {"run_id": rid, "status": "FINISHED",
+         "end_time": int(time.time() * 1000)})
+    print(json.dumps({"mlflow_run_id": rid, "experiment_id": exp_id}))
+    sys.exit(0)
+
 run = call("/api/2.0/mlflow/runs/create", {"experiment_id": exp_id, "start_time": now,
            "run_name": ex["run_id"]})["run"]["info"]
 rid = run["run_id"]
@@ -30,7 +47,9 @@ tags = {"conductor.run_id": os.environ.get("CONDUCTOR_SELF_RUN_ID", ""),
         "provider": ex["provider"], "status": ex["status"], "gate.decision": ck["decision"],
         "gate.reason": ck["reason"], "model.session_reported": ex["model_session_reported"],
         "model.adapter_reported": ex["model_adapter_reported"], "model.served": ex["model_served"],
-        "evidence_dir": ex["evidence_dir"], "file_sha256": ck["file_sha256"]}
+        "evidence_dir": ex["evidence_dir"], "file_sha256": ck["file_sha256"],
+        "route.decision": rt.get("decision", "manual"), "route.reason": rt.get("reason", "provider given as input"),
+        "route.evaluated": rt.get("evaluated", "")}
 call("/api/2.0/mlflow/runs/log-batch", {"run_id": rid,
      "params": [{"key": "provider", "value": ex["provider"]}, {"key": "native_tools", "value": "false"}],
      "tags": [{"key": k, "value": str(v)[:5000]} for k, v in tags.items()],
