@@ -273,3 +273,6 @@ Public record: #278 (receipt, corrections, findings log F1–F25), #279 (CADP TD
   (`cadp278-egress`, list in `docker/egress/allow`); e.g. Claude:
   `docker exec -it -e CLAUDE_CONFIG_DIR=/route/claude -e HTTPS_PROXY=http://egress:8888 -e NO_PROXY=console,api,mlflow,localhost cadp278-agent claude auth login --claudeai`.
 - **Policy** `p281/routing-policy.json`: `model_route` direct for claude, codex, grok.
+- **One command bring-up** (2026-09-22): `scripts/up.sh` (PoC stack → Preloop with
+  `docker/preloop.cadp.yaml` → 13 checks). `--check` only checks; `--recreate` forces recreation.
+  Replaces the manual `docker network connect` and observer-loop steps above.

@@ -1093,3 +1093,39 @@ failure; the observation failure is visible, not silent.
 Test policies updated to route all three providers directly (the strict one still referenced
 Claude's old gateway route; it made no difference to the HOLD, since all candidates were over the
 limit or stale).
+
+---
+
+## UX track, step 1 — minimal run base (2026-09-22)
+
+Completion criterion (agreed): after **recreating** the containers, networks, the observer and
+the logins come back with no manual step, and a small task succeeds.
+
+What changed:
+
+- `docker/preloop.cadp.yaml`: an extra compose file on top of the upstream Preloop install that
+  attaches `api` / `console` / `gateway` to `cadp278-governed` (and `api` to `cadp278-toolnet`)
+  with the aliases the agent resolves. Replaces the out-of-band `docker network connect`, which
+  was lost on every Preloop restart. (`default` is listed explicitly — naming any network
+  replaces a service's implicit one.)
+- `restart: unless-stopped` on all six PoC containers (there was none).
+- The quota observer's loop is now the `quota` container's command (script bind-mounted
+  read-only), so it restarts with the container.
+- The image pre-creates `/ws`, `/obs`, `/route` agent-owned, so fresh volumes need no `chown`.
+- `scripts/up.sh`: brings up the PoC stack, then Preloop with the override, then runs 13 checks
+  (isolation ×3, services ×5, routing-layer and observer logins ×4, observation freshness).
+  `--check` only checks; `--recreate` forces recreation of every container in both projects.
+  (Windows note: docker needs native paths; the script converts with `cygpath -m`.)
+
+Measured:
+
+| state | checks | small task (`auto.yaml`) |
+|---|---|---|
+| before (running stack) | 13 / 13 | — |
+| after `up.sh --recreate` (image rebuilt; every PoC **and** Preloop container recreated) | **13 / 13**, no manual step | `ROUTE claude` → direct → Gate `PASS` → MLflow, `record_error` empty |
+
+Preloop's recreated `api` / `console` / `gateway` carry the PoC networks and aliases from the
+override; the observer wrote a fresh observation seconds after its recreate.
+
+Not covered: a Docker Desktop restart (the stale-socket failure seen earlier is a Docker
+Desktop issue outside the stack; its workaround is in the RUNBOOK).

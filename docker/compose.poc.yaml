@@ -62,6 +62,7 @@ services:
       dockerfile: agent.Dockerfile
     image: cadp278/governed-runtime:local
     container_name: cadp278-agent
+    restart: unless-stopped
     networks:
       - governed
     volumes:
@@ -97,6 +98,7 @@ services:
       dockerfile: mlflow.Dockerfile
     image: cadp278/mlflow:3.16.1
     container_name: cadp278-mlflow
+    restart: unless-stopped
     networks:
       - governed
       - observe
@@ -125,6 +127,7 @@ services:
       dockerfile: toolsvc.Dockerfile
     image: cadp278/toolsvc:local
     container_name: cadp278-toolsvc
+    restart: unless-stopped
     networks:
       - toolnet
     volumes:
@@ -140,6 +143,7 @@ services:
       dockerfile: fsmcp.Dockerfile
     image: cadp278/fsmcp:local
     container_name: cadp278-fsmcp
+    restart: unless-stopped
     networks:
       - toolnet
     volumes:
@@ -151,12 +155,18 @@ services:
   quota:
     image: cadp278/governed-runtime:local
     container_name: cadp278-quota
+    restart: unless-stopped
     networks:
       - quotanet
     volumes:
       - quota-home:/home/agent
       - quota-obs:/obs
-    command: ["sleep", "infinity"]
+      - type: bind
+        source: ${POC_HOST_DIR:-..}/p281/observer_loop.sh
+        target: /opt/p281/observer_loop.sh
+        read_only: true
+    # the observation loop is the container's process, so it comes back with every restart
+    command: ["sh", "/opt/p281/observer_loop.sh"]
 
   # #281 option B: the routing layer's egress — allowlisted provider hosts only.
   egress:
@@ -165,6 +175,7 @@ services:
       dockerfile: egress.Dockerfile
     image: cadp278/egress:local
     container_name: cadp278-egress
+    restart: unless-stopped
     networks:
       governed:
         aliases: [egress]
