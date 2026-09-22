@@ -171,8 +171,13 @@ async function pollLogin(provider, login) {
   }
   if (s.state === "failed") { clearInterval(loginTimer); box.innerHTML = `<span class="bad">연결 실패</span><pre class="mono">${esc(s.detail)}</pre>`; return; }
   if (s.state === "waiting_for_browser") {
+    // redraw only when something changed, so a copy confirmation or a selection is not wiped
+    const key = `${s.state}|${s.url}|${s.user_code}`;
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
     box.innerHTML = `<div>1. 공식 로그인 페이지를 엽니다: <a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a></div>
-      <div>2. 이 코드를 입력합니다: <span class="big-code">${esc(s.user_code || "")}</span></div>
+      <div class="row">2. 이 코드를 입력합니다: <span class="big-code" id="device-code">${esc(s.user_code || "")}</span>
+        ${s.user_code ? `<button class="sub" onclick="copyCode(this)">복사</button>` : ""}</div>
       <div class="muted">완료되면 이 화면이 자동으로 바뀝니다. ${cancel}</div>`;
   } else if (s.state === "waiting_for_code") {
     if (!$("#login-code")) box.innerHTML = `<div>1. 공식 로그인 페이지를 엽니다: <a href="${esc(s.url)}" target="_blank" rel="noopener">로그인 페이지 열기</a></div>
@@ -181,6 +186,17 @@ async function pollLogin(provider, login) {
   } else {
     box.innerHTML = `준비 중… ${cancel}`;
   }
+}
+async function copyCode(btn) {
+  const text = $("#device-code").textContent.trim();
+  try {
+    await navigator.clipboard.writeText(text);          // 127.0.0.1 counts as a secure context
+  } catch {
+    const r = document.createRange(); r.selectNodeContents($("#device-code"));   // fallback: select it
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand && document.execCommand("copy");
+  }
+  btn.textContent = "복사됨"; setTimeout(() => (btn.textContent = "복사"), 1500);
 }
 async function sendCode(provider, login) {
   const el = $("#login-code"); const code = el.value; el.value = ""; el.disabled = true;

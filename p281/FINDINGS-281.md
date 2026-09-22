@@ -1269,3 +1269,15 @@ in Conductor's `workflow_failed` event; the view now shows it as output, not as 
 
 Not yet done against the first UX completion criterion: **an account connection completed by the
 operator through this screen** (every login so far was made before the screen existed).
+
+### First UX completion criterion — met (2026-09-23)
+
+The operator reconnected **all three** providers through the screen (no container access):
+Claude with the pasted code, Codex and Grok with device codes. Afterwards: every login `exit 0`,
+no FIFO left, all `connected`, executing = observed account for each, Codex still the same
+account (email fingerprint unchanged), `up.sh --check` all passed.
+
+Operator feedback, applied: a **copy button** next to the device code (Codex, Grok). The login
+box now redraws only when the URL or code changes, so the "복사됨" confirmation or a manual
+selection is not wiped by the 2 s poll. Verified in the browser with a throwaway login name
+(button present → click → "복사됨" → still present after polls), then cancelled and cleaned up.
