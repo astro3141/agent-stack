@@ -139,8 +139,9 @@ const PROVIDERS = {
     mcpViaConfig: true,
     // A call to a tool of the Preloop MCP server (registered as "preloop" in Grok's own config):
     // decided by Preloop's rules at the MCP proxy, so not sent to human approval as well.
-    // (Measured: a `permissions.allow = ["mcp__preloop__*"]` entry in Grok's config.toml did not
-    // stop Grok asking the ACP client.)
+    // Normally unreachable: /route/grok/config.toml carries `[permission] allow =
+    // ["MCPTool(preloop__*)"]` and denies Bash/Edit/Write/WebFetch/WebSearch, so Grok neither
+    // asks about Preloop MCP calls nor runs native write/shell tools. Kept as a fallback.
     governedDownstream(raw) {
       const tc = raw.toolCall ?? {};
       return tc._meta?.["x.ai/tool"]?.name === "use_tool" && tc.rawInput?.variant === "UseTool"

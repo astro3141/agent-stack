@@ -886,3 +886,27 @@ exhausted → HOLD; codex and grok exhausted with claude fresh → claude.
 
 Grok is not a Preloop-onboarded agent, so its MCP calls use the Claude Code principal's MCP
 bearer and are recorded under that principal. Open: a Grok principal of its own.
+
+### Grok native tools removed (2026-09-22)
+
+The earlier "allow rule had no effect" was a mistake in the section name: Grok's config uses
+`[permission]`, not `[permissions]`. With the documented form in the routing layer's
+`/route/grok/config.toml` (outside `/ws`, so the filesystem MCP cannot edit it):
+
+```toml
+[permission]
+deny  = ["Bash", "Edit", "Write", "WebFetch", "WebSearch"]
+allow = ["MCPTool(preloop__*)"]
+[ui]
+remember_tool_approvals = false
+```
+
+| run | outcome | ACP permission requests | file |
+|---|---|---|---|
+| MCP `ok.txt` | `COMPLETED`, 17 s | **none** (the allow rule now applies) | `G1` |
+| MCP `forbidden.txt` | `DENIED` by the Preloop rule | none | absent |
+| told to use built-in write, then shell | both blocked by Grok's deny rules → `NATIVE_UNAVAILABLE` | none | absent |
+
+For Grok the residual that remains for Codex's `apply_patch` is closed: there is no native
+write path left that a human approval could open. Deny rules win over every other rule and
+mode in Grok's documented evaluation order.
