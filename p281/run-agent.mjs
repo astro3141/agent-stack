@@ -40,6 +40,27 @@ const PROVIDERS = {
         "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL"];
       return Object.fromEntries(keep.filter((k) => s[k]).map((k) => [k, s[k]]));
     },
+    // This principal's Preloop MCP bearer (onboarding wrote it into ~/.claude.json).
+    mcpAuth() {
+      return JSON.parse(readFileSync(join(homedir(), ".claude.json"), "utf8")).mcpServers.preloop.headers.Authorization;
+    },
+    // Native write/shell removed through the workspace's project settings — acpx loads that
+    // tier, and a deny rule cannot be lifted by another tier. The Preloop policy forbids MCP
+    // writes under .claude/, so the agent cannot rewrite this file.
+    disableNative(cwd) {
+      mkdirSync(join(cwd, ".claude"), { recursive: true });
+      writeFileSync(join(cwd, ".claude/settings.json"), JSON.stringify(
+        { permissions: { deny: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"] } }) + "\n");
+      return {};
+    },
+    // A call to the Preloop MCP server that the adapter itself attached. Its decision is made
+    // by Preloop's rules at the MCP proxy, so it is not sent to human approval as well.
+    // (Measured: an `allow: ["mcp__preloop"]` rule in project settings did not stop Claude
+    // from asking for this ACP-attached, `source: "dynamic"` server.)
+    governedDownstream(raw) {
+      const s = raw.toolCall?._meta?.claudeCode?.mcpServer;
+      return s?.name === "preloop" && s?.source === "dynamic";
+    },
   },
   codex: {
     agent: "codex",
@@ -48,6 +69,23 @@ const PROVIDERS = {
     // reads — unlike acpx's Claude profile. The default ACP mode "agent" hands approvals to
     // Codex's own Guardian reviewer model; "read-only" hands them to the ACP client.
     env() { return { INITIAL_AGENT_MODE: "read-only" }; },
+    mcpAuth() {
+      const t = readFileSync(join(homedir(), ".codex/config.toml"), "utf8");
+      const m = t.match(/\[mcp_servers\.preloop\.http_headers\][^[]*?Authorization\s*=\s*'([^']+)'/);
+      if (!m) throw new Error("no Preloop MCP bearer in ~/.codex/config.toml");
+      return m[1];
+    },
+    // Shell removed by feature flags. apply_patch has no off switch in this Codex; it stays
+    // and, in read-only mode, every use escalates to Preloop approval.
+    disableNative() {
+      // default_tools_approval_mode=approve on the Preloop MCP server: those calls are decided
+      // by Preloop rules downstream. Without it Codex asks the client, and its request names
+      // neither the server nor the tool (`_meta.is_mcp_tool_approval` only).
+      return { CODEX_CONFIG: JSON.stringify({
+        features: { shell_tool: false, unified_exec: false },
+        mcp_servers: { preloop: { default_tools_approval_mode: "approve" } },
+      }) };
+    },
   },
 };
 // -----------------------------------------------------------------------------------------
@@ -73,8 +111,14 @@ function postJson(url, obj, signal) {
   });
 }
 
-async function askPreloop(req, { provider, runId, cwd, signal, log }) {
+async function askPreloop(req, { provider, runId, cwd, signal, log, mcpOnly }) {
   const tc = req.raw.toolCall ?? {};
+  if (mcpOnly && PROVIDERS[provider].governedDownstream?.(req.raw)) {
+    log({ at: new Date().toISOString(), acp_kind: tc.kind ?? null, title: tc.title ?? null,
+      raw: req.raw, outcome: "allow_once", denial: null, preloop: null, error: null,
+      routed: "preloop_mcp_rules" });
+    return { outcome: "allow_once" };
+  }
   const body = {
     tool_name: tc.title?.split(" ")[0] || tc.kind || "unknown",
     // What the approver sees. Claude puts the target in rawInput; Codex sends rawInput null
@@ -107,6 +151,7 @@ async function askPreloop(req, { provider, runId, cwd, signal, log }) {
   const ev = {
     at: new Date().toISOString(), ms: Date.now() - started,
     acp_kind: tc.kind ?? req.inferredKind ?? null, title: tc.title ?? null, input: body.tool_input,
+    raw: req.raw,   // local evidence only; never sent anywhere
     preloop: ans ?? null, error: err ?? null,
     outcome: ans?.decision === "allow" ? "allow_once" : "reject_once",
     denial: ans?.decision === "allow" ? null
@@ -126,9 +171,20 @@ async function main() {
   const permissions = [];
   const log = (ev) => { permissions.push(ev); appendFileSync(join(evDir, "permissions.jsonl"), JSON.stringify(ev) + "\n"); };
 
+  // native_tools: false → option B. File work goes through Preloop's MCP endpoint, where
+  // Preloop rules decide; the vendor's native write/shell tools are removed where the vendor
+  // allows it, and whatever remains still escalates to Preloop approval.
+  const mcpOnly = req.native_tools === false;
+  const extraEnv = mcpOnly ? prof.disableNative(req.cwd) : {};
+  const mcpServers = mcpOnly ? [{
+    type: "http", name: "preloop", url: `${process.env.PRELOOP_URL ?? "http://console"}/mcp/v1`,
+    headers: [{ name: "Authorization", value: prof.mcpAuth() }],
+  }] : undefined;
+
   const runtime = createAcpRuntime({
     cwd: req.cwd,
-    agentProcessEnv: prof.env(),
+    mcpServers,
+    agentProcessEnv: { ...prof.env(), ...extraEnv },
     sessionStore: createRuntimeStore({ stateDir: join(evDir, "acpx-state") }),
     agentRegistry: createAgentRegistry(),
     permissionMode: "deny-all",                 // fallback if the handler throws / returns undefined
@@ -137,7 +193,7 @@ async function main() {
   });
 
   const t0 = Date.now();
-  const text = [], usage = [];
+  const text = [], usage = [], mcpDenials = [];
   let result, handle, failure;
   try {
     // A fresh session key per run: acpx keys sessions on (agent, cwd, name) with no account
@@ -148,11 +204,17 @@ async function main() {
     });
     const turn = runtime.startTurn({
       handle, text: req.prompt, mode: "prompt", requestId: `${req.run_id}-1`,
-      onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, runId: req.run_id, cwd: req.cwd, signal, log }),
+      onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, runId: req.run_id, cwd: req.cwd, signal, log, mcpOnly }),
     });
     for await (const ev of turn.events) {
       if (ev.type === "text_delta" && ev.stream !== "thought") text.push(ev.text);
       if (ev.type === "status" && ev.tag === "usage_update") usage.push(ev);
+      // Preloop's MCP proxy returns a rule denial as an ordinary result (isError: false)
+      // whose text starts "Access denied:". Matching that text is the only signal available;
+      // it is fragile and would break silently if Preloop rewords it.
+      if (ev.type === "tool_call" && /Access denied:/.test(JSON.stringify(ev.rawOutput ?? ev.content ?? ev.text ?? "")))
+        mcpDenials.push({ title: ev.title ?? null, toolCallId: ev.toolCallId ?? null,
+          text: JSON.stringify(ev.rawOutput ?? ev.content ?? ev.text).match(/Access denied:[^"\\]*/)?.[0] ?? null });
       appendFileSync(join(evDir, "events.jsonl"), JSON.stringify(ev) + "\n");
     }
     result = await turn.result;
@@ -171,7 +233,7 @@ async function main() {
   const norm =
     denials.some((d) => d.denial === "run_ended_awaiting_approval") ? "TIMED_OUT"
     : denials.some((d) => d.denial === "control_unavailable") ? "CONTROL_UNAVAILABLE"
-    : denials.length ? "DENIED"
+    : denials.length || mcpDenials.length ? "DENIED"
     : failure || result?.status === "failed" ? "FAILED"
     : result?.status === "cancelled" ? "CANCELLED"
     : "COMPLETED";
@@ -186,8 +248,10 @@ async function main() {
       session_reported: status?.models?.currentModelId ?? status?.model ?? null,
       served: "unknown",   // nothing on this path reports the served model; do not infer it
     },
-    permissions: permissions.map(({ acp_kind, title, outcome, denial, preloop, error }) =>
-      ({ acp_kind, title, outcome, denial, request_id: preloop?.request_id ?? null, error })),
+    permissions: permissions.map(({ acp_kind, title, outcome, denial, preloop, error, routed }) =>
+      ({ acp_kind, title, outcome, denial, request_id: preloop?.request_id ?? null, error, routed: routed ?? "preloop_approval" })),
+    mcp_denials: mcpDenials,
+    native_tools: !mcpOnly,
     turn: result ?? null,
     failure: failure ?? null,
     text: text.join(""),

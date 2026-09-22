@@ -233,3 +233,21 @@ Public record: #278 (receipt, corrections, findings log F1–F25), #279 (CADP TD
   checkout would change `sha256(gate.py)` and break every manifest that pins it.
 - The Conductor `claude-agent-sdk` provider offers only two tool configurations; a
   "tools present, not bypass" posture is not expressible.
+
+---
+
+## 7. #281 additions (2026-09-22)
+
+- **Codex** is logged in inside the agent (`codex login --device-auth`, ChatGPT) and onboarded to
+  Preloop **inside the container** (`preloop agents onboard codex --yes --skip-live-validate`,
+  no `--approvals`). Undo: `preloop agents offboard "Codex CLI"`. `discover` only sees Codex once
+  `~/.codex/config.toml` exists.
+- **cadp278-fsmcp** (filesystem MCP, toolnet only) and volume **cadp278-ws** at `/ws` in the agent
+  and fsmcp. Option-B workspaces must live under `/ws`.
+- Active policy: **`policy/b-fsmcp.yaml`** (superset of `allow.yaml`: toolsvc tools unchanged, plus
+  fsmcp path rules). After re-applying on a fresh Preloop, call
+  `POST /api/v1/mcp-servers/{id}/scan` or the fsmcp tools stay invisible to agents.
+- Adapter: `p281/run-agent.mjs <request.json>`; Preloop api directly (`PRELOOP_API_URL`, default
+  `http://api:8000`), not the console proxy.
+- Do **not** put Claude managed settings in this image: they apply container-wide and strip
+  Write/Bash from the #278/#280 workflows.

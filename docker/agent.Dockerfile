@@ -67,6 +67,11 @@ RUN npm install -g --no-fund --no-audit       acpx@0.18.0       @agentclientprot
 # CodexBar CLI (quota observation). Static musl build: the glibc build needs GLIBC_2.38, bookworm has 2.36. No Windows build exists.
 ARG CODEXBAR_VERSION=0.63.0
 RUN mkdir -p /opt/codexbar     && curl -fsSL -o /tmp/cb.tgz https://github.com/steipete/CodexBar/releases/download/v${CODEXBAR_VERSION}/CodexBarCLI-v${CODEXBAR_VERSION}-linux-musl-x86_64.tar.gz     && curl -fsSL -o /tmp/cb.sha https://github.com/steipete/CodexBar/releases/download/v${CODEXBAR_VERSION}/CodexBarCLI-v${CODEXBAR_VERSION}-linux-musl-x86_64.tar.gz.sha256     && (cd /tmp && echo "$(awk '{print $1}' cb.sha)  cb.tgz" | sha256sum -c -)     && tar -xzf /tmp/cb.tgz -C /opt/codexbar     && rm -f /tmp/cb.tgz /tmp/cb.sha     && chmod -R a+rX /opt/codexbar
+# #281 option B: /ws is the workspace shared with the filesystem MCP container. Created here
+# so the named volume is seeded agent-owned. (Native-tool removal is per run, in the
+# workspace's project settings — not managed settings, which would also strip Write/Bash
+# from the #278 and #280 workflows running in this same container.)
+RUN mkdir -p /ws && chown agent:agent /ws
 USER agent
 
 WORKDIR /work

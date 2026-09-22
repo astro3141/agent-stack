@@ -33,6 +33,10 @@ networks:
 volumes:
   agent-home:
     name: cadp278-agent-home
+  # #281 option B: the workspace the agent works in, also mounted (same path) in fsmcp so
+  # file tools served over MCP act on the same files.
+  ws:
+    name: cadp278-ws
 
 services:
   agent:
@@ -54,6 +58,7 @@ services:
         target: /research
       # Container-only HOME. The host's ~/.claude is NEVER mounted here.
       - agent-home:/home/agent
+      - ws:/ws
     environment:
       POC_DIR: /work
       POC_PY: /opt/venv/bin/python
@@ -107,3 +112,16 @@ services:
       - type: bind
         source: ${POC_HOST_DIR:-D:/Work/poc-278}/evidence/n1-markers
         target: /markers
+
+  # #281 option B: filesystem MCP behind Preloop. On toolnet only: the agent cannot reach it
+  # except through Preloop's MCP proxy, which is where the rules are evaluated.
+  fsmcp:
+    build:
+      context: .
+      dockerfile: fsmcp.Dockerfile
+    image: cadp278/fsmcp:local
+    container_name: cadp278-fsmcp
+    networks:
+      - toolnet
+    volumes:
+      - ws:/ws
