@@ -965,3 +965,60 @@ codex and grok exhausted → claude).
 
 Conductor, Preloop and MLflow no longer own any provider. The Preloop gateway and its
 custodied credentials are now used only by the #278 Conductor-provider path.
+
+---
+
+## Fixes after review (2026-09-22)
+
+Review verdict: provider-separation PoC succeeded; #281 overall **PARTIAL**. Four boundary
+defects fixed before reuse.
+
+### 1. Codex rollout quota could be attributed to the wrong login
+
+Rollouts record no account (`session_meta` has id, cwd, originator, provider — no identity),
+yet the collector labelled any rollout with the *current* login. After an A→B re-login in the
+same `CODEX_HOME`, A's still-fresh quota would have been used as B's. (Not observed here; a
+defect before account changes are supported.)
+
+Fix: the adapter now writes a **session ledger** (`/route/codex-session-ledger.jsonl`, outside
+`/ws`): per run, Codex's session id (`backendSessionId`, which is the rollout file's id) and the
+login fingerprint read at start *and* end — a login that changed during the run binds the
+session to no account. The collector accepts a rollout only if the ledger binds its session
+to the current executing account.
+
+| ledger | rollout used? | source chosen |
+|---|---|---|
+| session bound to the current login | yes | rollout, `same-credential` |
+| same session bound to another account (A→B) | **no** | observer, email-compared |
+| no ledger (pre-fix runs) | **no** | observer |
+
+### 2. Malformed quota numbers
+
+`-1` and `NaN` passed as eligible; a string crashed the whole selection. Now a usable
+utilisation must be a real, finite number in [0, 100] (bool excluded); anything else makes that
+candidate `unknown` and the others are still evaluated; any exception inside one candidate's
+evaluation is contained the same way. Controls added: `-1`, `NaN`, `Infinity`, `150`, `"55"`,
+`true`, windows as a list, `observed_at` as a number, every candidate malformed → HOLD.
+Controls now **24 / 24**.
+
+### 3. Missing token usage recorded as 0
+
+`execute.py` wrote `total_tokens: 0` when the adapter reported none. Now missing measurements
+are omitted: they live in an optional-field object `measurements` (Conductor allows optional
+fields only inside objects), and `record.py` logs a metric only when it is a real number.
+
+### 4. An MLflow failure changed the run's outcome
+
+Before, a failing record step stopped the workflow short of its terminal step, so the #278 N5
+property ("observation failure does not change the decision") did not hold here. Now
+`record.py` never fails: it reports `record_error` and exits 0; routing is on the Gate
+decision as before. Measured with MLflow unreachable (`MLFLOW_URL=http://mlflow-down:5000`):
+Conductor exit 0, terminated at `done_pass`, decision `PASS`, `record_error = "URLError …
+name resolution"`, `mlflow_run_id` empty. `record_error` is now a workflow output.
+
+### Scope, restated
+
+Validated: choosing a provider for a **fixed file task** from provider-reported quota.
+Not validated: per-task capability or allowed-model filtering, per-model quota windows
+(e.g. Claude's "Fable only" window is recorded but not used), served-model identity. This
+result does not extend to arbitrary research/development tasks or to model-level routing.

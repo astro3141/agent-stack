@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, appendFileSync, globSync } from
 import { homedir } from "node:os";
 import { join } from "node:path";
 import http from "node:http";
+import { createHash } from "node:crypto";
 import { createAcpRuntime, createRuntimeStore } from "/opt/npm-global/lib/node_modules/acpx/dist/runtime.js";
 import { createAgentRegistry } from "/opt/npm-global/lib/node_modules/acpx/dist/agent-registry.js";
 
@@ -91,6 +92,16 @@ const PROVIDERS = {
     directEnv() {
       return { CODEX_HOME: "/route/codex", ...EGRESS };
     },
+    // Rollouts record no account. The adapter therefore writes a ledger entry per run binding
+    // Codex's session id to the login it ran as, so the quota collector can refuse a rollout
+    // written under another login (A→B re-login in the same CODEX_HOME).
+    accountFingerprint(direct) {
+      const home = direct ? "/route/codex" : join(homedir(), ".codex");
+      const tok = JSON.parse(readFileSync(join(home, "auth.json"), "utf8")).tokens?.id_token ?? "";
+      const claims = JSON.parse(Buffer.from((tok.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8") || "{}");
+      return claims.email ? "email:" + createHash("sha256").update(claims.email.toLowerCase()).digest("hex").slice(0, 16) : null;
+    },
+    sessionLedger: "/route/codex-session-ledger.jsonl",
     mcpAuth() {
       const t = readFileSync(join(homedir(), ".codex/config.toml"), "utf8");
       const m = t.match(/\[mcp_servers\.preloop\.http_headers\][^[]*?Authorization\s*=\s*'([^']+)'/);
@@ -265,6 +276,8 @@ async function main() {
     timeoutMs: req.timeout_ms ?? 600000,
   });
 
+  let accountAtStart = null;
+  try { accountAtStart = prof.accountFingerprint?.(direct) ?? null; } catch { accountAtStart = null; }
   const t0 = Date.now();
   const text = [], usage = [], mcpDenials = [];
   let result, handle, failure;
@@ -297,6 +310,15 @@ async function main() {
   let status = null;
   try { if (handle) status = await runtime.getStatus({ handle }); } catch { /* best effort */ }
   try { await runtime.shutdown(); } catch { /* best effort */ }
+  if (prof.sessionLedger && status?.backendSessionId) {
+    let accountAtEnd = null;
+    try { accountAtEnd = prof.accountFingerprint(direct); } catch { accountAtEnd = null; }
+    appendFileSync(prof.sessionLedger, JSON.stringify({
+      session_id: status.backendSessionId, run_id: req.run_id, at: new Date().toISOString(),
+      // a login that changed during the run binds the session to no account
+      account: accountAtStart && accountAtStart === accountAtEnd ? accountAtStart : null,
+      account_at_start: accountAtStart, account_at_end: accountAtEnd }) + "\n");
+  }
 
   // Normalized status. TIMED_OUT = the run deadline passed while an approval was still open;
   // the run deadline must exceed the approval window or every unanswered approval ends here.

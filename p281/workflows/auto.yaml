@@ -57,11 +57,14 @@ agents:
       model_session_reported: {type: string}
       model_adapter_reported: {type: string}
       model_served: {type: string}
-      total_tokens: {type: number}
+      measurements:
+        type: object
+        properties:
+          total_tokens: {type: number, required: false}
+          wall_ms: {type: number, required: false}
       approvals_requested: {type: number}
       mcp_rule_denials: {type: number}
       retryable_elsewhere: {type: boolean}
-      wall_ms: {type: number}
       evidence_dir: {type: string}
     routes:
       - to: check
@@ -90,6 +93,7 @@ agents:
     output:
       mlflow_run_id: {type: string}
       experiment_id: {type: string}
+      record_error: {type: string}
     routes:
       - to: done_pass
         when: "{{ check.output.decision == 'PASS' }}"
@@ -106,6 +110,7 @@ agents:
     output:
       mlflow_run_id: {type: string}
       experiment_id: {type: string}
+      record_error: {type: string}
     routes:
       - to: held
 
@@ -137,3 +142,4 @@ output:
   model_adapter_reported: "{% if execute is defined %}{{ execute.output.model_adapter_reported }}{% endif %}"
   model_served: "{% if execute is defined %}{{ execute.output.model_served }}{% endif %}"
   mlflow_run_id: "{% if record is defined %}{{ record.output.mlflow_run_id }}{% endif %}"
+  record_error: "{% if record is defined %}{{ record.output.record_error }}{% endif %}"

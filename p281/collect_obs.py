@@ -58,10 +58,31 @@ def window_name(minutes):
     return "session" if minutes <= 24 * 60 else "weekly"
 
 
-def codex_from_rollouts(home):
-    """Newest rate_limits the execution layer itself received, from its own session rollouts."""
+LEDGER = os.environ.get("P281_CODEX_LEDGER", "/route/codex-session-ledger.jsonl")
+
+
+def ledger_sessions(account):
+    """Session ids the adapter recorded as run under `account` (see run-agent.mjs sessionLedger)."""
+    ok = set()
+    try:
+        for line in open(LEDGER):
+            e = json.loads(line)
+            if account and e.get("account") == account:
+                ok.add(e["session_id"])
+    except FileNotFoundError:
+        pass
+    return ok
+
+
+def codex_from_rollouts(home, account):
+    """Newest rate_limits the execution layer received — only from rollouts whose session the
+    ledger binds to the current executing account. Rollouts record no account themselves, so an
+    unbound rollout (older login, pre-ledger run) is ignored rather than attributed."""
     best = None
+    bound = ledger_sessions(account)
     for f in sorted(glob.glob(os.path.join(home, "sessions", "**", "*.jsonl"), recursive=True))[-20:]:
+        if not any(sid in os.path.basename(f) for sid in bound):
+            continue
         for line in open(f, encoding="utf-8", errors="replace"):
             if '"rate_limits"' not in line:
                 continue
@@ -106,7 +127,7 @@ except Exception:
     executing = None
 cands = []
 try:
-    r = codex_from_rollouts(CODEX_HOME)
+    r = codex_from_rollouts(CODEX_HOME, executing)
     if r:
         # Same credential that executes: the quota the provider returned to *this* login.
         cands.append({"source": f"rollout:{r['file']}", "observed_at": r["observed_at"],

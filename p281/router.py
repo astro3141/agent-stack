@@ -21,8 +21,15 @@ Rules, in order, per candidate (policy "candidates" order is preference order):
   6. otherwise eligible
 First eligible candidate wins. None eligible -> HOLD: the run does not start (fail closed).
 """
-import json, os, sys
+import json, math, os, sys
 from datetime import datetime, timezone
+
+
+def valid_percent(u):
+    """A usable utilisation is a real, finite number in [0, 100]. bool is excluded explicitly
+    (it is an int in Python). Anything else is not a number the router may act on."""
+    return (isinstance(u, (int, float)) and not isinstance(u, bool) and math.isfinite(u)
+            and 0 <= u <= 100)
 
 
 def parse_ts(s):
@@ -49,6 +56,8 @@ def evaluate(cand, obs, policy, now):
     if age > policy["max_age_s"]:
         return {**r, "eligible": False, "why": f"stale: {round(age)}s old > {policy['max_age_s']}s"}
     wins = obs.get("windows") or {}
+    if not isinstance(wins, dict):
+        return {**r, "eligible": False, "why": "unknown: windows malformed"}
     for w in policy.get("require_windows", []):
         if (wins.get(w) or {}).get("used_percent") is None:
             return {**r, "eligible": False, "why": f"unknown: required {w} window not reported"}
@@ -57,6 +66,8 @@ def evaluate(cand, obs, policy, now):
         if u is None:
             r[f"{w}_used"] = "not reported"   # optional window: recorded, not assumed
             continue
+        if not valid_percent(u):
+            return {**r, "eligible": False, "why": f"unknown: {w} used_percent invalid ({u!r})"}
         r[f"{w}_used"] = u
         if u >= limit:
             return {**r, "eligible": False, "why": f"exhausted: {w} {u}% >= {limit}%"}
@@ -71,7 +82,11 @@ def main():
     for cand in policy["candidates"]:
         p = os.path.join(d, f"{cand}.json")
         obs = json.load(open(p)) if os.path.exists(p) else None
-        evaluated.append(evaluate(cand, obs, policy, now))
+        try:
+            evaluated.append(evaluate(cand, obs, policy, now))
+        except Exception as e:   # one malformed observation must not stop the whole choice
+            evaluated.append({"provider": cand, "eligible": False,
+                              "why": f"unknown: observation unreadable ({type(e).__name__})"})
     chosen = next((e for e in evaluated if e["eligible"]), None)
     print(json.dumps({
         "decision": "ROUTE" if chosen else "HOLD",

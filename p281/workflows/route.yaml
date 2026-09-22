@@ -44,11 +44,14 @@ agents:
       model_session_reported: {type: string}
       model_adapter_reported: {type: string}
       model_served: {type: string}
-      total_tokens: {type: number}
+      measurements:
+        type: object
+        properties:
+          total_tokens: {type: number, required: false}
+          wall_ms: {type: number, required: false}
       approvals_requested: {type: number}
       mcp_rule_denials: {type: number}
       retryable_elsewhere: {type: boolean}
-      wall_ms: {type: number}
       evidence_dir: {type: string}
     routes:
       - to: check
@@ -77,6 +80,7 @@ agents:
     output:
       mlflow_run_id: {type: string}
       experiment_id: {type: string}
+      record_error: {type: string}
     routes:
       - to: done_pass
         when: "{{ check.output.decision == 'PASS' }}"
@@ -106,3 +110,4 @@ output:
   model_adapter_reported: "{{ execute.output.model_adapter_reported }}"
   model_served: "{{ execute.output.model_served }}"
   mlflow_run_id: "{{ record.output.mlflow_run_id }}"
+  record_error: "{{ record.output.record_error }}"

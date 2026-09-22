@@ -30,7 +30,7 @@ try:
 except Exception:
     r = {"status": "FAILED", "failure": {"message": (p.stderr or p.stdout)[-400:]}}
 q = ((r.get("turn") or {}).get("_meta") or {}).get("quota") or {}
-print(json.dumps({
+out = {
     "status": r.get("status", "FAILED"),
     "provider": provider,
     "model_route": r.get("model_route") or model_route,
@@ -40,10 +40,16 @@ print(json.dumps({
     "model_session_reported": (r.get("model") or {}).get("session_reported") or "",
     "model_adapter_reported": ",".join(m.get("model", "") for m in q.get("model_usage", [])),
     "model_served": (r.get("model") or {}).get("served") or "unknown",
-    "total_tokens": (q.get("token_count") or {}).get("totalTokens") or 0,
+    # missing is recorded as missing, never as 0
+    "total_tokens": (q.get("token_count") or {}).get("totalTokens"),
     "approvals_requested": sum(1 for x in r.get("permissions", []) if x.get("routed") == "preloop_approval"),
     "mcp_rule_denials": len(r.get("mcp_denials", [])),
     "retryable_elsewhere": bool(r.get("retryable_elsewhere")),
-    "wall_ms": r.get("wall_ms") or 0,
+    "wall_ms": r.get("wall_ms"),
     "evidence_dir": evid,
-}))
+}
+# Measurements go in an object whose fields are optional (Conductor allows optional fields only
+# inside objects): one the adapter did not report is left out, never recorded as 0.
+meas = {k: out.pop(k) for k in ("total_tokens", "wall_ms")}
+out["measurements"] = {k: v for k, v in meas.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+print(json.dumps(out))
