@@ -113,6 +113,40 @@ const PROVIDERS = {
     // would define it twice.
     mcpViaConfig: true,
   },
+  grok: {
+    agent: "grok-build",
+    // xAI's own ACP mode. --no-leader: a fresh backend per run; the shared "leader" process
+    // would let runs (and potentially logins) share one agent backend.
+    argv: process.env.GROK_TAP ? ["sh", "/work/p281/grok-tap.sh"] : ["grok", "agent", "--no-leader", "stdio"],
+    preloopSource: "grok_build",
+    // Direct only: there is no Preloop gateway route for Grok. The routing layer's own login
+    // (GROK_HOME=/route/grok) and the allowlist proxy.
+    env() { return {}; },
+    // HOME is separate too: Grok imports Claude Code's user settings from $HOME (~/.claude,
+    // ~/.claude.json) for compatibility. Measured: it ran the Preloop PreToolUse hook that
+    // onboarding installed for Claude on every Grok tool call — each became a human approval
+    // request labelled `claude_code`, and each stalled the run for the hook's 300 s timeout.
+    directEnv() { return { GROK_HOME: "/route/grok", HOME: "/route/grok/home", ...EGRESS }; },
+    directOnly: true,
+    // Grok is not onboarded to Preloop, so it has no principal of its own yet; see FINDINGS.
+    mcpAuth() {
+      return JSON.parse(readFileSync(join(homedir(), ".claude.json"), "utf8")).mcpServers.preloop.headers.Authorization;
+    },
+    disableNative() { return {}; },
+    // Grok did not connect an MCP server handed over ACP (no connection attempt in its log;
+    // its tool search waited ~5 min per call for a server "still connecting"). The same server
+    // registered in its own config (/route/grok/config.toml, `grok mcp add preloop …`) is healthy.
+    mcpViaConfig: true,
+    // A call to a tool of the Preloop MCP server (registered as "preloop" in Grok's own config):
+    // decided by Preloop's rules at the MCP proxy, so not sent to human approval as well.
+    // (Measured: a `permissions.allow = ["mcp__preloop__*"]` entry in Grok's config.toml did not
+    // stop Grok asking the ACP client.)
+    governedDownstream(raw) {
+      const tc = raw.toolCall ?? {};
+      return tc._meta?.["x.ai/tool"]?.name === "use_tool" && tc.rawInput?.variant === "UseTool"
+        && typeof tc.rawInput?.tool_name === "string" && tc.rawInput.tool_name.startsWith("preloop__");
+    },
+  },
 };
 // -----------------------------------------------------------------------------------------
 
@@ -204,7 +238,7 @@ async function main() {
   const extraEnv = mcpOnly ? prof.disableNative(req.cwd) : {};
   // model_route: "direct" → the routing layer's own login + allowlist proxy; otherwise the
   // Preloop model gateway (the #278 path). Refused if the provider has no direct profile.
-  const direct = req.model_route === "direct";
+  const direct = req.model_route === "direct" || !!prof.directOnly;
   if (direct && !prof.directEnv) throw new Error(`no direct route for ${req.provider}`);
   const routeEnv = direct ? prof.directEnv() : {};
   const mcpServers = mcpOnly && !prof.mcpViaConfig ? [{
@@ -217,7 +251,7 @@ async function main() {
     mcpServers,
     agentProcessEnv: { ...prof.env(), ...extraEnv, ...routeEnv },
     sessionStore: createRuntimeStore({ stateDir: join(evDir, "acpx-state") }),
-    agentRegistry: createAgentRegistry(),
+    agentRegistry: createAgentRegistry(prof.argv ? { overrides: { [prof.agent]: prof.argv } } : undefined),
     permissionMode: "deny-all",                 // fallback if the handler throws / returns undefined
     nonInteractivePermissions: "deny",
     timeoutMs: req.timeout_ms ?? 600000,

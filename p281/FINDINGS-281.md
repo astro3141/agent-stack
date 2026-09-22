@@ -795,3 +795,94 @@ open-source choice) and patching it for subscriptions. Rejected for now:
 Consequence: the routing layer stays self-maintained — acpx (agent execution) + `run-agent.mjs`
 (profiles, Preloop wiring, result contract) + `router.py` / `collect_obs.py` (quota routing)
 + the observer and the allowlist egress.
+
+---
+
+## A third provider: Grok Build (xAI), and routing between real choices
+
+Why: routing can only be tested with two providers eligible at once. Claude's quota source is
+stale (Preloop gateway snapshots) and a routing-layer Claude login needs the operator at the
+PC; Grok could be logged in from a phone.
+
+Antigravity (agy) was **not** added. Google's Antigravity terms state that using third-party
+software to access the service with Antigravity OAuth — the example given is "OpenClaw with
+Antigravity OAuth", and acpx is an OpenClaw project — is a breach that may suspend Antigravity
+*and* Gemini CLI accounts; paying subscribers were reported suspended in September 2026. The
+official agy has no ACP mode (feature request open); it has a headless stream-json mode, which
+might be a sanctioned path but was not assessed. Not tried on the operator's account.
+
+### Setup
+
+- `@xai-official/grok@1.0.40` in the image; acpx's built-in `grok-build` profile, overridden to
+  `grok agent --no-leader stdio` (the default shared "leader" process would let runs share one
+  backend).
+- Routing-layer login `GROK_HOME=/route/grok` via `grok login --device-auth` through the
+  allowlist proxy (operator on a phone). SuperGrok account.
+- Allowlist + `auth.x.ai`, `accounts.x.ai`, `api.x.ai`, `cli-chat-proxy.grok.com`. Refused and
+  not needed for runs: `grok.com`, `api.mixpanel.com` (telemetry), `preloop.ai`,
+  `registry.npmjs.org`.
+- Preloop MCP registered in Grok's own config (`grok mcp add preloop http://console/mcp/v1`).
+
+### Three problems found on the way
+
+1. **Grok ignores an MCP server handed over ACP.** `session/new` carried the server; Grok's log
+   shows no connection attempt, and its tool search waited for a server "still connecting".
+   Registered in its own config the same server is healthy (`grok mcp doctor`: handshake OK,
+   20 tools). Profile uses the config (`mcpViaConfig`), like Codex.
+2. **Grok imports Claude Code's user settings from `$HOME`.** Its MCP doctor lists
+   `~/.claude.json` as a config source, and captured ACP traffic shows `hook_run_started
+   pre_tool_use` running `global/settings:pre_tool_use[0]` — the Preloop permission hook that
+   onboarding installed **for Claude**. Every Grok tool call became a Preloop human-approval
+   request labelled `claude_code` and stalled for the hook's 300 s timeout (7 stray requests,
+   declined afterwards). A cross-vendor configuration leak, and a mis-attribution in Preloop's
+   record. Fix: `HOME=/route/grok/home` for the Grok process; the doctor then reports
+   `~/.claude.json not found`.
+3. **Grok asks the client about its own MCP calls.** A `permissions.allow = ["mcp__preloop__*"]`
+   entry in Grok's config did not stop it. The profile recognises the call
+   (`_meta["x.ai/tool"].name == "use_tool"`, `rawInput.tool_name` prefixed `preloop__`) and
+   passes it, because the decision is Preloop's rule at the MCP proxy — as for Claude.
+
+Also seen: acpx prints `Got response to unknown request skills-reload` (Grok's `_x.ai/*`
+extension traffic); harmless once the hook stall was removed.
+
+### Results
+
+| run | outcome | file | Preloop gateway |
+|---|---|---|---|
+| `ok.txt` | `COMPLETED`, 14 s | `G1` | 0 |
+| `forbidden.txt` | `DENIED` by the Preloop rule | absent | 0 |
+| native write, told not to use MCP | ACP permission → Preloop approval, unanswered → `TIMED_OUT` | absent | 0 |
+
+Native write/shell for Grok are not removed yet (it has `--deny` rules; not wired). As with
+Codex's `apply_patch`, they are held for human approval, where the rules do not apply.
+
+### Quota
+
+CodexBar reads Grok quota with the routing layer's own login, through the proxy, **inside the
+agent container** — no observer needed: SuperGrok, weekly 1 %, resets 2026-09-28,
+`updatedAt` present. Basis `same-credential`. No session window reported.
+
+The Claude source had started failing with 401: the collector read the Preloop CLI token from
+`config.yaml`, which had expired; it now asks `preloop auth token`, which refreshes.
+
+### Routing between real choices
+
+Live observations: codex weekly 19 %, grok weekly 1 %, claude stale.
+
+| policy | route | executed on | Preloop gateway | egress | Gate |
+|---|---|---|---|---|---|
+| default (weekly ≤ 90 %) | `ROUTE codex` | Codex, direct | 0 | `chatgpt.com` | PASS (earlier run) |
+| codex's real 19 % over a 15 % test limit | **`ROUTE grok`** | Grok, direct | 0 | `api.x.ai`, `cli-chat-proxy.grok.com` | **PASS** |
+
+The choice changed because of the providers' own reported quota, and the workflow, Gate and
+MLflow record were the same for both.
+
+Router controls, now over three providers: **14 / 14** — every codex fault (account mismatch,
+unknown executing account, stale, future timestamp, missing window, exhausted, observer down)
+falls through to grok; grok mismatch + codex exhausted → HOLD; both stale → HOLD; all three
+exhausted → HOLD; codex and grok exhausted with claude fresh → claude.
+
+### Preloop attribution for Grok
+
+Grok is not a Preloop-onboarded agent, so its MCP calls use the Claude Code principal's MCP
+bearer and are recorded under that principal. Open: a Grok principal of its own.

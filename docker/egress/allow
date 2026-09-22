@@ -5,3 +5,7 @@
 ^platform\.claude\.com$
 ^console\.anthropic\.com$
 ^claude\.ai$
+^auth\.x\.ai$
+^accounts\.x\.ai$
+^api\.x\.ai$
+^cli-chat-proxy\.grok\.com$

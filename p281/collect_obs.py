@@ -130,10 +130,43 @@ if cands:
 # no candidates → no file → router treats codex as unknown
 
 
+# ---- grok -------------------------------------------------------------------------------
+# CodexBar, run here with the routing layer's own Grok login (GROK_HOME=/route/grok) through
+# the allowlist proxy. The reading is taken with the credential that executes → "same-credential".
+if ROUTES.get("grok") == "direct":
+    import subprocess
+    try:
+        p = subprocess.run(["codexbar", "usage", "--provider", "grok", "--json"], capture_output=True,
+                           text=True, timeout=60, env={**os.environ, "HOME": "/route/grok/home",
+                           "GROK_HOME": "/route/grok", "HTTPS_PROXY": "http://egress:8888",
+                           "https_proxy": "http://egress:8888", "HTTP_PROXY": "http://egress:8888",
+                           "NO_PROXY": "console,api,mlflow,localhost"})
+        item = next((x for x in json.loads(p.stdout or "[]") if x.get("provider") == "grok"), None)
+        u = (item or {}).get("usage") or {}
+        wins = {}
+        for k in ("primary", "secondary"):
+            w = u.get(k)
+            if w and w.get("usedPercent") is not None:
+                wins[window_name(w.get("windowMinutes"))] = {"used_percent": w["usedPercent"],
+                    "resets_at": w.get("resetsAt"), "window_minutes": w.get("windowMinutes")}
+        acct = fp((u.get("identity") or {}).get("accountEmail") or "")
+        write("grok", {"provider": "grok", "source": f"codexbar:{(item or {}).get('source')}",
+                       "observed_at": u.get("updatedAt"), "observed_account": acct,
+                       "executing_account": acct if item else None,
+                       "identity_basis": "same-credential", "model_route": "direct", "windows": wins,
+                       **({} if item else {"error": (p.stderr or "")[-200:]})})
+    except Exception as e:
+        write("grok", {"provider": "grok", "source": "codexbar", "observed_at": None,
+                       "observed_account": None, "executing_account": None,
+                       "identity_basis": "same-credential", "windows": {}, "error": str(e)[:200]})
+
+
 # ---- claude -----------------------------------------------------------------------------
 try:
-    tok = [l.split(":", 1)[1].strip() for l in open(os.path.expanduser("~/.preloop/config.yaml"))
-           if l.startswith("access_token:")][0]
+    # `preloop auth token` refreshes an expired CLI token; reading config.yaml directly returned
+    # a stale one (measured: 401).
+    import subprocess
+    tok = subprocess.run(["preloop", "auth", "token"], capture_output=True, text=True, timeout=30).stdout.strip().split()[-1]
     d = json.load(urllib.request.urlopen(urllib.request.Request(
         "http://api:8000/api/v1/account/gateway-usage/rate-limits",
         headers={"Authorization": "Bearer " + tok}), timeout=20))
