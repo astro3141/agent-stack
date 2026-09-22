@@ -26,6 +26,15 @@ import { createAgentRegistry } from "/opt/npm-global/lib/node_modules/acpx/dist/
 // Own variable: the container already sets PRELOOP_URL=http://console for the Preloop CLI.
 const PRELOOP_URL = process.env.PRELOOP_API_URL ?? "http://api:8000";
 
+// Option B egress: the routing layer's allowlist proxy. Preloop (tools, approvals), MLflow and
+// in-network names stay direct.
+const EGRESS = {
+  HTTPS_PROXY: "http://egress:8888", HTTP_PROXY: "http://egress:8888",
+  https_proxy: "http://egress:8888", http_proxy: "http://egress:8888",
+  NO_PROXY: "console,api,gateway,mlflow,localhost,127.0.0.1",
+  no_proxy: "console,api,gateway,mlflow,localhost,127.0.0.1",
+};
+
 // ---- vendor-specific: the only place a provider is named -------------------------------
 const PROVIDERS = {
   claude: {
@@ -69,6 +78,12 @@ const PROVIDERS = {
     // reads — unlike acpx's Claude profile. The default ACP mode "agent" hands approvals to
     // Codex's own Guardian reviewer model; "read-only" hands them to the ACP client.
     env() { return { INITIAL_AGENT_MODE: "read-only" }; },
+    // Option B: the routing layer owns the provider connection. Its own login lineage lives in
+    // /route/codex (not the Preloop-custodied one in ~/.codex); traffic leaves only through the
+    // allowlist proxy. The Preloop gateway is not on this path.
+    directEnv() {
+      return { CODEX_HOME: "/route/codex", ...EGRESS };
+    },
     mcpAuth() {
       const t = readFileSync(join(homedir(), ".codex/config.toml"), "utf8");
       const m = t.match(/\[mcp_servers\.preloop\.http_headers\][^[]*?Authorization\s*=\s*'([^']+)'/);
@@ -81,11 +96,22 @@ const PROVIDERS = {
       // default_tools_approval_mode=approve on the Preloop MCP server: those calls are decided
       // by Preloop rules downstream. Without it Codex asks the client, and its request names
       // neither the server nor the tool (`_meta.is_mcp_tool_approval` only).
+      // The server is defined here in full (url, bearer) rather than relying on the entry
+      // Preloop onboarding wrote into ~/.codex/config.toml: with CODEX_HOME=/route/codex that
+      // file is not read, and a bare `default_tools_approval_mode` then attaches to nothing
+      // (measured: the MCP call went back to human approval). Env only — never written to disk.
       return { CODEX_CONFIG: JSON.stringify({
         features: { shell_tool: false, unified_exec: false },
-        mcp_servers: { preloop: { default_tools_approval_mode: "approve" } },
+        mcp_servers: { preloop: {
+          url: `${process.env.PRELOOP_URL ?? "http://console"}/mcp/v1`,
+          http_headers: { Authorization: this.mcpAuth() },
+          default_tools_approval_mode: "approve",
+        } },
       }) };
     },
+    // Codex gets the Preloop MCP server from CODEX_CONFIG above; attaching it over ACP as well
+    // would define it twice.
+    mcpViaConfig: true,
   },
 };
 // -----------------------------------------------------------------------------------------
@@ -176,7 +202,12 @@ async function main() {
   // allows it, and whatever remains still escalates to Preloop approval.
   const mcpOnly = req.native_tools === false;
   const extraEnv = mcpOnly ? prof.disableNative(req.cwd) : {};
-  const mcpServers = mcpOnly ? [{
+  // model_route: "direct" → the routing layer's own login + allowlist proxy; otherwise the
+  // Preloop model gateway (the #278 path). Refused if the provider has no direct profile.
+  const direct = req.model_route === "direct";
+  if (direct && !prof.directEnv) throw new Error(`no direct route for ${req.provider}`);
+  const routeEnv = direct ? prof.directEnv() : {};
+  const mcpServers = mcpOnly && !prof.mcpViaConfig ? [{
     type: "http", name: "preloop", url: `${process.env.PRELOOP_URL ?? "http://console"}/mcp/v1`,
     headers: [{ name: "Authorization", value: prof.mcpAuth() }],
   }] : undefined;
@@ -184,7 +215,7 @@ async function main() {
   const runtime = createAcpRuntime({
     cwd: req.cwd,
     mcpServers,
-    agentProcessEnv: { ...prof.env(), ...extraEnv },
+    agentProcessEnv: { ...prof.env(), ...extraEnv, ...routeEnv },
     sessionStore: createRuntimeStore({ stateDir: join(evDir, "acpx-state") }),
     agentRegistry: createAgentRegistry(),
     permissionMode: "deny-all",                 // fallback if the handler throws / returns undefined
@@ -252,6 +283,7 @@ async function main() {
       ({ acp_kind, title, outcome, denial, request_id: preloop?.request_id ?? null, error, routed: routed ?? "preloop_approval" })),
     mcp_denials: mcpDenials,
     native_tools: !mcpOnly,
+    model_route: direct ? "direct" : "preloop_gateway",
     turn: result ?? null,
     failure: failure ?? null,
     text: text.join(""),

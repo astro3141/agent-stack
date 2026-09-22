@@ -682,3 +682,69 @@ Workflow and router contain no vendor name; vendor translation lives in the coll
   identity.
 - Observer liveness: the loop runs via `docker exec -d` and does not survive a container
   restart; a restart shows up as `stale` (fail closed), not as wrong numbers.
+
+---
+
+## Option B, model path — the routing layer owns the provider connection (Codex)
+
+Why: Conductor decides *when* to call a model and the router decides *which*; but the pipe
+and the credential were still Preloop's gateway, so the usable providers were still bounded
+by what Preloop's gateway supports. That placement came from #278's setup (a §4.1 test item,
+the "gateway is the only egress" isolation, and onboarding taking custody — F8), not from
+Preloop owning the decision.
+
+### Setup
+
+- `cadp278-egress`: tinyproxy, CONNECT :443 only, allowlist `chatgpt.com`, `auth.openai.com`,
+  `api.openai.com`, `api.anthropic.com`, `platform.claude.com`, `console.anthropic.com`,
+  `claude.ai`. On `cadp278-governed` (alias `egress`) and `cadp278-egressnet`. Measured: the
+  agent still has no default route and no direct egress; through the proxy the provider hosts
+  answer (403/404 from the servers) and `pypi.org`, `github.com`, `example.com` are refused
+  ("Proxying refused on filtered domain").
+- `cadp278-route-creds` at `/route` (mode 700): the routing layer's **own** Codex login
+  (`CODEX_HOME=/route/codex codex login --device-auth`, via the proxy; operator on a phone).
+  A separate lineage from the credential Preloop custodies (F8: never share a rotating token
+  between two custodians). Same ChatGPT account (email fingerprint equal).
+- Adapter: request `model_route: "direct"` → `PROVIDERS.codex.directEnv()` = `CODEX_HOME` +
+  proxy env; the Preloop MCP server (tools stay governed by Preloop) is now defined entirely in
+  `CODEX_CONFIG` (env, not written anywhere) instead of the onboarding-written config file.
+
+### Results
+
+| run | route | Preloop gateway model requests | egress | outcome |
+|---|---|---|---|---|
+| `d1` (first try) | direct | **0** | `chatgpt.com` ×13 | `TIMED_OUT` — see below |
+| `d2` `ok.txt` | direct | **0** | `chatgpt.com` ×16 | `COMPLETED`, file `D1` |
+| `d3` `forbidden.txt` | direct | **0** | `chatgpt.com` | `DENIED` by the **Preloop MCP rule**, file absent |
+
+So: model traffic no longer touches Preloop; file work is still decided by Preloop's rules.
+
+`d1` failed because the MCP auto-approve setting (`default_tools_approval_mode`) had been
+attaching to the server entry that Preloop onboarding wrote into `~/.codex/config.toml`. With
+`CODEX_HOME` moved, that file is not read, the setting attached to nothing, and the MCP call
+fell back to a nameless client approval. Defining the server fully in `CODEX_CONFIG` fixed it
+— and removed ledger item #7: **Codex's configuration no longer depends on anything outside
+the routing layer.**
+
+`*.oaiusercontent.com` (several regional hosts) is contacted by Codex at start and refused by
+the allowlist; runs complete without it. Purpose not established; left refused.
+
+### Quota on the execution path
+
+Behind the Preloop gateway, Codex's rollout carried `rate_limits` with every field `null`.
+On the direct route the same record carries:
+
+```
+"primary": {"used_percent": 19.0, "window_minutes": 10080, "resets_at": 1790419759}, "plan_type": "prolite"
+```
+
+— the same numbers CodexBar reports from the observer. The routing layer now sees the quota
+of the account it executes as, from its own execution, without Preloop and without a second
+login. The observer remains useful before the first run and when idle.
+
+### Still open
+
+- Claude on the direct route: needs a routing-layer Claude login (`CLAUDE_CONFIG_DIR=/route/claude`
+  + proxy), which has to be pasted into a terminal — operator at the PC.
+- `collect_obs.py` should read Codex quota from the routing layer's own rollouts as the primary
+  source (fresh after every run), with the observer as fallback.

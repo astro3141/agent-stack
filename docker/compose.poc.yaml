@@ -10,6 +10,9 @@
 name: cadp278
 
 networks:
+  # #281 option B: internet side of the routing layer's allowlist proxy.
+  egressnet:
+    name: cadp278-egressnet
   # #281 quota observer: ordinary bridge (egress) for the observer ONLY. The agent is never on
   # it; observations reach the agent through a read-only volume, not over the network.
   quotanet:
@@ -45,6 +48,10 @@ volumes:
   # files it writes (mounted read-only in the agent).
   quota-home:
     name: cadp278-quota-home
+  # #281 option B: the routing layer's own provider logins (a lineage separate from the
+  # credentials Preloop custodies), mounted in the agent at /route.
+  route-creds:
+    name: cadp278-route-creds
   quota-obs:
     name: cadp278-quota-obs
 
@@ -70,6 +77,7 @@ services:
       - agent-home:/home/agent
       - ws:/ws
       - quota-obs:/obs:ro
+      - route-creds:/route
     environment:
       POC_DIR: /work
       POC_PY: /opt/venv/bin/python
@@ -149,3 +157,15 @@ services:
       - quota-home:/home/agent
       - quota-obs:/obs
     command: ["sleep", "infinity"]
+
+  # #281 option B: the routing layer's egress — allowlisted provider hosts only.
+  egress:
+    build:
+      context: .
+      dockerfile: egress.Dockerfile
+    image: cadp278/egress:local
+    container_name: cadp278-egress
+    networks:
+      governed:
+        aliases: [egress]
+      egressnet: {}
