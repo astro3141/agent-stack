@@ -772,3 +772,26 @@ model requests 0, egress `CONNECT chatgpt.com` ×18) → Gate `PASS` → MLflow,
 
 The observer is now a fallback: it matters before the first run and after idle periods, when
 the rollout is older than the freshness bound.
+
+---
+
+## Decision (2026-09-22): keep the acpx layer as the routing solution
+
+Considered: moving routing and quota logic onto a model-API gateway (LiteLLM Proxy, the de facto
+open-source choice) and patching it for subscriptions. Rejected for now:
+
+- **Subscriptions are a hard requirement.** Gateways of this kind assume pay-per-token API keys.
+  Their budgets are dollar spend (zero on a subscription) and their usage-based routing
+  counts their own tokens/requests. Neither is the provider's 5 h / weekly utilization,
+  which is what subscription quota is.
+- **They route model calls, not agents.** Switching Claude ↔ Codex means switching the whole
+  agent CLI; a model-level router would instead feed one agent's requests to another vendor's
+  backend (the Codex subscription backend expects Codex-shaped requests).
+- What such a gateway would add (fallback/cooldown, rule-based routing, logging) is useful
+  mainly *within* one vendor (several accounts or models). If that becomes a need, it can sit
+  under the acpx layer later. Using subscription tokens through a proxy or pooling accounts
+  must be checked against provider terms first.
+
+Consequence: the routing layer stays self-maintained — acpx (agent execution) + `run-agent.mjs`
+(profiles, Preloop wiring, result contract) + `router.py` / `collect_obs.py` (quota routing)
++ the observer and the allowlist egress.
