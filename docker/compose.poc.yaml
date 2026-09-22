@@ -10,6 +10,9 @@
 name: cadp278
 
 networks:
+  # UX track: the ops API's own network (nothing else joins it; the UI will).
+  opsnet:
+    name: cadp278-opsnet
   # #281 option B: internet side of the routing layer's allowlist proxy.
   egressnet:
     name: cadp278-egressnet
@@ -180,3 +183,21 @@ services:
       governed:
         aliases: [egress]
       egressnet: {}
+
+  # UX track: the only component with Docker control — a fixed set of actions over HTTP.
+  # Published on 127.0.0.1 only, which narrows who can reach it, not what it can do.
+  ops:
+    build:
+      context: ..
+      dockerfile: docker/ops.Dockerfile
+    image: cadp278/ops:local
+    container_name: cadp278-ops
+    restart: unless-stopped
+    networks:
+      - opsnet
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      OPS_AGENT_CONTAINER: cadp278-agent
+    ports:
+      - "127.0.0.1:8781:8781"

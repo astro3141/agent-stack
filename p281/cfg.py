@@ -165,7 +165,7 @@ def write_generated(path, obj, source_sha):
     return sha_bytes(data)
 
 
-def cmd_generate():
+def cmd_generate(quiet=False):
     v = cmd_validate(quiet=True)
     if not v["ok"]:
         print(json.dumps({"ok": False, "errors": v["errors"]}, indent=1))
@@ -202,7 +202,8 @@ def cmd_generate():
             if pp.stem not in t["used_by"]:
                 t["used_by"].append(pp.stem)
     save_state(st)
-    print(json.dumps({"ok": True, "generated": sorted(k for k, v in st["targets"].items() if v["kind"] == "generated")}, indent=1))
+    if not quiet:
+        print(json.dumps({"ok": True, "generated": sorted(k for k, v in st["targets"].items() if v["kind"] == "generated")}, indent=1))
     return 0
 
 
@@ -223,7 +224,8 @@ def preloop_call(env, method, path, token):
 
 
 def cmd_apply(dry_run=False):
-    if cmd_generate() != 0:
+    if cmd_generate(quiet=True) != 0:
+        print(json.dumps({"ok": False, "results": {}, "error": "generate failed — run validate"}))
         return 1
     st = load_state()
     env = load_yaml(CFG / "environment.yaml")

@@ -1,0 +1,11 @@
+{
+  "profile": "cost-first",
+  "route": "ROUTE: codex: within limits",
+  "decision": "PASS",
+  "provider": "codex",
+  "status": "COMPLETED",
+  "model_adapter_reported": "gpt-6-astra",
+  "model_served": "unknown",
+  "mlflow_run_id": "dca26cb0fa2c470db288cdff221a2602",
+  "record_error": ""
+}

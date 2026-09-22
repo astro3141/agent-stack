@@ -1180,3 +1180,53 @@ Measured:
 
 Limitation: `applied` for the Preloop policy is what *this tool* last applied. A policy applied
 to Preloop by other means is not detected (no drift check against Preloop's current policy).
+
+## UX track — approval separation, checked against Preloop 0.15.0 (2026-09-22)
+
+Completion condition (agreed): the operator *can* approve and the agent's credential *cannot*,
+measured. Result: **not achievable on Preloop OSS 0.15.0; kept open.**
+
+- The agent's enrolment token (`agt_…`) is an API key. `get_current_user` resolves an API key to
+  its owner **user**; `approve_request` is guarded by `require_permission("decide_approvals")`
+  on that user; `has_permission` is role-based. The key was issued by the account owner, so it
+  carries the owner role's `decide_approvals`. (`ApiKey.scopes` exists in the model but is not
+  checked on authentication.)
+- Roles without `decide_approvals` exist (`analyst`, `viewer`, `tracker_manager`), so a
+  dedicated agent user with such a role would separate the two. But the OSS API has **no user
+  creation, invitation or role-assignment endpoint** (only `GET /api/v1/roles` and
+  `/auth/users/me`); registration is closed after the first user. Only an unsupported database
+  edit could create one — not done.
+- Consequence for the design: approval actions will be issued only with an operator credential
+  held **outside** the agent container (the ops side), so the gap closes as soon as Preloop can
+  issue the agent a credential without approval rights.
+
+## UX track, step 3 — login and run API with a Docker-operation boundary (2026-09-22)
+
+- `cadp278-ops` (`docker/ops.Dockerfile`: `docker:27.5.1-cli` + Python stdlib; `ops/server.py`):
+  the **only** component with the Docker socket. A fixed route table; every route is one
+  predetermined `docker exec` into the agent with an argv list (no shell) and validated
+  arguments (provider allowlist, `[a-z0-9-]` names, workflow allowlist, input charset). Published
+  on `127.0.0.1:8781` — which limits who reaches it, not what it can do. Request bodies (which
+  carry authorization codes) are never logged. The UI will call only this API.
+- `p281/login_helper.py` (agent side): runs the provider's official login CLI under a
+  pseudo-terminal, through the allowlist proxy, into `<logins_root>/<login>`; parses the official
+  URL and device code; hands a pasted code to the CLI through a FIFO (never on disk, never
+  logged); reports `starting` / `waiting_for_browser` / `waiting_for_code` / `connected` /
+  `failed` plus the account state. umask 077.
+- `p281/run_workflow.py` (agent side): starts an allowlisted workflow with a profile and inputs as
+  an argv list; the run view is read from Conductor's own event log (steps, current step, the
+  router's decision, termination step and reason, final output) — no second copy of progress.
+
+Measured through the API:
+
+| call | result |
+|---|---|
+| `GET /api/profiles`, `/api/config/status`, `POST /api/config/apply` | profiles listed; four targets `applied`; apply → "already applied" |
+| `GET /api/accounts?profile=research-default` | per provider: `connected`, account match true, age, weekly/session use, identity basis; router decision `ROUTE claude` |
+| login start / status / cancel (test login name) | Codex: official device URL + code, `waiting_for_browser`; earlier direct test of the helper: Grok URL + code, Claude URL + `waiting_for_code` |
+| invalid login name (`../etc`), invalid workflow (`rm -rf`) | rejected (400) |
+| `POST /api/runs {auto, cost-first}` then poll `GET /api/runs/<id>` | steps `route → execute → check → record → done_pass`; route `codex`/direct/`cost-first`; `PASS`; `record_error` empty |
+| ops log | method + path only; no code-like strings |
+
+Not yet exercised: a real account connection completed through the API (needs the operator);
+planned through the UI in step 4.
