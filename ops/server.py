@@ -155,6 +155,11 @@ class H(BaseHTTPRequestHandler):
                 "links": {
                     "preloop": f"http://127.0.0.1:{os.environ.get('PRELOOP_CONSOLE_PORT', '3000')}",
                     "mlflow": f"http://127.0.0.1:{os.environ.get('MLFLOW_PORT', '5000')}",
+                    # runs and traces land in different experiments: the records this stack writes
+                    # (p281-routing) and Conductor's OTel spans (cadp-278-composition-poc). The
+                    # second one is a dashboard nothing here pointed at until it was reviewed.
+                    "mlflow_traces": f"http://127.0.0.1:{os.environ.get('MLFLOW_PORT', '5000')}"
+                                     f"/#/experiments/1?compareRunsMode=TRACES",
                 }})
         if p == "/api/checks":             # what scripts/up.sh --check last found, and when
             rc, out, _ = dexec(["cat", "/work/evidence/checks/last.json"])

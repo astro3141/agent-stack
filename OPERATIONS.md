@@ -854,19 +854,65 @@ runs takes about two seconds (`showing cyc-…: /work/evidence/ui-runs/cyc-…/t
 in the container's log). What remains true is the part above — a *live* run's own dashboard
 (`conductor run --web`) is still unreachable, because that one is served from inside the agent.
 
-## 15. What each solution still owns, and what that costs
+## 15. Each solution, on three axes: what it does, what it can be switched to, and what it shows
 
-The panel is one address, but it is not the only place this stack can be changed. This is the
-review of where every control surface sits after the consolidation — including the ones
-deliberately left where they are.
+The consolidation is easier to judge one axis at a time. **Function** is what a solution does for
+this stack; **mode** is a switch that changes how it behaves; **dashboard** is a screen it brings.
 
-| solution | its own surface | where it is now |
+### Preloop OSS 0.15.0
+
+| axis | what it has | where it is now |
 |---|---|---|
-| **Preloop** | console at `:3000` — policies and their versions, principals and credentials, tool rules, MCP servers, approval workflows, approval **bypasses**, cost | linked. One control was brought over: **deciding a pending approval**, because that is a run stopped waiting for a person (§12) |
-| **Conductor** | a live dashboard per run (`--web`), `status` / `fleet` in a terminal, human **gates** (`conductor gate`), mid-run guidance (`conductor guide`) | the run dashboard is in the panel, rendered from the recorded event log (§14). `status`/`fleet` stay in the terminal. **Gates and guidance are not used by any workflow here**, so nothing was brought over — if a workflow ever uses a gate, it becomes a human decision and belongs in the panel |
-| **MLflow** | its own UI for runs and comparison | linked. Nothing mode-like to bring |
-| **acpx** | no UI; permission mode is decided per call by the adapter (`deny-all` fallback, `native_tools`) | ours already — it is configuration, not a screen |
-| **this stack** | compositions, cycles, retention, backup/restore, release/rollback | commands and configuration files, with their **state** shown in the panel (§12) |
+| function | MCP proxy with per-subject tool rules; the native-tool permission check the hook calls; the approval channel; managed agents and their credentials; account policy (generate, validate, versions); model gateway; cost analytics; flows and trackers | used: the first four. The gateway is unused on the direct route; flows, trackers and cost are not used at all |
+| **mode** | **approval bypass** (stop asking, for a while); which **policy version** is applied; **tool on/off per principal** (`tool_enabled_overrides`); an MCP server's `default_tools_approval_mode` (decide by rules vs ask a human); `registration_enabled`; the hook's `safe_read_auto_allow` | set by us from files (`cfg.py`, the MCP server entries) except the first two. **Bypasses and the applied policy are read and shown** (`p281/elsewhere.py`, `cfg.py status` → `replaced`); changing them stays in the console |
+| dashboard | the console at `:3000` — approvals, policies, principals, cost | linked. One control brought over: deciding a pending approval (§12) |
+
+### Conductor v0.1.37
+
+| axis | what it has | where it is now |
+|---|---|---|
+| function | run a workflow; resume from a checkpoint; replay an event log; validate; show; status; stop; fleet; **human gates**; mid-run guidance | run/resume/validate are used through `run_workflow.py`. Gates and guidance are **not used by any workflow here** — the day one is, it becomes a human decision and belongs in the panel |
+| **mode** | `--silent` / `--quiet`; `--no-interactive`; `--web` / `--web-bg`; checkpointing (what `resume` needs); `parallel` / `for_each` groups (which refuse script steps, §trials) | set by us in `run_workflow.py`; `--web` deliberately off (§14) |
+| dashboard | a live dashboard per run; a **replay** dashboard for a recorded log; `fleet` in a terminal | the replay dashboard **is in the panel** (§14). The live one is unreachable by construction. `fleet` stays a terminal command |
+
+### MLflow 3.16.1
+
+| axis | what it has | where it is now |
+|---|---|---|
+| function | experiments, runs, params, metrics, tags, artifacts, nested runs — and **OTLP trace ingest** | both used. Runs are written by `record.py`; traces arrive from Conductor's OTel exporter, which the agent's environment points at MLflow |
+| **mode** | server-side job execution (turned **off**, §compositions); worker count (**1**); allowed hosts; artifact destination | ours, in the compose file |
+| dashboard | the runs and comparison UI — **and a separate trace view** | both linked now. They are **different experiments**: this stack's records in `p281-routing`, Conductor's spans in `cadp-278-composition-poc` (500+ spans, newest from the last cycle). Nothing pointed at the second one until this review |
+
+### acpx 0.18.0
+
+| axis | what it has | where it is now |
+|---|---|---|
+| function | the ACP runtime, an agent registry, a session store, the permission handler, MCP server attachment, timeouts | all used by `run-agent.mjs` |
+| **mode** | `permissionMode: deny-all` (the fallback when the handler throws); `nonInteractivePermissions: deny`; MCP over ACP vs the vendor's own config; `model_route` direct vs the Preloop gateway; `native_tools` on/off; `mcp_principal` | ours, per call in the request — configuration, not a screen |
+| dashboard | none | — |
+
+### This stack
+
+| axis | what it has | where it is now |
+|---|---|---|
+| function | admission, role binding, execution, concurrency and chains, recording, capabilities, cleanup, backup/restore, release/rollback, soak, unattended cycle, health | commands; their **state** is in the panel |
+| **mode** | composition (`full` / `no-record` / `runtime`); profile (`research-default` / `cost-first`); `--allow-unrecorded`; retention flags | commands and files, by the rule in CONTRACT.md — with the composition and the profile shown in the panel |
+| dashboard | the panel: dashboard, accounts, run, run history, and Conductor's replay inside it | one address, `127.0.0.1:8780` |
+
+### What this review changed
+
+1. **MLflow's trace view was invisible.** Conductor has been exporting spans to MLflow all along —
+   500+ of them, newest from the last cycle — into a different experiment from the run records.
+   Linked now, and named for what it is.
+2. Everything else was already accounted for. The two that stay outside on purpose are Conductor's
+   `fleet` (a terminal view of running processes) and Preloop's console for editing what it owns.
+
+
+
+## 16. The switches elsewhere that would make this panel's claims untrue
+
+§15 says where every surface sits. This section is about the subset that can change *under* us:
+a switch flipped in another console that would make something the panel says untrue.
 
 **The one that mattered.** Preloop can be told to stop asking: an **approval bypass** does not block
 a run, it removes the block — the kind of change that leaves no trace in any outcome this stack

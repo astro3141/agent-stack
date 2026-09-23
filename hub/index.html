@@ -440,7 +440,8 @@ async function loadOverview() {
   const L = o.links || {};
   $("#dash-links").innerHTML =
     `<a class="sub" href="${esc(L.preloop)}" target="_blank" rel="noopener">Preloop 콘솔 — 정책·주체·승인 이력</a>` +
-    `<a class="sub" href="${esc(L.mlflow)}" target="_blank" rel="noopener">MLflow — 실행 기록·비교 (부모 실행 아래 호출별 자식)</a>`;
+    `<a class="sub" href="${esc(L.mlflow)}" target="_blank" rel="noopener">MLflow — 실행 기록·비교 (부모 실행 아래 호출별 자식)</a>` +
+    `<a class="sub" href="${esc(L.mlflow_traces)}" target="_blank" rel="noopener">MLflow 트레이스 — Conductor가 보낸 OTel 스팬</a>`;
 }
 
 // ---- checks: when the stack was last checked, and what failed
