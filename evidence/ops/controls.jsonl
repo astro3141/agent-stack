@@ -1,0 +1,2 @@
+{"at": "2026-09-23T18:22:53Z", "control": "approval", "ok": false, "id": "00000000-0000-0000-0000-000000000000", "decision": "approve", "error": "HTTP 404: {\"detail\":\"Approval request not found\"}", "comment": "control path check"}
+{"at": "2026-09-23T18:24:02Z", "control": "approval", "ok": false, "id": "00000000-0000-0000-0000-000000000000", "decision": "approve", "error": "HTTP 404: {\"detail\":\"Approval request not found\"}", "comment": "panel path check"}

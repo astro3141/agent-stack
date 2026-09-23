@@ -45,7 +45,8 @@
 <header>
   <h1>CADP 실행 허브</h1>
   <nav>
-    <button data-tab="accounts" class="on">계정·상태</button>
+    <button data-tab="dash" class="on">대시보드</button>
+    <button data-tab="accounts">계정·상태</button>
     <button data-tab="run">워크플로 실행</button>
     <button data-tab="runs">실행 기록</button>
   </nav>
@@ -55,8 +56,57 @@
 </header>
 <main>
 
+<!-- ============ 대시보드 ============ -->
+<section id="tab-dash">
+  <div class="card">
+    <h2>지금 이 스택이 할 수 있는 것</h2>
+    <div class="row" id="dash-caps"><span class="muted">불러오는 중…</span></div>
+    <div class="row muted" id="dash-comp"></div>
+    <div id="dash-lock"></div>
+  </div>
+
+  <div class="card">
+    <h2>무인 사이클</h2>
+    <div class="row" id="dash-cycles"><span class="muted">불러오는 중…</span></div>
+    <table id="dash-reasons-tbl" class="hidden">
+      <thead><tr><th>여기서 멈춘 이유</th><th>횟수</th></tr></thead>
+      <tbody id="dash-reasons"></tbody>
+    </table>
+    <div class="row muted" id="dash-record"></div>
+  </div>
+
+  <div class="card">
+    <h2>연속 실행에서 자라는 것</h2>
+    <div id="dash-soak"><span class="muted">측정된 소크 없음 — <code>scripts/soak.sh 12 trading-b</code></span></div>
+  </div>
+
+  <div class="card">
+    <h2>다른 솔루션의 콘솔</h2>
+    <div class="row muted">승인·도구 정책은 Preloop이, 실행 비교는 MLflow가 주인입니다. 여기서 다시 만들지 않고 그쪽으로 넘깁니다.</div>
+    <div class="row" id="dash-links"></div>
+  </div>
+
+  <div class="card">
+    <h2>이 화면이 하는 일 — 그리고 하지 않는 일</h2>
+    <div class="muted">사람이 판단해야 하는 것만 화면에 둡니다: 제공자 로그인(코드 입력), 도구 호출 승인,
+      그리고 그 판단에 필요한 상태 읽기. 나머지는 스택을 바꾸는 일이라 명령과 설정 파일로 합니다 —
+      되돌리기 어려워서가 아니라, 사람이 아니어도 되는 일이기 때문입니다.</div>
+    <table>
+      <thead><tr><th>하려는 것</th><th>명령</th></tr></thead>
+      <tbody>
+        <tr><td>점검 다시 돌리기</td><td><code>scripts/up.sh --check</code></td></tr>
+        <tr><td>구성 바꾸기 (기록 없이 / 화면 없이)</td><td><code>scripts/up.sh --composition no-record｜runtime｜full</code></td></tr>
+        <tr><td>무인 사이클 한 번</td><td><code>scripts/cycle.sh trading-b</code></td></tr>
+        <tr><td>오래된 실행 정리 (미리보기 먼저)</td><td><code>scripts/cleanup.sh --days 14 --keep 20</code></td></tr>
+        <tr><td>연속 실행 측정</td><td><code>scripts/soak.sh 12 trading-b</code></td></tr>
+        <tr><td>운영 상태 한 번에 보기</td><td><code>docker exec cadp278-agent /opt/venv/bin/python /work/p281/ops_health.py</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <!-- ============ 계정·상태 ============ -->
-<section id="tab-accounts">
+<section id="tab-accounts" class="hidden">
   <div class="card">
     <h2>제공자 계정 — <span id="acct-profile"></span></h2>
     <div class="row muted" id="acct-decision">불러오는 중…</div>
@@ -122,8 +172,9 @@ const ago = (s) => s == null ? "—" : s < 90 ? `${s}초 전` : s < 5400 ? `${Ma
 // ---- tabs
 document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
   document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("on", x === b));
-  ["accounts","run","runs"].forEach((t) => $("#tab-"+t).classList.toggle("hidden", t !== b.dataset.tab));
+  ["dash","accounts","run","runs"].forEach((t) => $("#tab-"+t).classList.toggle("hidden", t !== b.dataset.tab));
   if (b.dataset.tab === "runs") loadRuns();
+  if (b.dataset.tab === "dash") loadOverview();
 });
 
 // ---- profiles
@@ -226,13 +277,85 @@ $("#cfg-apply").onclick = async () => {
   loadConfig(); loadProfiles().then(loadAccounts);
 };
 
-// ---- approvals
+// ---- approvals: the one thing here that cannot go on without a person
 async function loadApprovals() {
   const a = await api("/api/approvals");
   $("#appr").innerHTML = Array.isArray(a) && a.length
-    ? `<table><tr><th>도구</th><th>대상</th><th>작업 폴더</th><th>요청</th><th>만료</th></tr>` + a.map((r) =>
-        `<tr><td>${esc(r.tool)}</td><td class="mono">${esc(r.target)}</td><td class="mono">${esc(r.cwd)}</td><td>${esc((r.requested_at||"").slice(11,19))}</td><td>${esc((r.expires_at||"").slice(11,19))}</td></tr>`).join("") + `</table>`
+    ? `<table><tr><th>도구</th><th>대상</th><th>작업 폴더</th><th>요청</th><th>만료</th><th>판정</th></tr>` + a.map((r) =>
+        `<tr><td>${esc(r.tool)}</td><td class="mono">${esc(r.target)}</td><td class="mono">${esc(r.cwd)}</td>` +
+        `<td>${esc((r.requested_at||"").slice(11,19))}</td><td>${esc((r.expires_at||"").slice(11,19))}</td>` +
+        `<td class="row"><input class="appr-c" data-id="${esc(r.id)}" placeholder="사유(선택)" style="width:130px">` +
+        `<button class="act" data-appr="approve" data-id="${esc(r.id)}">승인</button>` +
+        `<button class="sub" data-appr="decline" data-id="${esc(r.id)}">거부</button></td></tr>`).join("") +
+      `</table><div class="row muted" id="appr-msg"></div>`
     : (Array.isArray(a) ? "승인 대기 없음" : `<span class="bad">${esc(a.error)}</span>`);
+  document.querySelectorAll("[data-appr]").forEach((b) => b.onclick = () => decideApproval(b));
+}
+
+async function decideApproval(btn) {
+  const id = btn.dataset.id, decision = btn.dataset.appr;
+  const comment = (document.querySelector(`.appr-c[data-id="${id}"]`) || {}).value || "";
+  if (!confirm(decision === "approve" ? "이 도구 호출을 승인합니다." : "이 도구 호출을 거부합니다.")) return;
+  document.querySelectorAll("[data-appr]").forEach((x) => x.disabled = true);
+  const out = await api(`/api/approvals/${id}`, {decision, comment});
+  const msg = $("#appr-msg");
+  if (msg) msg.innerHTML = out && out.ok
+    ? `<span class="ok">${decision === "approve" ? "승인" : "거부"}했습니다</span> · Preloop 상태 ${esc(out.status || "?")}`
+    : `<span class="bad">판정하지 못했습니다 — ${esc((out && out.error) || "알 수 없는 오류")}</span>`;
+  loadApprovals();
+}
+
+// ---- dashboard: one read of what the stack records about itself
+const CAP_KO = {tool_rights:"도구 권한", approvals:"승인", egress:"송출 통제", record:"기록", admission:"쿼터 판정"};
+async function loadOverview() {
+  const o = await api("/api/overview");
+  const h = (o && o.health) || {};
+  const caps = h.capabilities || {};
+  $("#dash-caps").innerHTML = Object.keys(caps).length
+    ? Object.entries(caps).map(([k, v]) =>
+        `<span class="chip"><span class="${v ? "ok" : "bad"}">${v ? "●" : "○"}</span> ${esc(CAP_KO[k] || k)}</span>`).join(" ")
+    : `<span class="warn">능력을 읽지 못했습니다</span>`;
+  const lc = h.last_check || {};
+  $("#dash-comp").innerHTML = `구성 <span class="chip">${esc(o.composition || "?")}</span> · ` +
+    `마지막 점검 ${lc.at ? esc(ago(lc.age_s)) : "기록 없음"} ` +
+    (lc.ok === true ? `<span class="ok">통과</span>` : lc.ok === false ? `<span class="bad">실패</span>` : "");
+  $("#dash-lock").innerHTML = h.lock
+    ? `<div class="row"><span class="bad">잠금 보유 중</span> <span class="muted">${esc(h.lock.since)}부터 (${esc(ago(h.lock.age_s))}) — 그동안 모든 사이클이 건너뜁니다. ${esc(h.lock.clear_with)}</span></div>`
+    : "";
+
+  const c = h.cycles || {};
+  const s = c.seconds;
+  $("#dash-cycles").innerHTML =
+    `<span class="chip">실행 ${c.cycles_recorded ?? 0}</span>` +
+    `<span class="chip">건너뜀 ${c.skipped_busy ?? 0}</span>` +
+    `<span class="chip ${c.refused ? "bad" : ""}">거부 ${c.refused ?? 0}</span>` +
+    (s ? `<span class="chip">소요 ${s.min}–${s.max}초 (중앙값 ${s.median})</span>` : "") +
+    (c.ended && Object.keys(c.ended).length
+      ? Object.entries(c.ended).map(([k, v]) => `<span class="chip">${esc(k)} ${v}</span>`).join("") : "");
+  const reasons = Object.entries(c.reasons || {});
+  $("#dash-reasons-tbl").classList.toggle("hidden", !reasons.length);
+  $("#dash-reasons").innerHTML = reasons.map(([w, n]) => `<tr><td>${esc(w)}</td><td>${n}</td></tr>`).join("");
+  $("#dash-record").innerHTML = (c.not_in_mlflow
+    ? `<span class="warn">${c.not_in_mlflow}건은 MLflow에 남지 않았습니다</span>` +
+      (c.record_errors || []).map(([ui, e]) => ` · <code>${esc(ui)}</code> ${esc(e)}`).join("")
+    : (c.cycles_recorded ? "모든 사이클이 MLflow에 기록됐습니다" : "아직 무인 사이클 기록이 없습니다 — <code>scripts/cycle.sh</code>"));
+
+  const soak = (h.soaks || []).slice(-1)[0];
+  if (soak) {
+    const g = soak.counts_growth || {};
+    const per = (v) => soak.cycles ? Math.round(v / soak.cycles) : v;
+    $("#dash-soak").innerHTML =
+      `<div class="row"><span class="chip">${esc(soak.soak)}</span><span class="chip">${soak.cycles} 사이클</span>` +
+      `<span class="chip">메모리 ${(soak.memory_total_mib || []).join(" → ")} MiB</span></div>` +
+      `<div class="kv"><div>사이클당 워크스페이스</div><div>${per(g.ws_kb || 0)} KB</div>` +
+      `<div>사이클당 증거</div><div>${per(g.evidence_kb || 0)} KB</div>` +
+      `<div>사이클당 실행 디렉터리</div><div>${per(g.evidence_dirs || 0)}개</div></div>`;
+  }
+
+  const L = o.links || {};
+  $("#dash-links").innerHTML =
+    `<a class="sub" href="${esc(L.preloop)}" target="_blank" rel="noopener">Preloop 콘솔 — 승인·도구 정책</a>` +
+    `<a class="sub" href="${esc(L.mlflow)}" target="_blank" rel="noopener">MLflow — 실행 기록·비교</a>`;
 }
 
 // ---- checks: when the stack was last checked, and what failed
@@ -323,6 +446,7 @@ async function showRun(id) {
 }
 
 // ---- boot
+loadOverview();
 loadProfiles().then(() => { loadAccounts(); loadConfig(); loadApprovals(); loadChecks(); renderInputs(); });
 </script>
 </body>

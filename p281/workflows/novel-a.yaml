@@ -281,7 +281,7 @@ agents:
   - name: done_hold
     type: terminate
     status: failed
-    reason: "HOLD: {{ route.output.reason }} {{ roles.output.missing }} {{ roles.output.ineligible }}"
+    reason: "HOLD: {{ route.output.reason }} {% if roles is defined %}{{ roles.output.missing }} {{ roles.output.ineligible }}{% endif %}"
 
 
 output:

@@ -224,6 +224,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       OPS_AGENT_CONTAINER: ${STACK:-cadp278}-agent
+      # only so the panel can link to the consoles that own approvals and run comparison
+      PRELOOP_CONSOLE_PORT: ${PRELOOP_CONSOLE_PORT:-3000}
+      MLFLOW_PORT: ${MLFLOW_PORT:-5000}
     ports:
       - "127.0.0.1:${OPS_PORT:-8781}:8781"
 

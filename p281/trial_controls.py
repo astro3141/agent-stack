@@ -20,6 +20,8 @@ fails if the fix is reverted. What each group pins:
             only, and every step is one execution in the record
   running   unattended operation: one cycle at a time, a skip and a refusal both recorded, and
             the health report counting what actually happened
+  panel     the web surface carries only what needs a person — a login and an approval — and the
+            cycle's rules live in one place, whatever calls them
   reduced   a smaller composition may drop recording and the screen — never what the stack's
             guarantees rest on — and a run that loses a capability is refused, not silently run
 """
@@ -616,17 +618,68 @@ def controls_running():
           ("2026-09-23T04:00:00Z", True))
     shutil.rmtree(d, ignore_errors=True)
 
-    cyc = open("/work/scripts/cycle.sh", encoding="utf-8").read()
-    check("a cycle takes a lock before starting anything", 'mkdir "$LOCKDIR"' in cyc, True)
-    check("a busy scheduler tick is skipped, not queued", '"skipped":"busy"' in cyc, True)
-    check("a stale lock is reported, never removed by this script",
-          'rm -rf "$LOCKDIR"' in cyc, False)
+    # the rules live in p281/cycle.py — the shell script is only how a scheduler reaches them
+    cyc = open("/work/p281/cycle.py", encoding="utf-8").read()
+    check("a cycle takes the lock before starting anything", "os.mkdir(LOCK)" in cyc, True)
+    check("a busy scheduler tick is skipped, not queued", '"skipped": "busy"' in cyc, True)
+    check("a stale lock is reported, never broken here",
+          ("shutil.rmtree" in cyc) or ("rm -rf" in cyc), False)
     check("a skip says how long the lock has been held", "lock_age_s" in cyc, True)
-    check("a stack that cannot run it exits 3", "exit 3" in cyc, True)
+    check("a stack that cannot run it exits 3", "SystemExit(3" in cyc, True)
     check("nothing is deleted unless retention is asked for",
-          'if [ -n "$RETAIN_DAYS$RETAIN_KEEP" ]' in cyc, True)
+          "if retain_days or retain_keep:" in cyc, True)
     soak = open("/work/scripts/soak.sh", encoding="utf-8").read()
     check("the soak measures without cleaning up", "cleanup" not in soak.split("#!")[1].split("set -u")[1], True)
+
+
+# ---------------------------------------------------------------- the panel and its one control
+def controls_panel():
+    print("panel — only what needs a person, and one implementation behind it")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("approvals_ctl", "/work/p281/approvals.py")
+    ap = importlib.util.module_from_spec(spec)
+    sys.modules["approvals_ctl"] = ap
+    spec.loader.exec_module(ap)
+    check("answering an approval is offered here", hasattr(ap, "decide"), True)
+
+    ops = open("/work/ops/server.py", encoding="utf-8").read()
+    check("the panel can answer one", "/api/approvals/([0-9a-f-]{36})" in ops, True)
+    check("and only with a decision it knows",
+          'decision must be approve or decline' in ops, True)
+    for absent, why in (("/api/cycle", "starting a cycle"), ("/api/cleanup", "deleting runs"),
+                        ("/api/composition", "changing the composition")):
+        check(f"the panel does not offer {why}", absent in ops, False)
+
+    page = open("/work/hub/index.html", encoding="utf-8").read()
+    check("the page asks before it decides", "confirm(" in page, True)
+    check("and says where the rest is done", "scripts/up.sh --check" in page, True)
+
+    # one cycle implementation, and its arguments read the way a scheduler passes them
+    spec = importlib.util.spec_from_file_location("cycle_ctl", "/work/p281/cycle.py")
+    cy = importlib.util.module_from_spec(spec)
+    sys.modules["cycle_ctl"] = cy
+    spec.loader.exec_module(cy)
+    check("the lock is a directory beside the record", cy.LOCK.endswith(".cycle.lock.d"), True)
+    sh = open("/work/scripts/cycle.sh", encoding="utf-8").read()
+    check("the shell entry point holds no rules of its own", "p281/cycle.py" in sh, True)
+    check("and does not re-implement the lock", "LOCKDIR" in sh, False)
+
+    check("an option's value is not the profile",
+          cy.parse_args(["trading-b", "--by", "scheduler"])["profile"], "research-default")
+    check("a profile given as a positional still works",
+          cy.parse_args(["trading-b", "cost-first"])["profile"], "cost-first")
+    check("and the caller is carried",
+          cy.parse_args(["trading-b", "--by", "scheduler"])["by"], "scheduler")
+    check("retention is only what was asked for",
+          [cy.parse_args(["trading-b"])["retain_days"],
+           cy.parse_args(["trading-b", "--retain-days", "14"])["retain_days"]], [None, "14"])
+
+    # a router that holds before the roles step must not break the workflow's own hold message
+    for name in ("novel-a", "trading-b", "trading-shapes"):
+        y = open(f"/work/p281/workflows/{name}.yaml", encoding="utf-8").read()
+        hold = [l for l in y.splitlines() if "HOLD:" in l]
+        check(f"{name}: the hold message survives an early hold",
+              all(("roles" not in l) or ("roles is defined" in l) for l in hold), True)
 
 
 # ---------------------------------------------------------------- a reduced composition
@@ -676,6 +729,7 @@ if __name__ == "__main__":
     controls_boundary()
     controls_chains()
     controls_running()
+    controls_panel()
     controls_composition()
     controls_recorder()
     controls_triage()

@@ -125,8 +125,26 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, jexec([PY, "/work/p281/login_helper.py", "status", prov, login]))
         if p == "/api/runs":
             return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "list"]))
-        if p == "/api/approvals":          # read-only; approving stays in Preloop's console
+        if p == "/api/approvals":          # what is waiting for a person right now
             return self._send(200, jexec([PY, "/work/p281/approvals.py"]))
+        if p == "/api/overview":
+            # One read for the panel: what the stack can do now, how the unattended cycles have
+            # been going, what the last check found, and where the other solutions' own consoles
+            # are. Nothing here is recomputed — it is what the stack already records.
+            health = jexec([PY, "/work/p281/ops_health.py", "--json", "--last", "50"])
+            rc, out, _ = dexec(["cat", "/work/evidence/checks/last.json"])
+            try:
+                last = json.loads(out) if rc == 0 else {}
+            except ValueError:
+                last = {}
+            return self._send(200, {
+                "health": health,
+                "composition": last.get("composition"),
+                # the consoles that own what this panel deliberately does not rebuild
+                "links": {
+                    "preloop": f"http://127.0.0.1:{os.environ.get('PRELOOP_CONSOLE_PORT', '3000')}",
+                    "mlflow": f"http://127.0.0.1:{os.environ.get('MLFLOW_PORT', '5000')}",
+                }})
         if p == "/api/checks":             # what scripts/up.sh --check last found, and when
             rc, out, _ = dexec(["cat", "/work/evidence/checks/last.json"])
             if rc != 0:
@@ -159,6 +177,19 @@ class H(BaseHTTPRequestHandler):
             if not isinstance(code, str) or not code.strip() or len(code) > 2000:
                 return self._send(400, {"error": "missing code"})
             return self._send(200, jexec([PY, "/work/p281/login_helper.py", "code", prov, login], stdin=code))
+        m = re.fullmatch(r"/api/approvals/([0-9a-f-]{36})", p)
+        if m:
+            # Preloop owns the decision; this panel is where the person makes it, because an
+            # approval is the one thing here that cannot proceed without one. Everything else an
+            # operator does to this stack is a command, not a button (see the panel's own note).
+            d = b.get("decision")
+            if d not in ("approve", "decline"):
+                return self._send(400, {"error": "decision must be approve or decline"})
+            comment = b.get("comment") or ""
+            if not isinstance(comment, str) or len(comment) > 500:
+                return self._send(400, {"error": "comment must be a string of at most 500 chars"})
+            out = jexec([PY, "/work/p281/approvals.py", "decide", m.group(1), d, comment])
+            return self._send(200 if out.get("ok") else 502, out)
         if p == "/api/runs":
             wf, prof, inputs = b.get("workflow"), b.get("profile") or "research-default", b.get("inputs") or {}
             if wf not in ("auto", "research-r", "novel-a", "trading-b", "trading-shapes") or not NAME.fullmatch(prof) or not isinstance(inputs, dict):

@@ -690,3 +690,32 @@ Operation across days rather than cycles: a real schedule, quota exhausting and 
 expiring mid-week (it expired once during this work and the router held the cycle, which is the
 designed behaviour, but that was not a controlled measurement), and recovery after the host
 restarts.
+
+## 12. The panel
+
+One address for a person: `http://127.0.0.1:8780`. It carries the three things that need one —
+signing a provider in, **answering a pending approval**, and reading enough state to judge whether
+this is healthy — and nothing else (CONTRACT.md, "What belongs on a screen").
+
+**The dashboard** is one read of what the stack already records: which capabilities it has right
+now (probed, not declared), which composition it is running and when it was last checked, how the
+unattended cycles have gone (run / skipped / refused, the spread of durations, where they stopped
+and why, which never reached MLflow), whether a cycle lock is held, and what the last soak found
+growing per cycle. It also states, in the page itself, what is *not* done there and the command
+that does it.
+
+**The one control brought in from another product** is Preloop's approval decision
+(`POST /api/approvals/<id>` → `p281/approvals.py decide`). An approval is a run stopped waiting for
+a person; sending that person to a second console to answer it is where an unattended schedule
+loses a night. Preloop still owns the decision — this records on our side too
+(`evidence/ops/controls.jsonl`) that it was answered here, with what comment, and whether Preloop
+took it. Policy editing and run comparison stay linked, not rebuilt: the panel offers no route for
+starting a cycle, deleting runs or changing the composition, and a control fails if one appears.
+
+**One implementation behind a cycle.** `p281/cycle.py` holds the rules (the lock, the refusal, the
+record, retention); `scripts/cycle.sh` is how a scheduler on the host reaches them. Two findings
+came out of making it one: an option's value was being read as the profile (`--by scheduler`
+started a run with the profile "scheduler"), and — because that profile does not exist — the
+router held before the roles step, which exposed that every hold message in the trading and novel
+workflows assumed roles had run and died on a template error instead of reporting the hold. Both
+are fixed and pinned by controls.

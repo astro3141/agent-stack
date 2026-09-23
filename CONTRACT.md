@@ -30,6 +30,26 @@ the capability, not decisions about the work, and they stay in the platform.
 | **Operation** (`scripts/*.sh`, `p281/cleanup.py`) | backup, restore, update, rollback and cleanup of the stack itself, preview before destruction, pending approvals protected | when to run them, and what to keep |
 | **Composition** (`scripts/up.sh --composition`, `p281/capabilities.py`) | the stack starts with a named set of services, says which capabilities it therefore has — probed, not declared — and refuses a run that needs one it does not have | which composition to run, and whether an unrecorded run is acceptable (`--allow-unrecorded`) |
 
+## What belongs on a screen
+
+A third boundary, and it is not about code: **the web surface carries only what needs a person.**
+Everything an operator does to this stack is either a judgement a human has to make, or work that
+an agent, a script or a scheduler can do — and the second kind belongs in a command or a
+configuration file, where it can be repeated, reviewed and automated.
+
+| needs a person → the panel | does not → a command or a file |
+|---|---|
+| signing a provider in (the code comes from the vendor, to a human) | starting a run, one cycle, a soak (`scripts/cycle.sh`, `scripts/soak.sh`) |
+| **answering a pending approval** — an agent asked for something its rules do not decide, and the run waits | switching composition, running the checks, applying configuration (`scripts/up.sh …`, `cfg.py`) |
+| reading enough state to judge whether this is healthy | retention and cleanup (`scripts/cleanup.sh`, `--retain-*` on a cycle) |
+| | release, rollback, backup, restore (`scripts/release.sh`, `backup.sh`, `restore.sh`) |
+
+The controls of the other solutions follow the same rule rather than their own product boundary:
+Preloop's approval decision is *in this panel*, because that is the thing that cannot go on
+without a human — while its policy editing, its consoles and MLflow's comparison views are linked
+to, not rebuilt. What we do not do is copy someone else's screen; what we do do is bring the
+control that blocks a run to where the person already is.
+
 ## What a workflow owns
 
 The graph and its edges; what each artifact is and when it is fixed; what makes a result valid;
