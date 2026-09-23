@@ -820,8 +820,20 @@ event log — `conductor replay` serves the same React dashboard in replay mode 
 behind it takes its bind address as a parameter (`ReplayDashboard(..., host=…)`; only the CLI
 leaves it on loopback). The package is MIT. So the dashboard now runs **in a container that is not
 the agent**: `cadp278-replay`, on the ops network, with the workspace mounted **read-only**, no
-credentials, no Docker access, published on `127.0.0.1:8785`. The agent keeps its single internal
-network and gains nothing.
+credentials and no Docker access. The agent keeps its single internal network and gains nothing.
+
+**It publishes no port.** A person reaches it at the panel's own address — the hub forwards exactly
+the paths Conductor's bundle asks for (`/conductor`, `/assets/…`, `/favicon.svg`, `/api/state`,
+`/api/logs`, `/api/replay/info`, `/api/files/…`), which are absolute in its HTML and do not collide
+with this panel's routes. One thing had to be said out loud on the way through: the dashboard
+refuses a `Host` header that is not loopback (a DNS-rebinding guard aimed at browsers), so the hub
+sends `Host: 127.0.0.1:<port>` while connecting to the container by name.
+
+**Why a container of its own rather than inside the hub**, since that was the obvious question:
+the dashboard needs the `conductor` package (FastAPI, uvicorn, an 800 KB bundle) and a read-only
+mount of the workspace to read event logs. The hub is the container a browser talks to; it has no
+mounts, no dependencies and no Docker access, and keeping it that way is worth one 39 MB container.
+What was *not* worth keeping was the second port — that is gone, and there is one address again.
 
 Which run it shows is a name the ops API writes to `evidence/ops/replay.run`; the service watches
 that file, so it has no inbound API of its own — it renders an event log and reads a name, and

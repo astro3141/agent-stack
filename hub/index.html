@@ -433,7 +433,7 @@ async function loadRuns() {
     b.disabled = true;
     const out = await api("/api/replay", {ui: b.dataset.replay});
     b.disabled = false;
-    if (out && out.url) { window.open(out.url, "conductor-replay"); }
+    if (out && out.url) { window.open(out.url, "conductor-replay"); }   // same address as this panel
     else { alert("이 실행의 이벤트 로그를 찾지 못했습니다" + (out && out.error ? ": " + out.error : "")); }
   });
 }

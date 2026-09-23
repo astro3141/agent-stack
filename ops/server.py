@@ -188,8 +188,8 @@ class H(BaseHTTPRequestHandler):
                                   f"printf %s {ui} > /work/evidence/ops/replay.run && echo ok"])
             if rc != 0 or "ok" not in out:
                 return self._send(404, {"error": "no such run"})
-            return self._send(200, {"ui": ui,
-                                    "url": f"http://127.0.0.1:{os.environ.get('REPLAY_PORT', '8785')}/",
+            # the panel's own address — the dashboard is proxied by the hub, not published
+            return self._send(200, {"ui": ui, "url": "/conductor",
                                     "note": "the dashboard switches within a couple of seconds"})
         m = re.fullmatch(r"/api/approvals/([0-9a-f-]{36})", p)
         if m:

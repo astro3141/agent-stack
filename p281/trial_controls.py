@@ -650,6 +650,21 @@ def controls_panel():
                         ("/api/composition", "changing the composition")):
         check(f"the panel does not offer {why}", absent in ops, False)
 
+    # the run dashboard: one address for a person, and the container that holds the workspace
+    # mount is not the one a browser talks to
+    import yaml
+    svcs = (yaml.safe_load(open("/work/docker/compose.poc.yaml", encoding="utf-8"))
+            or {}).get("services") or {}
+    check("the replay dashboard publishes no port of its own",
+          bool((svcs.get("replay") or {}).get("ports")), False)
+    check("it mounts the workspace read-only",
+          all(v.get("read_only") for v in (svcs.get("replay") or {}).get("volumes") or []), True)
+    check("the browser-facing container mounts nothing",
+          bool((svcs.get("hub") or {}).get("volumes")), False)
+    hub = open("/work/hub/server.py", encoding="utf-8").read()
+    check("the hub forwards exactly the dashboard's own paths",
+          all(x in hub for x in ("/api/state", "/assets/", "/conductor")), True)
+
     page = open("/work/hub/index.html", encoding="utf-8").read()
     check("the page asks before it decides", "confirm(" in page, True)
     check("and says where the rest is done", "scripts/up.sh --check" in page, True)
