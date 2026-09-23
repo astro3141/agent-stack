@@ -97,6 +97,14 @@ check() {  # name, expected, actual
 }
 in_agent() { docker exec "$STACK-agent" sh -c "$1" 2>/dev/null; }
 
+# The guard's rules are a bind-mounted file, and compose does not restart a container because a
+# file under it changed — a rule edited without this reload is a rule that is not enforced.
+if docker ps --format '{{.Names}}' | grep -qx "$STACK-apiguard"; then
+  docker exec "$STACK-apiguard" nginx -t >/dev/null 2>&1 &&
+    docker exec "$STACK-apiguard" nginx -s reload >/dev/null 2>&1 ||
+    echo "  WARN  the guard did not accept its configuration — the rules in effect are the old ones" >&2
+fi
+
 echo "== isolation"
 check "agent default routes"            0   "$(in_agent 'ip route | grep -c default')"
 check "agent direct egress"             000 "$(in_agent 'curl -s -o /dev/null -w %{http_code} --max-time 5 https://pypi.org')"
@@ -120,6 +128,9 @@ check "fsmcp tools exposed via Preloop"  yes "$(in_agent 'python3 /work/p281/mcp
 # may read what is waiting and may not answer it (OPERATIONS.md §20).
 check "runtime may read approvals"       200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat /home/agent/.preloop/agents/*/permission_hook.json | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" "http://api:8000/api/v1/approval-requests?status=pending&limit=1"')"
 check "runtime may not decide approvals" 403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X POST -H "Content-Type: application/json" -d "{\"approved\":true}" http://api:8000/api/v1/approval-requests/00000000-0000-0000-0000-000000000000/approve')"
+check "runtime may read its tool rights"  200 "$(in_agent 'a=$(curl -s -H "Authorization: Bearer $(cat /home/agent/.preloop/agents/*/permission_hook.json | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" http://api:8000/api/v1/agents | python3 -c "import json,sys;d=json.load(sys.stdin);r=d if isinstance(d,list) else d.get(\"items\") or [];print(r[0][\"id\"])"); curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat /home/agent/.preloop/agents/*/permission_hook.json | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" http://api:8000/api/v1/agents/$a/governance')"
+check "runtime may not rewrite them"      403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X PUT -H "Content-Type: application/json" -d "{}" http://api:8000/api/v1/agents/00000000-0000-0000-0000-000000000000/governance')"
+check "runtime may not mint credentials"  403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X POST -H "Content-Type: application/json" -d "{\"name\":\"probe\"}" http://api:8000/api/v1/auth/api-keys')"
 echo "== logins (routing layer)"
 check "claude /route login"              true "$(in_agent 'CLAUDE_CONFIG_DIR=/route/claude claude auth status 2>/dev/null | python3 -c "import json,sys;print(str(json.load(sys.stdin).get(\"loggedIn\")).lower())"')"
 check "codex /route login"               yes "$(in_agent 'CODEX_HOME=/route/codex codex login status 2>&1 | grep -q "Logged in" && echo yes || echo no')"

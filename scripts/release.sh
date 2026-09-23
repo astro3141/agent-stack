@@ -160,8 +160,11 @@ keep_or_restore_toolchain() {
 # code. Restoring an old copy of it would claim a policy the account does not have.
 reapply_policy() {
   echo "== policy"
+  # On the admin side: applying a policy is a write the guard refuses from the governed network,
+  # which is the point of that guard (OPERATIONS.md §21).
+  ADMIN="${ADMIN:-$STACK-admin}"
   docker exec "$AGENT" "$PY_IN_AGENT" /work/p281/cfg.py generate >/dev/null || fail "cfg.py generate failed"
-  out="$(docker exec "$AGENT" "$PY_IN_AGENT" /work/p281/cfg.py apply || true)"
+  out="$(docker exec "$ADMIN" "$PY_IN_AGENT" /work/p281/cfg.py apply || true)"
   echo "$out" | grep -o '"preloop-policy[^,]*' | sed 's/^/  /' || true
   if ! echo "$out" | grep -q '"ok": true'; then
     echo "  the policy could not be applied — the account may still enforce the previous one" >&2

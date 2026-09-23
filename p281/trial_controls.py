@@ -1053,9 +1053,22 @@ def controls_approval_boundary():
     for verb in ("approve", "decline", "decide"):
         check(f"deciding by {verb} is refused", verb in table, True)
     check("a write to the standing bypasses is refused",
-          "(POST|PUT|PATCH|DELETE) /api/v1/approval-bypasses" in guard, True)
-    check("reading what is waiting is not refused",
-          "~^GET" not in guard and "Reading is untouched" in guard, True)
+          "/api/v1/approval-bypasses" in table, True)
+    check("rewriting the rules it is judged by is refused", "governance" in table, True)
+    check("minting itself another identity is refused", "auth/api-keys" in table, True)
+    # The Preloop CLI's own `policy apply` wrote through endpoints an enumerated list did not
+    # name, and succeeded from the agent until the table refused writes by default. So the table
+    # ends with a catch-all, and the exceptions are named before it.
+    check("every other write to the control plane is refused too",
+          table.rstrip().splitlines()[-1].strip().startswith('"~^[A-Z]+ /api/v1/"'), True)
+    reads = table.index('"~^(GET|HEAD|OPTIONS) "')
+    hook = table.index('"~^POST /api/v1/agents/permission-check$"')
+    mcp = table.index('"~^POST /mcp/v1"')
+    catch = table.index('"~^[A-Z]+ /api/v1/"')
+    check("reading is allowed, and named before the catch-all", reads < catch, True)
+    check("the permission hook is named, and before the catch-all", hook < catch, True)
+    check("MCP itself is named, and before the catch-all", mcp < catch, True)
+    check("reading what is waiting is not refused", "Reading is untouched" in guard, True)
     check("the refusal does not depend on the credential presented",
           "whatever credential is presented" in guard, True)
 
@@ -1063,7 +1076,7 @@ def controls_approval_boundary():
     for name in ("api", "console", "gateway"):
         check(f"the guard holds the name {name}", f"aliases: [api, console, gateway]" in compose, True)
         check(f"Preloop answers to preloop-{name} on the admin side",
-              f"aliases: [preloop-{name}]" in preloop, True)
+              f"aliases: [preloop-{name}, {name}]" in preloop, True)
     check("Preloop is no longer on the governed network",
           "poc-governed:" not in preloop.split("networks:")[-1], True)
     check("the agent is not on the admin network",
@@ -1072,9 +1085,17 @@ def controls_approval_boundary():
     # the panel decides from the admin side, with the code and a credential it can read
     check("the panel reaches Preloop past the guard",
           "P281_PRELOOP_API: http://preloop-api:8000" in compose, True)
+    ops_server = open("/work/ops/server.py", encoding="utf-8").read()
     check("the panel runs the decision itself, not in the agent",
-          'jlocal(["/work/p281/approvals.py", "decide"' in
-          open("/work/ops/server.py", encoding="utf-8").read(), True)
+          'jlocal(["/work/p281/approvals.py", "decide"' in ops_server, True)
+    check("applying a policy runs on the admin side",
+          'container=ADMIN if what == "apply"' in ops_server, True)
+    check("generating it does not — the provider logins are in the agent",
+          'what == "apply" else None' in ops_server, True)
+    admin_block = compose.split("  admin:")[1].split("  apiguard:")[0]
+    check("the operator's container is on the admin network and no other",
+          admin_block.split("networks:")[1].split("volumes:")[0].split(), ["-", "adminnet"])
+    check("a rules edit that is not reloaded is not a rule", "nginx -s reload" in up, True)
 
     # approvals.py takes both from where it runs
     import importlib.util as il, os
@@ -1101,6 +1122,11 @@ def controls_approval_boundary():
           'check "runtime may read approvals"       200' in up, True)
     check("every bring-up checks the runtime may not decide them",
           'check "runtime may not decide approvals" 403' in up, True)
+    check("and that it may read its rights but not rewrite them",
+          'check "runtime may read its tool rights"  200' in up
+          and 'check "runtime may not rewrite them"      403' in up, True)
+    check("and that it may not mint a credential",
+          'check "runtime may not mint credentials"  403' in up, True)
 
     # the claim is not overstated anywhere
     ops = open("/work/p281/ops_health.py", encoding="utf-8").read()

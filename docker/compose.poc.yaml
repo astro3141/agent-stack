@@ -223,6 +223,28 @@ services:
         aliases: [egress]
       egressnet: {}
 
+  # Where the operator's own commands run. They change what the account enforces — the tool
+  # policy, a principal's rules, a credential — so they must not run on the governed side, where
+  # the guard refuses exactly those writes. Same image as the agent (it carries the Preloop CLI
+  # and this tree's toolchain), no workspace, no provider logins, and unreachable from the agent.
+  admin:
+    image: cadp278/governed-runtime:local
+    container_name: ${STACK:-cadp278}-admin
+    init: true
+    restart: unless-stopped
+    networks:
+      - adminnet
+    volumes:
+      - type: bind
+        source: ${POC_HOST_DIR:-..}
+        target: /work
+      # the Preloop CLI keeps its credential and state here; the same home the agent uses, because
+      # this build cannot give the operator a credential with different rights (OPERATIONS §13)
+      - type: volume
+        source: agent-home
+        target: /home/agent
+    command: ["sleep", "infinity"]
+
   # The approval boundary as a route: on the governed network this holds the names the agent
   # resolves for Preloop (api, console, gateway), and it refuses the two requests that would let
   # the governed party answer its own approval. Everything else passes through untouched.
@@ -279,6 +301,7 @@ services:
         required: false
     environment:
       OPS_AGENT_CONTAINER: ${STACK:-cadp278}-agent
+      OPS_ADMIN_CONTAINER: ${STACK:-cadp278}-admin
       # Preloop, addressed on the admin side — past the guard, which is what makes a decision
       # possible from here and impossible from the agent
       P281_PRELOOP_API: http://preloop-api:8000

@@ -25,14 +25,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 AGENT = os.environ.get("OPS_AGENT_CONTAINER", "cadp278-agent")
+# The operator's own commands — the ones that change what the account enforces — run here, on the
+# admin side, because the guard refuses those writes from the governed network (OPERATIONS §21).
+ADMIN = os.environ.get("OPS_ADMIN_CONTAINER", "cadp278-admin")
 PY = "/opt/venv/bin/python"
 PROVIDERS = {"claude", "codex", "grok"}
 NAME = re.compile(r"[a-z0-9-]{1,40}")
 
 
-def dexec(args, stdin=None, detach=False, timeout=120):
-    """docker exec into the agent container. args is an argv list; nothing is shell-interpreted."""
-    cmd = ["docker", "exec"] + (["-d"] if detach else []) + (["-i"] if stdin is not None else []) + [AGENT] + args
+def dexec(args, stdin=None, detach=False, timeout=120, container=None):
+    """docker exec into a known container. args is an argv list; nothing is shell-interpreted.
+
+    The default is the agent. `container=ADMIN` is for the commands that change what Preloop
+    enforces: they must not run on the governed side, where the guard refuses them.
+    """
+    cmd = ["docker", "exec"] + (["-d"] if detach else []) + (["-i"] if stdin is not None else []) + [container or AGENT] + args
     r = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=timeout)
     return r.returncode, r.stdout, r.stderr
 
@@ -195,7 +202,12 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         p = urlparse(self.path).path; b = self._body()
         if p in ("/api/config/generate", "/api/config/apply"):
-            return self._send(200, jexec([PY, "/work/p281/cfg.py", p.rsplit("/", 1)[1]], timeout=300))
+            # The split follows the guard: generating writes files in this tree and reads the
+            # provider logins, which only the agent has; applying writes to Preloop, which only
+            # the admin side may do (OPERATIONS §21).
+            what = p.rsplit("/", 1)[1]
+            return self._send(200, jexec([PY, "/work/p281/cfg.py", what], timeout=300,
+                                         container=ADMIN if what == "apply" else None))
         m = re.fullmatch(r"/api/accounts/([a-z]+)/(login|code|cancel)", p)
         if m:
             prov, act = m.groups()

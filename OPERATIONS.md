@@ -1108,15 +1108,23 @@ member of both that network and the admin one. Preloop's containers answer to `p
 The console had to be included because its own nginx proxies `/api/` to the same API — blocking one
 name and leaving the other would have been a boundary in name only.
 
-The guard keeps one table of refusals, matched on method and decoded path:
+The guard keeps one table, matched on method and decoded path. It began as a list of the two
+requests that mattered, and the measurement in §21 showed why a list is the wrong shape: it now
+**refuses writes to the control plane by default** and names the exceptions before the catch-all.
 
-| refused from the governed network | left alone |
+| from the governed network | |
 |---|---|
-| `POST /api/v1/approval-requests/<id>/{approve,decline,decide}` | reading what is waiting |
-| writes to `/api/v1/approval-bypasses` | reading the standing bypasses |
+| any `GET` / `HEAD` / `OPTIONS` | allowed — a party may see what it is waiting for and what it may do |
+| `POST /api/v1/agents/permission-check` | allowed — the permission hook calls it on every native tool call |
+| `POST /mcp/v1…` | allowed — MCP itself |
+| `…/approval-requests/<id>/{approve,decline,decide}` | *the runtime may not decide approvals* |
+| writes to `/approval-bypasses` | *…may not create or revoke approval bypasses* |
+| writes to `…/governance` | *…may not change tool rights* |
+| writes to `/agents`, `/agents/<id>`, `/auth/api-keys` | *…may not mint or revoke credentials* |
+| any other write under `/api/v1/` | *…may not change what the account enforces* |
 
-Everything else passes through untouched, streamed rather than buffered so MCP's SSE and a 300-second
-tool call behave as they did.
+Answers pass through streamed rather than buffered, so MCP's SSE and a 300-second tool call behave
+as they did.
 
 **Measured from inside the agent, with the runtime's own credential:**
 
@@ -1146,7 +1154,61 @@ ok    runtime may not decide approvals             403
 **What this is not.** It is a route restriction, not a rights restriction. The runtime's credential
 still carries the permission, and anyone holding it from another network position can still decide.
 `p281/ops_health.py` says so in the way it now reports: the probe describes *the position it was run
-from*, and a 404 from the agent would mean the guard is not in the path. The same guard could close
-the other self-serving route — a governed party rewriting its own tool rules through
-`PUT /agents/{id}/governance` — once the principal commands run from the admin side rather than in
-the agent; they do not yet, so that route is still open and is written down here rather than implied.
+from*, and a 404 from the agent would mean the guard is not in the path.
+
+One trap, paid for once: the guard's rules are a bind-mounted file, and compose does not restart a
+container because a file under it changed. A rule edited without a reload is a rule that is not
+enforced — three refusals measured as "allowed" until the reload. `scripts/up.sh` now reloads the
+guard on every bring-up and warns if the configuration is refused.
+
+## 21. Where the operator's own commands run
+
+The same shape as §20, one door along: a governed party that can rewrite the rules it is judged by
+has not been governed. Closing it needed the commands to move first, because they ran in the agent.
+
+**What was measured before deciding.** With the decision endpoints refused, the runtime could still
+change what the account enforces:
+
+```
+agent:  preloop policy apply policy/b-fsmcp.yaml
+        ✓ Policy applied successfully   MCP servers 2 updated, Tools 6 updated
+```
+
+An enumerated deny list had missed it: the CLI writes through `/api/v1/policies/upload`,
+`/mcp-servers`, `/tool-configurations` and `/approval-workflows`, none of which are called
+"governance". So the table was inverted — writes refused by default, exceptions named — and the
+same command now answers:
+
+```
+agent:  Error: failed to apply policy: API error (status 403):
+        {"error":"the runtime may not change what the account enforces","by":"apiguard", …}
+admin:  ✓ Policy applied successfully   MCP servers 2 updated, Tools 6 updated
+```
+
+**Where they run now.** `cadp278-admin` — the same image as the agent (it carries the Preloop CLI
+and this tree's toolchain), on the admin network only, with `/work` and the Preloop home, no
+workspace and no provider logins. The agent cannot reach it. Preloop answers to `api`, `console` and
+`gateway` there as well as to `preloop-*`, so the toolchain needed no reconfiguration.
+
+| command | where | why |
+|---|---|---|
+| `cfg.py apply`, `preloop policy apply` | **admin** | writes to Preloop |
+| `principals.py create` / `rules` | **admin** | writes to Preloop |
+| `cfg.py generate`, `cfg.py status` | agent | reads this tree and the provider logins, which only the agent has |
+| `principals.py list` / `check` | either | reading rules, and calling MCP as a principal, are not refused |
+| `approvals.py decide` | panel | §20 |
+
+The panel's own buttons follow the same split: **생성** runs `generate` in the agent, **적용** runs
+`apply` on the admin side, and `scripts/release.sh` re-applies the policy there too.
+
+**Checked on every bring-up**, from the position the rule constrains:
+
+```
+ok    runtime may read its tool rights             200
+ok    runtime may not rewrite them                 403
+ok    runtime may not mint credentials             403
+```
+
+And verified the other way: a full `trading-b` run under the tightened guard completed normally —
+2 model calls, 1 permission request decided by rules, evidence written, recorded — with no refusal
+in the guard's log for anything the run did.
