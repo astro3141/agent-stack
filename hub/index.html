@@ -63,6 +63,7 @@
     <div class="row" id="dash-caps"><span class="muted">불러오는 중…</span></div>
     <div class="row muted" id="dash-comp"></div>
     <div id="dash-lock"></div>
+    <div id="dash-risks"></div>
   </div>
 
   <div class="card">
@@ -327,6 +328,11 @@ async function loadOverview() {
   $("#dash-lock").innerHTML = h.lock
     ? `<div class="row"><span class="bad">잠금 보유 중</span> <span class="muted">${esc(h.lock.since)}부터 (${esc(ago(h.lock.age_s))}) — 그동안 모든 사이클이 건너뜁니다. ${esc(h.lock.clear_with)}</span></div>`
     : "";
+
+  $("#dash-risks").innerHTML = (h.risks || []).map((x) =>
+    `<div class="row"><span class="warn">알아둘 것</span> <span>${esc(x.risk)}</span></div>` +
+    `<div class="row muted" style="margin-top:-4px">${esc(x.detail || "")}` +
+    (x.what_would_fix_it ? ` · 해결: ${esc(x.what_would_fix_it)}` : "") + `</div>`).join("");
 
   const c = h.cycles || {};
   const s = c.seconds;

@@ -14,10 +14,11 @@ What it deliberately does not do: decide that anything is wrong. It reports the 
 of durations, the growth, and the capabilities; whether that is acceptable for this operation is
 the operator's judgement (CONTRACT.md).
 """
-import glob, json, os, statistics, sys, time
+import glob, json, os, statistics, sys, time, urllib.error, urllib.request
 
 sys.path.insert(0, "/work/p281")
 import capabilities
+import settings
 
 OPS = "/work/evidence/ops/cycles.jsonl"
 
@@ -109,8 +110,47 @@ def soaks():
     return out[-3:]
 
 
+def risks():
+    """Standing facts an operator should not have to rediscover. Probed, not assumed.
+
+    The one that matters here: in Preloop OSS 0.15.0 an API key resolves to its *user* and the
+    endpoints are guarded by that user's role, so the credential the runtime holds — which has to
+    be a managed-agent credential for the permission hook to work at all — carries whatever the
+    creating user may do. If that user is the account owner, the governed party can answer its own
+    approval requests. Asking the API is the only honest way to know: a 403 means refused, a 404
+    means it was allowed and only the request id was wrong.
+    """
+    out = []
+    try:
+        tok = json.load(open(glob.glob(os.path.expanduser(
+            "~/.preloop/agents/*/permission_hook.json"))[0], encoding="utf-8"))["token"]
+        api = settings.runtime()["preloop"]["api_url"]
+        req = urllib.request.Request(
+            f"{api}/api/v1/approval-requests/00000000-0000-0000-0000-000000000000/approve",
+            data=json.dumps({"approved": True}).encode(), method="POST",
+            headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            code = 200
+        except urllib.error.HTTPError as e:
+            code = e.code
+        if code != 403:
+            out.append({"risk": "the runtime's own credential can decide approvals",
+                        "detail": f"the approvals endpoint answered {code} to it (403 would be a refusal)",
+                        "why_it_matters": "an approval is the one decision reserved for a person, "
+                                          "and the party being governed holds a credential that can make it",
+                        "what_would_fix_it": "issue the runtime's managed-agent credential under a "
+                                             "Preloop user whose role lacks decide_approvals "
+                                             "(viewer, analyst and tracker_manager do)"})
+    except Exception as e:
+        out.append({"risk": "could not check whether the runtime credential can approve",
+                    "detail": f"{type(e).__name__}: {e}"})
+    return out
+
+
 def report(last=50):
     return {"cycles": summarise(cycles(last)), "lock": stuck_lock(), "last_check": checks(),
+            "risks": risks(),
             "capabilities": {k: v["available"] for k, v in capabilities.probe().items()},
             "soaks": soaks()}
 
@@ -139,6 +179,11 @@ if __name__ == "__main__":
     k = r["last_check"]
     print(f"last check  {k['at']} ({k.get('age_s')}s ago) ok={k['ok']} "
           f"composition={k.get('composition')}")
+    for item in r.get("risks") or []:
+        print(f"risk        {item['risk']}")
+        print(f"            {item.get('detail','')}")
+        if item.get("what_would_fix_it"):
+            print(f"            fix: {item['what_would_fix_it']}")
     print("capabilities " + ", ".join(f"{n}={'yes' if v else 'NO'}"
                                       for n, v in r["capabilities"].items()))
     for s in r["soaks"]:

@@ -98,9 +98,11 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_EXPORTER_OTLP_HEADERS: x-mlflow-experiment-id=1
       OTEL_SERVICE_NAME: cadp-commodity-composition-poc
-    # No published port: Conductor's own run dashboard binds the container's loopback and its
-    # auth accepts only loopback Host headers, so publishing one reaches nothing (measured). The
-    # agent stays without an inbound listener; see OPERATIONS.md §12.
+    # No published port, and it would not work if there were one: this container is single-homed
+    # on an internal network, where Docker does not apply port bindings (the same measurement that
+    # made MLflow dual-homed, above). That is also the answer to "can the operator open Conductor's
+    # run dashboard": not without giving the agent a second, non-internal network — see
+    # OPERATIONS.md §12.
     command: ["sleep", "infinity"]
 
   mlflow:

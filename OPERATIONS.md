@@ -745,3 +745,76 @@ container was restarted left its lock behind — exactly the case §11 describes
 it was supposed to: `ops_health.py` and the panel both reported *"held since …, every cycle is
 skipped while it is there"*, the four scheduled cycles in between are recorded as skipped, and
 clearing it was an operator's decision (`rmdir`). Nothing had to be guessed.
+
+## 13. Who may approve — a limit of Preloop OSS 0.15.0, measured
+
+The panel answers approvals (§12). The obvious question is whether the runtime itself could answer
+them, and the answer is **yes, today it can**. Measured with the credential the agent container
+actually holds (`~/.preloop/agents/*/permission_hook.json`, sha12 `57dfc1f6…`):
+
+| asked of the control plane with that credential | answer |
+|---|---|
+| list the account's API keys | OK |
+| list principals / read a principal's governance | OK |
+| **decide an approval** | **HTTP 404** — the request id was invented; a refusal would be 403 |
+
+**Why**, from the running image's code:
+
+1. `api/auth/jwt.py: get_current_user` resolves *any* API key to its owning `User`; the key's
+   `scopes` are stored but not consulted on that path.
+2. Endpoints guard with `@require_permission(...)`, and `has_permission` aggregates the roles
+   assigned to that user. The `owner` role carries all 68 permissions, including
+   `decide_approvals`.
+3. `/api/v1/agents/permission-check` — the endpoint the permission hook calls on every native tool
+   call — deliberately requires no permission at all: it only requires that the bearer be a
+   **managed-agent credential** (`_managed_agent_for_api_key`).
+
+So the runtime must hold a managed-agent credential to be governed at all, and in this version that
+credential inherits whatever its creating user may do. Ours was created by the account owner.
+
+**What would actually fix it, in this version:** create the runtime's managed agent under a second
+Preloop user whose role lacks `decide_approvals`. Three of the seven roles qualify — `viewer` (12
+permissions), `analyst` (20), `tracker_manager` (18) — and since the hook endpoint checks no
+permission, a `viewer` credential should still pass it. That is a change to who holds what, so it
+needs a user created deliberately (account creation is the operator's, not ours) and a verification
+pass: permission-check still answers, MCP tools still work, and `approve` now returns 403.
+
+**Until then, two things are done rather than assumed.** Every decision made through the panel
+records the fingerprint of the credential that made it (`evidence/ops/controls.jsonl`), so "who
+answered this" stays answerable. And `p281/ops_health.py` probes the limit on every read and
+reports it — it appears in the panel's dashboard too, where the person answering approvals will
+see it:
+
+```
+risk        the runtime's own credential can decide approvals
+            the approvals endpoint answered 404 to it (403 would be a refusal)
+            fix: issue the runtime's managed-agent credential under a Preloop user whose role
+                 lacks decide_approvals (viewer, analyst and tracker_manager do)
+```
+
+## 14. Conductor's run dashboard cannot be opened from the host, and why
+
+Conductor does have one: `conductor run --web --web-port N` serves a real-time dashboard of the run
+in progress. It cannot be reached from the operator's browser here, and the reason is the isolation
+this stack is built on rather than anything about Conductor:
+
+1. The dashboard binds the **container's loopback** (`conductor/web/server.py`, `host="127.0.0.1"`;
+   there is no host option) — measured with a run in flight: `ss` inside the agent shows
+   `LISTEN 127.0.0.1:8783 conductor`, while the host's `curl` answers `000`.
+2. Its auth only accepts a loopback `Host` header (`conductor/web/auth.py`) — which a browser on a
+   published `127.0.0.1` port would in fact send, so this one is not the blocker.
+3. The blocker is that **the agent is single-homed on an `internal: true` network**, where this
+   Docker version does not apply port bindings at all. The binding was configured and
+   `docker inspect` showed it; `docker port` showed nothing, and a forwarder listening on
+   `0.0.0.0:8784` inside the container was still unreachable from the host. This is the same
+   measurement that made MLflow dual-homed (§ the compose file's own note, FINDINGS.md F9).
+
+Making it reachable therefore means giving the agent a second, non-internal network — the one thing
+the isolation claim rests on. It is not done, and the attempt (a published port, a small forwarder,
+`--web` wiring) was removed rather than left half-built. One more reason to leave it: Conductor's
+own background mode reads `CONDUCTOR_WEB_PORT` from the environment to recognise its child process,
+so that name must not be set in the container for unrelated purposes.
+
+What answers the same need: the panel's **run history** tab reads Conductor's event log directly —
+which steps ran, when, and where the run is now — and `conductor status` / `conductor fleet` answer
+it in a terminal.

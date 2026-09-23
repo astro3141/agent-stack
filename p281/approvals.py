@@ -16,7 +16,7 @@ asking for the first page alone is not "the pending ones": fifty decided request
 hide one that is waiting. This asks for `status=pending` and keeps asking until a page comes back
 short. Callers that delete things (p281/cleanup.py) must use --all and stop unless `complete`.
 """
-import glob, json, os, sys, urllib.error, urllib.request
+import glob, hashlib, json, os, sys, urllib.error, urllib.request
 from datetime import datetime, timezone
 sys.path.insert(0, "/work/p281")
 import settings
@@ -74,12 +74,17 @@ def decide(request_id, approve, comment=""):
                "error": f"HTTP {e.code}: {e.read()[:200].decode('utf8', 'replace')}"}
     except Exception as e:
         out = {"ok": False, "id": request_id, "decision": verb, "error": f"{type(e).__name__}: {e}"}
-    # the operations record, on our side: who answered what, and whether it took
+    # the operations record, on our side: which credential answered what, and whether it took.
+    # The fingerprint matters because in Preloop OSS 0.15.0 the runtime's own credential is
+    # authorised to decide approvals (measured; OPERATIONS.md §13) — so "who answered" is a
+    # question that has to stay answerable afterwards.
     try:
         os.makedirs("/work/evidence/ops", exist_ok=True)
         with open("/work/evidence/ops/controls.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps({"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                                "control": "approval", **out,
+                                "control": "approval",
+                                "credential_sha12": hashlib.sha256(tok.encode()).hexdigest()[:12],
+                                **out,
                                 "comment": (comment or "")[:200]}, ensure_ascii=False) + "\n")
     except OSError:
         pass
