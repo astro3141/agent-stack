@@ -1,0 +1,18 @@
+{
+  "profile": "research-default",
+  "route": "ROUTE: claude: within limits",
+  "roles": "architect=codex author=claude story=codex history=claude cold=grok",
+  "decision": "PASS",
+  "reason": "no blocking finding in the required reviews",
+  "draft_id": "d02",
+  "draft_sha256": "539bf788141fabeaf1ea94696f463ee73ea5f8b2306820c085aa64825c2140dd",
+  "chars": 1068,
+  "repairs": 1,
+  "cold_available": "yes",
+  "cold_continue_reading": 4,
+  "review_overlap": 2.06,
+  "review_wall_s": 67.82,
+  "reviews_failed": "",
+  "mlflow_run_id": "60c0651969fd4d8aac45b3e09e5b638e",
+  "record_error": ""
+}
