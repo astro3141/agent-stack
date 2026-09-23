@@ -665,6 +665,19 @@ def controls_panel():
     check("the hub forwards exactly the dashboard's own paths",
           all(x in hub for x in ("/api/state", "/assets/", "/conductor")), True)
 
+    # the switches in someone else's console that would make this panel's claims untrue
+    import importlib.util as il
+    spec2 = il.spec_from_file_location("elsewhere_ctl", "/work/p281/elsewhere.py")
+    ew = il.module_from_spec(spec2)
+    sys.modules["elsewhere_ctl"] = ew
+    spec2.loader.exec_module(ew)
+    st = ew.state()
+    check("approval bypasses are read", "approval_bypasses" in st or "approval_bypasses_error" in st, True)
+    check("the registered MCP servers are read", "mcp_servers" in st or "mcp_servers_error" in st, True)
+    src = open("/work/p281/elsewhere.py", encoding="utf-8").read()
+    check("and only read — nothing there is edited from here",
+          any(m in src for m in ('method="POST"', 'method="PUT"', 'method="DELETE"')), False)
+
     page = open("/work/hub/index.html", encoding="utf-8").read()
     check("the page asks before it decides", "confirm(" in page, True)
     check("and says where the rest is done", "scripts/up.sh --check" in page, True)

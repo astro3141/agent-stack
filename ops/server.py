@@ -137,6 +137,7 @@ class H(BaseHTTPRequestHandler):
                 last = json.loads(out) if rc == 0 else {}
             except ValueError:
                 last = {}
+            elsewhere = jexec([PY, "/work/p281/elsewhere.py", "--json"])
             rc2, hs, _ = dexec(["cat", "/work/evidence/ops/host-state.json"])
             try:
                 host_state = json.loads(hs) if rc2 == 0 else None
@@ -148,6 +149,8 @@ class H(BaseHTTPRequestHandler):
                 # backups and releases live outside every container; this is what the host last
                 # wrote down about them (scripts/host-state.sh), shown with its age
                 "host_state": host_state,
+                # what another console could have changed under us
+                "elsewhere": elsewhere,
                 # the consoles that own what this panel deliberately does not rebuild
                 "links": {
                     "preloop": f"http://127.0.0.1:{os.environ.get('PRELOOP_CONSOLE_PORT', '3000')}",

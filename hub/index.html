@@ -96,6 +96,13 @@
   </div>
 
   <div class="card">
+    <h2>다른 콘솔에서 바뀔 수 있는 것</h2>
+    <div class="muted">여기서 다시 만들지 않기로 한 화면들이 이 스택의 전제를 바꿀 수 있는 지점입니다. 읽어서 보여줄 뿐,
+      바꾸는 건 그쪽 콘솔에서 합니다.</div>
+    <div id="dash-elsewhere"><span class="muted">불러오는 중…</span></div>
+  </div>
+
+  <div class="card">
     <h2>다른 솔루션의 콘솔</h2>
     <div class="row muted">도구 정책은 Preloop이, 실행 비교는 MLflow가 주인입니다. 여기서 다시 만들지 않고 그쪽으로 넘깁니다.
       (승인 <em>판정</em>만 이 화면에 있습니다 — 실행이 사람을 기다리며 멈춰 있는 유일한 지점이라서요.)</div>
@@ -415,6 +422,20 @@ async function loadOverview() {
       `<div>확인 시각</div><div>${esc(ago(seen))} <span class="muted">(${esc(hs.at)})</span></div>` +
       `</div>`;
   }
+
+  const el = o.elsewhere || {};
+  const byp = el.approval_bypasses;
+  $("#dash-elsewhere").innerHTML =
+    (byp === undefined
+      ? `<div class="row"><span class="warn">승인 우회 목록을 읽지 못했습니다</span> <span class="muted">${esc(el.approval_bypasses_error || "")}</span></div>`
+      : byp.length
+        ? `<div class="row"><span class="bad">승인 우회 ${byp.length}건이 살아 있습니다</span> ` +
+          `<span class="muted">그동안 도구 호출은 사람에게 묻지 않고 지나갑니다</span></div>` +
+          byp.map((b) => `<div class="row muted">· ${esc(b.scope || "(범위 미상)")} · 만료 ${esc(b.expires_at || "없음")} ${esc(b.reason || "")}</div>`).join("")
+        : `<div class="row"><span class="ok">승인 우회 없음</span> <span class="muted">모든 도구 호출이 규칙 또는 사람의 판정을 거칩니다</span></div>`) +
+    `<div class="row muted">등록된 MCP 서버: ` +
+    ((el.mcp_servers || []).map((m) => `<span class="chip">${esc(m.name)}</span>`).join(" ") ||
+     `<span class="warn">${esc(el.mcp_servers_error || "없음")}</span>`) + `</div>`;
 
   const L = o.links || {};
   $("#dash-links").innerHTML =

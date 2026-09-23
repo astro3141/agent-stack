@@ -853,3 +853,33 @@ Measured: `GET /` answers 200 from the host, `/api/state` returns the run's even
 runs takes about two seconds (`showing cyc-…: /work/evidence/ui-runs/cyc-…/tmp/conductor/*.jsonl`
 in the container's log). What remains true is the part above — a *live* run's own dashboard
 (`conductor run --web`) is still unreachable, because that one is served from inside the agent.
+
+## 15. What each solution still owns, and what that costs
+
+The panel is one address, but it is not the only place this stack can be changed. This is the
+review of where every control surface sits after the consolidation — including the ones
+deliberately left where they are.
+
+| solution | its own surface | where it is now |
+|---|---|---|
+| **Preloop** | console at `:3000` — policies and their versions, principals and credentials, tool rules, MCP servers, approval workflows, approval **bypasses**, cost | linked. One control was brought over: **deciding a pending approval**, because that is a run stopped waiting for a person (§12) |
+| **Conductor** | a live dashboard per run (`--web`), `status` / `fleet` in a terminal, human **gates** (`conductor gate`), mid-run guidance (`conductor guide`) | the run dashboard is in the panel, rendered from the recorded event log (§14). `status`/`fleet` stay in the terminal. **Gates and guidance are not used by any workflow here**, so nothing was brought over — if a workflow ever uses a gate, it becomes a human decision and belongs in the panel |
+| **MLflow** | its own UI for runs and comparison | linked. Nothing mode-like to bring |
+| **acpx** | no UI; permission mode is decided per call by the adapter (`deny-all` fallback, `native_tools`) | ours already — it is configuration, not a screen |
+| **this stack** | compositions, cycles, retention, backup/restore, release/rollback | commands and configuration files, with their **state** shown in the panel (§12) |
+
+**The one that mattered.** Preloop can be told to stop asking: an **approval bypass** does not block
+a run, it removes the block — the kind of change that leaves no trace in any outcome this stack
+records. A panel that shows pending approvals but not live bypasses would be telling half the
+truth. So `p281/elsewhere.py` reads what another console could have changed underneath us, and the
+dashboard shows it:
+
+- **approval bypasses** — none, or every live one with its scope and expiry, in red
+- **the MCP servers registered to the account** — the tools an agent can reach are whatever is in
+  that list, and it is editable there
+- the policy actually applied (already reported by `cfg.py status` as `replaced` when someone
+  else's policy is on the account)
+
+Reading, not editing: changing any of them stays in the console that owns it. This is the honest
+boundary of "we do not rebuild other products' screens" — we do not, but we do look at the switches
+that would make our own claims untrue.
