@@ -197,6 +197,8 @@ agents:
     args: ["/work/p281/steps/novel_stage.py", "triage", "{{ workflow.input.max_repairs }}",
            "story,history"]
     output:
+      evidence_index: {type: string}
+      evidence_items: {type: number}
       decision: {type: string}
       reason: {type: string}
       repairs_done: {type: number}
@@ -234,7 +236,7 @@ agents:
     description: Record the run (never fails the workflow)
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/record.py"]
-    stdin: "{{ {'execute': author.output, 'executions': [architect.output], 'receipts': [reviews.output.receipt], 'measurements': {'repairs': triage.output.repairs_done, 'chars': triage.output.chars, 'review_overlap': reviews.output.overlap}, 'check': {'decision': triage.output.decision, 'reason': triage.output.reason, 'file_sha256': triage.output.draft_sha256}, 'route': route.output} | tojson }}"
+    stdin: "{{ {'execute': author.output, 'executions': [architect.output], 'receipts': [reviews.output.receipt], 'measurements': {'repairs': triage.output.repairs_done, 'chars': triage.output.chars, 'review_overlap': reviews.output.overlap}, 'evidence_file': triage.output.evidence_index, 'check': {'decision': triage.output.decision, 'reason': triage.output.reason, 'file_sha256': triage.output.draft_sha256}, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
       experiment_id: {type: string}

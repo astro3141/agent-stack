@@ -1001,3 +1001,52 @@ repeatable.
 a workflow writes its artifacts again, in its own workspace. What is fixed is the class that was
 actually dangerous here — a repeat that changes a *decision* (a round, a bound, a record) rather
 than a byte.
+
+## 18. Evidence, joined to the claim it supports
+
+The design procedure (§15) separates runtime evidence from semantic evidence and asks that the
+second point at the first: a claim, the criterion it answers, the artifact it is about, and the
+execution that produced it. Everything needed for that join already existed here — a call's
+`run_id` and evidence directory, each artifact's sha256 in the fan-out receipt, the frozen draft's
+own hash — and nothing joined them, so *"why did this run pass"* meant reading a workspace by hand.
+
+The judging step now writes the join, because what a finding means is the workflow's
+(`CONTRACT.md`). `novel_stage.py triage` and `trade_stage.py evaluate` each write
+`evidence_index.json` next to the run's artifacts:
+
+```
+판정: PASS | no blocking finding in the required reviews
+대상 초안: d02 draft-02.md 106ca06a3421
+
+story    MINOR   NONE               기준 차이의 직접 보고와 서명 보고서 제출 지시로 …
+         호출 b6d47723-story-codex | 주체 novel-reviewer | 리뷰 71393efe6cc3
+history  MINOR   UNSUPPORTED_CLAIM  5문단의 "분기 약정에서 …
+         호출 b6d47723-history-claude | 주체 novel-reviewer | 리뷰 8f97f4051ef3
+cold     -       -                  no finding recorded
+         호출 b6d47723-cold-grok | 주체 novel-reviewer
+```
+
+Each item carries the claim, its kind and severity, the **criterion** it answers
+(`story:CONTRACT_MISS`), the **call** that produced it (`execution_id`, its evidence directory),
+the **principal** that call ran as, the **review** it came from with that file's sha256, and the
+**artifact it is about** with its hash. A reviewer that found nothing is in the index too — an
+absent judgement is a fact about the round.
+
+The trading cycle's index is the same shape, with the lanes:
+
+```
+패킷: packet.json b27021f04b24
+ai     ai VALID    호출 a6c6b1ad-ai-codex     제안 874786a81827
+ai2    ai2 VALID   호출 a6c6b1ad-ai2-claude   제안 5c7f171b74fd
+base   base VALID  호출 (모델 없음)            제안 —
+```
+
+**The index travels with the record.** `record.py` takes `evidence_file`, stores it on the MLflow
+run as `evidence_index.json` and tags the run with how many items it holds — measured on a real
+run: `evidence_items: 3`, artifact `evidence_index.json`. So a record can be read later without the
+workspace it came from, which is what made the evidence hard to use before.
+
+What this does not add: a criterion catalogue. The "criterion" here is the reviewer and the kind of
+finding it made (`history:UNSUPPORTED_CLAIM`), not an entry in an acceptance-criteria document —
+this stack's workflows do not have one yet. When a workflow gains one, the field is already where
+it belongs.

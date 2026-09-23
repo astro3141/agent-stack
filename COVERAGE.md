@@ -33,7 +33,7 @@ something this stack has been measured doing, or is marked as not covered.
 |---|---|
 | Runtime outcome ≠ semantic outcome | kept apart everywhere: a call's `status` (COMPLETED/FAILED) and the workflow's judgement (`gate.decision` PASS / REPAIR / BLOCK / CYCLE / HOLD) are separate fields in the record, and the graph routes on the judgement |
 | Runtime retry ≠ workflow loop | kept apart: `attempts` counts a retried *execution*; the novel workflow's repair loop is a semantic transition with a bound (`max_repairs`) and a deterministic triage that owns the edge |
-| Runtime evidence ≠ semantic evidence | partly: runtime evidence is complete (per-call events, permissions, result). Semantic evidence is recorded as the decision, its reason and the artifact's hash — but there is **no index from an acceptance criterion to the runtime evidence that supports it** (the guide's `criterion → execution_id/tool_call_id`) |
+| Runtime evidence ≠ semantic evidence | **joined.** The judging step writes `evidence_index.json`: each claim with its kind and severity, the criterion it answers, the call that produced it (`execution_id`, evidence directory, principal), the review or proposal it came from with that file's sha256, and the artifact it is about with its hash. The recorder stores the index on the MLflow run and tags the count, so a record is readable without its workspace (OPERATIONS §18). What is still missing is a criterion *catalogue* — the criterion is the reviewer and the kind of finding, not an entry in an acceptance-criteria document, because the workflows here do not have one yet |
 | Workflow semantics stay out of the platform | held: Preloop decides tool rights, never what a result means; `CONTRACT.md` is this stack's own version of the same rule |
 
 ## §16–18 Evaluation and the production gate
@@ -52,6 +52,9 @@ workflow that runs on it.
 
 ## What this review changed
 
+0. **Evidence joined to its claim** — a judgement now names the call that made it and the artifact
+   it was about, and the index travels with the record
+   ([#5](https://github.com/astro3141/agent-stack/issues/5), OPERATIONS §18).
 0. **Idempotency where it matters** — three steps changed a judgement when repeated (a round, a
    repair bound, a record); all three are guarded and every step now declares what a repeat does
    ([#4](https://github.com/astro3141/agent-stack/issues/4), OPERATIONS §17).
@@ -67,4 +70,3 @@ workflow that runs on it.
 | gap | why it matters | issue |
 |---|---|---|
 | evaluation layer | without outcome/step/trajectory evaluation over a dataset, "it worked" is a handful of runs | [#3](https://github.com/astro3141/agent-stack/issues/3) |
-| semantic evidence index | evidence exists but is not linked to the criterion it supports | [#5](https://github.com/astro3141/agent-stack/issues/5) |

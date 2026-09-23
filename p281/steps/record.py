@@ -7,6 +7,7 @@ Reads one JSON payload on stdin:
      "receipts":   ["<path>", ...],             # fan-out receipts (steps/tasks.py): their members
      "check":      {"decision", "reason", "file_sha256"},
      "measurements": {...},                     # the run's own numbers, whatever they mean here
+     "evidence_file": "<path>",                 # the run's semantic index, kept with the record
      "route":      <router output>}
 
 What it records depends only on how many executions the run actually made:
@@ -49,10 +50,28 @@ def call(path, body=None, method="POST"):
     return json.load(urllib.request.urlopen(r, timeout=20))
 
 
-def put_artifact(exp_id, rid, path):
+def put_artifact(exp_id, rid, path, name="result.json"):
     urllib.request.urlopen(urllib.request.Request(
-        f"{mlflow_url()}/api/2.0/mlflow-artifacts/artifacts/{exp_id}/{rid}/artifacts/result.json",
+        f"{mlflow_url()}/api/2.0/mlflow-artifacts/artifacts/{exp_id}/{rid}/artifacts/{name}",
         data=open(path, "rb").read(), method="PUT"), timeout=20)
+
+
+def attach_evidence(payload, exp_id, rid):
+    """Keep the run's semantic index with its record: which judgement rests on which call.
+
+    The workflow writes it (what a finding means is the workflow's, CONTRACT.md); this only stores
+    it beside the run and counts it, so a record can be read later without the workspace.
+    """
+    path = payload.get("evidence_file")
+    if not path or not os.path.exists(path):
+        return 0
+    try:
+        items = (json.load(open(path, encoding="utf-8")) or {}).get("items") or []
+        put_artifact(exp_id, rid, path, "evidence_index.json")
+        log(rid, {"evidence_items": len(items)})
+        return len(items)
+    except Exception:
+        return 0
 
 
 def experiment_id(payload):
@@ -203,9 +222,10 @@ def record(payload):
         res = os.path.join(ex["evidence_dir"], "result.json")
         if os.path.exists(res):
             put_artifact(exp_id, rid, res)
+        n = attach_evidence(payload, exp_id, rid)
         finish(rid)
         return {"mlflow_run_id": rid, "experiment_id": exp_id, "executions": 1, "children": 0,
-                "record_error": "; ".join(errors)}
+                "evidence_items": n, "record_error": "; ".join(errors)}
 
     # Several executions: the parent carries the run's judgement, each child its own execution.
     done = [e for e in exps if e.get("status") == "COMPLETED"]
@@ -239,9 +259,10 @@ def record(payload):
             children += 1
         except Exception as e:           # one child lost is not the run's record lost
             errors.append(f"{ex.get('member') or ex['run_id']}: {type(e).__name__}: {e}"[:200])
+    n = attach_evidence(payload, exp_id, rid)
     finish(rid)
     return {"mlflow_run_id": rid, "experiment_id": exp_id, "executions": len(exps),
-            "children": children, "record_error": "; ".join(errors)[:300]}
+            "children": children, "evidence_items": n, "record_error": "; ".join(errors)[:300]}
 
 
 def main():

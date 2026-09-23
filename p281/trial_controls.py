@@ -20,6 +20,8 @@ fails if the fix is reverted. What each group pins:
             only, and every step is one execution in the record
   running   unattended operation: one cycle at a time, a skip and a refusal both recorded, and
             the health report counting what actually happened
+  evidence  a judgement points at the call that made it and the artifact it was about, and the
+            index travels with the record
   repeat    every step says what a repeat of it does, and the three that would have been wrong
             about it are guarded: freeze, triage's repair count, and the record
   step-rights  a role may run as its own principal, and that reaches the call
@@ -635,6 +637,82 @@ def controls_running():
     check("the soak measures without cleaning up", "cleanup" not in soak.split("#!")[1].split("set -u")[1], True)
 
 
+# ---------------------------------------------------------------- evidence, joined to its claim
+def controls_evidence():
+    print("evidence — a judgement says what it rests on")
+    import io, contextlib, importlib.util as il
+    ws = real_ws()
+    ns = load("/work/p281/steps/novel_stage.py", "ns_ev", ws)
+    open(f"{ws}/draft.md", "w").write("a draft to judge\n")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        ns.cmd_freeze()
+    meta = json.load(open(f"{ws}/draft_meta.json", encoding="utf-8"))
+    blocking = {"reviewer": "story", "usable": True, "verdict": "REPAIR",
+                "findings": [{"kind": "CONTRACT_MISS", "severity": "BLOCKING",
+                              "what": "the contracted change never happens"}]}
+    ok = {"reviewer": "x", "usable": True, "verdict": "PASS",
+          "findings": [{"kind": "NONE", "severity": "MINOR", "what": "fine"}]}
+    members = {}
+    for n, doc, prov, call in (("story", blocking, "codex", "run-story"),
+                               ("history", ok, "claude", "run-history"),
+                               ("cold", ok, "grok", "run-cold")):
+        json.dump(doc, open(f"{ws}/review_{n}.json", "w"))
+        members[n] = {"artifact": f"review_{n}.json", "provider": prov, "produced": True,
+                      "status": "COMPLETED", "sha256": ns.sha_file(f"{ws}/review_{n}.json"),
+                      "result": {"run_id": call, "provider": prov, "principal": "novel-reviewer",
+                                 "evidence_dir": f"/work/evidence/p281/{call}"}}
+    json.dump({"context": meta["draft_sha256"], "members": members},
+              open(f"{ws}/reviews_round.json", "w"))
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        ns.cmd_triage("1")
+    res = json.loads(buf.getvalue().strip().splitlines()[-1])
+    idx = json.load(open(f"{ws}/evidence_index.json", encoding="utf-8"))
+    check("the index is written and reported", (os.path.isfile(f"{ws}/evidence_index.json"),
+                                                res["evidence_items"]), (True, len(idx["items"])))
+    check("it names the judgement it explains", idx["decision"], "REPAIR")
+    blocking_item = [i for i in idx["items"] if i.get("severity") == "BLOCKING"][0]
+    check("a finding points at the call that made it", blocking_item["execution_id"], "run-story")
+    check("and at the principal that call ran as", blocking_item["principal"], "novel-reviewer")
+    check("and at the review it came from",
+          blocking_item["review"]["sha256"], members["story"]["sha256"])
+    check("and at the artifact it is about",
+          (blocking_item["about"]["draft_id"], blocking_item["about"]["sha256"]),
+          (meta["draft_id"], meta["draft_sha256"]))
+    check("a reviewer that found nothing is still in the index",
+          [i["by"] for i in idx["items"]].count("cold"), 1)
+    shutil.rmtree(ws, ignore_errors=True)
+
+    # the recorder keeps it with the run rather than leaving it in a workspace
+    spec = il.spec_from_file_location("record_ev", "/work/p281/steps/record.py")
+    rec = il.module_from_spec(spec)
+    sys.modules["record_ev"] = rec
+    spec.loader.exec_module(rec)
+    sent = []
+    rec.call = lambda path, body=None, method="POST": (
+        sent.append((path, body)) or ({"experiment": {"experiment_id": "9"}} if "get-by-name" in path
+                                      else {"run": {"info": {"run_id": "r1"}}} if path.endswith("runs/create")
+                                      else {"runs": []} if path.endswith("runs/search") else {}))
+    stored = []
+    rec.put_artifact = lambda exp, rid, path, name="result.json": stored.append(name)
+    root = tempfile.mkdtemp(prefix="p281-ev-")
+    ev = os.path.join(root, "evidence_index.json")
+    json.dump({"decision": "PASS", "items": [{"claim": "a"}, {"claim": "b"}]}, open(ev, "w"))
+    os.environ["CONDUCTOR_SELF_RUN_ID"] = "run-ev"
+    out = rec.record({"execute": {"run_id": "x", "provider": "claude", "status": "COMPLETED",
+                                  "model_route": "direct", "model_session_reported": "",
+                                  "model_adapter_reported": "", "model_served": "",
+                                  "evidence_dir": "", "profile": "research-default"},
+                      "check": {"decision": "PASS", "reason": "r", "file_sha256": "s"},
+                      "evidence_file": ev, "route": {}})
+    check("the index is stored with the record", stored, ["evidence_index.json"])
+    check("and counted on it", out["evidence_items"], 2)
+    tags = [t for p_, b in sent if p_.endswith("log-batch") for t in (b.get("tags") or [])]
+    check("the count is a tag too", any(t["key"] == "evidence_items" for t in tags), True)
+    shutil.rmtree(root, ignore_errors=True)
+
+
 # ---------------------------------------------------------------- repeating a step
 def controls_repeat():
     print("repeat — the same step run twice does not invent work")
@@ -896,6 +974,7 @@ if __name__ == "__main__":
     controls_boundary()
     controls_chains()
     controls_running()
+    controls_evidence()
     controls_repeat()
     controls_step_rights()
     controls_panel()

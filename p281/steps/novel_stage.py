@@ -198,7 +198,41 @@ def cmd_triage(max_repairs, required="story,history"):
         json.dump({"findings": blocking}, open(f"{WS}/findings.json", "w"), ensure_ascii=False, indent=1)
         # one file per draft asked to be repaired: asking again about the same draft is the same ask
         json.dump({"findings": blocking}, open(this_round, "w"), ensure_ascii=False, indent=1)
+    # The index the guide asks for (§15): every judgement pointed at the call that made it and the
+    # artifact it was about. The pieces were all here — a call's run_id and evidence directory, the
+    # review's sha256 in the round receipt, the draft's own hash — and nothing joined them, so
+    # "why did this run pass" meant reading a workspace by hand.
+    def member(name):
+        m = (members.get(name) or {})
+        r = m.get("result") or {}
+        return {"by": name, "provider": m.get("provider") or r.get("provider", ""),
+                "principal": r.get("principal", ""), "execution_id": r.get("run_id", ""),
+                "evidence_dir": r.get("evidence_dir", ""),
+                "review": {"file": m.get("artifact", f"review_{name}.json"),
+                           "sha256": m.get("sha256", "")}}
+
+    about = {"artifact": os.path.basename(meta.get("path", "")), "draft_id": meta.get("draft_id", ""),
+             "sha256": meta.get("draft_sha256", "")}
+    items = []
+    for name in ("story", "history", "cold"):
+        r = reviews.get(name) or {}
+        base = {**member(name), "about": about,
+                "usable": bool(r.get("usable")), "why_unusable": "" if r.get("usable") else r.get("why", "")}
+        fs = r.get("findings") if isinstance(r.get("findings"), list) else []
+        if not fs:
+            items.append({**base, "claim": "no finding recorded", "kind": "", "severity": ""})
+        for f in fs:
+            if not isinstance(f, dict):
+                continue
+            items.append({**base, "claim": (f.get("what") or "")[:300],
+                          "kind": f.get("kind", ""), "severity": f.get("severity", ""),
+                          "criterion": f"{name}:{f.get('kind', '')}"})
+    index = {"decision": decision, "reason": reason, "draft": about,
+             "required": need, "repairs_done": done, "items": items}
+    json.dump(index, open(f"{WS}/evidence_index.json", "w"), ensure_ascii=False, indent=1)
+
     out(status="OK", decision=decision, reason=reason, repairs_done=done,
+        evidence_index=f"{WS}/evidence_index.json", evidence_items=len(items),
         blocking_count=len(blocking),
         cold_available="yes" if cold.get("usable") else "no",
         cold_continue_reading=str(cold.get("continue_reading", "")),
