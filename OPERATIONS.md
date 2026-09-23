@@ -772,6 +772,8 @@ actually holds (`~/.preloop/agents/*/permission_hook.json`, sha12 `57dfc1f6…`)
 So the runtime must hold a managed-agent credential to be governed at all, and in this version that
 credential inherits whatever its creating user may do. Ours was created by the account owner.
 
+Tracked as **agent-stack issue #1**, with the verification order it needs.
+
 **What would actually fix it, in this version:** create the runtime's managed agent under a second
 Preloop user whose role lacks `decide_approvals`. Three of the seven roles qualify — `viewer` (12
 permissions), `analyst` (20), `tracker_manager` (18) — and since the hook endpoint checks no
