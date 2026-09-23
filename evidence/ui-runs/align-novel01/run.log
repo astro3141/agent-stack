@@ -1,0 +1,20 @@
+{
+  "profile": "research-default",
+  "route": "ROUTE: claude: within limits",
+  "roles": "architect=codex author=claude story=codex history=claude cold=grok",
+  "decision": "BLOCK",
+  "reason": "still blocking after 0 repair(s) \u2014 bound reached",
+  "draft_id": "d01",
+  "draft_sha256": "625ed6c0c1216369c1ce95365a26c594c5dcd9f155acb545d2a6221bab565917",
+  "chars": 1179,
+  "repairs": 0,
+  "cold_available": "yes",
+  "cold_continue_reading": 4,
+  "review_overlap": 2.31,
+  "review_wall_s": 57.11,
+  "reviews_failed": "",
+  "mlflow_run_id": "2907075f77384eb9a2d1a001b63ebdf2",
+  "record_error": ""
+}
+Workflow terminated at 'done_block': BLOCK: still blocking after 0 repair(s) — 
+bound reached
