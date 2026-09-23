@@ -207,6 +207,11 @@ class H(BaseHTTPRequestHandler):
             # the panel's own address — the dashboard is proxied by the hub, not published
             return self._send(200, {"ui": ui, "url": "/conductor",
                                     "note": "the dashboard switches within a couple of seconds"})
+        m = re.fullmatch(r"/api/runs/([a-z0-9-]{6,40})/stop", p)
+        if m:
+            # Stopping a run that is going is a person's call — the same kind of decision as an
+            # approval, and the only other one this panel makes. Conductor does the stopping.
+            return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "stop", m.group(1)]))
         m = re.fullmatch(r"/api/approvals/([0-9a-f-]{36})", p)
         if m:
             # Preloop owns the decision; this panel is where the person makes it, because an

@@ -31,6 +31,8 @@ directory, and the operations that let the result survive a restart, an update o
 - **[CONTRACT.md](CONTRACT.md)** — the line this codebase is organized around: *the platform
   provides capabilities; it does not decide behaviour.* Each capability with its guarantee, and
   what it leaves to the caller. Read this before adding anything.
+- **[COVERAGE.md](COVERAGE.md)** — this stack measured against the workflow design procedure it is
+  meant to serve: what it covers, what is only partial, and what is missing (with issues).
 - **[OPERATIONS.md](OPERATIONS.md)** — what is actually running and what must survive it: backup
   and restore, update and rollback, cleanup, compositions, tool policy per principal, and long
   operation. Every section is a measurement, including the ones that went wrong.

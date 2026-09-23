@@ -41,6 +41,7 @@ configuration file, where it can be repeated, reviewed and automated.
 |---|---|
 | signing a provider in (the code comes from the vendor, to a human) | starting a run, one cycle, a soak (`scripts/cycle.sh`, `scripts/soak.sh`) |
 | **answering a pending approval** — an agent asked for something its rules do not decide, and the run waits | switching composition, running the checks, applying configuration (`scripts/up.sh …`, `cfg.py`) |
+| **stopping a run that is going** — whether this one should keep going is a judgement, and nothing else can make it | resuming or re-running it afterwards (`run_workflow.py`) |
 | reading enough state to judge whether this is healthy | retention and cleanup (`scripts/cleanup.sh`, `--retain-*` on a cycle) |
 | | release, rollback, backup, restore (`scripts/release.sh`, `backup.sh`, `restore.sh`) |
 

@@ -3,6 +3,7 @@
 usage:
   run_workflow.py start <ui-id> <workflow> <profile> [key=value ...] [--allow-unrecorded]
   run_workflow.py resume <ui-id>                                      continue an interrupted run
+  run_workflow.py stop   <ui-id>                                      stop a run that is going
   run_workflow.py show  <ui-id>                                       JSON view of one run
   run_workflow.py list                                                JSON list, newest first
 
@@ -127,6 +128,36 @@ def cmd_resume(ui):
     return 0
 
 
+def cmd_stop(ui):
+    """Stop a run that is going. A person's decision, so it is offered in the panel too.
+
+    Conductor owns the stopping: `conductor stop --run-id` escalates until the process is confirmed
+    gone (a graceful cancel, then a signal, then force) and refuses to target the run it is itself
+    running inside. This only finds the run id — from the event log this run owns — and records
+    that a stop was asked for.
+
+    What a stop does **not** leave, measured: a checkpoint. Across 51 runs here only two have one,
+    and both are runs that *failed*; a stopped run's directory has none, so it is started again
+    rather than resumed. The run itself is then read as `interrupted`, which is what it is.
+    """
+    meta = json.loads(meta_path(ui).read_text()) if meta_path(ui).exists() else None
+    if not meta:
+        print(json.dumps({"error": "no such run"})); return 2
+    p = events_for(ui)
+    rid = p.name.rsplit("-", 1)[-1].split(".")[0] if p else None
+    if not rid:
+        print(json.dumps({"error": "this run has no Conductor event log yet"})); return 3
+    # --yes: the confirmation is the panel's (a person pressed a button); there is no terminal here
+    r = subprocess.run(["conductor", "stop", "--run-id", rid, "--yes"], capture_output=True, text=True,
+                       cwd="/work", env={**os.environ, "TMPDIR": str(run_dir(ui) / "tmp")})
+    meta["stop_requested_at"] = time.time()
+    meta["stop_result"] = (r.stdout or r.stderr)[-300:]
+    meta_path(ui).write_text(json.dumps(meta))
+    print(json.dumps({"ui_id": ui, "conductor_run": rid, "rc": r.returncode,
+                      "output": (r.stdout or r.stderr)[-300:]}))
+    return 0
+
+
 def events_for(ui):
     files = glob.glob(str(run_dir(ui) / "tmp" / "conductor" / "*.events.jsonl"))
     return Path(files[0]) if len(files) == 1 else None    # exactly this run's log, or nothing
@@ -241,4 +272,5 @@ if __name__ == "__main__":
     sys.exit({"start": lambda: cmd_start(sys.argv[2], sys.argv[3], sys.argv[4], rest,
                                          "--allow-unrecorded" in sys.argv[5:]),
               "resume": lambda: cmd_resume(sys.argv[2]),
+              "stop": lambda: cmd_stop(sys.argv[2]),
               "show": lambda: cmd_show(sys.argv[2]), "list": cmd_list}[a]())
