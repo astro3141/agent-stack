@@ -2,6 +2,7 @@
 
 usage:
   run_workflow.py start <ui-id> <workflow> <profile> [key=value ...]   (foreground; ops starts it detached)
+  run_workflow.py resume <ui-id>                                      continue an interrupted run
   run_workflow.py show  <ui-id>                                       JSON view of one run
   run_workflow.py list                                                JSON list, newest first
 
@@ -68,6 +69,37 @@ def cmd_start(ui, workflow, profile, pairs):
         argv += ["-i", f"{k}={v}"]
     env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor")}
     with open(d / "run.log", "wb") as log:
+        rc = subprocess.run(argv, cwd="/work", stdout=log, stderr=subprocess.STDOUT, env=env).returncode
+    meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})
+    meta_path(ui).write_text(json.dumps(meta))
+    return 0
+
+
+def cmd_resume(ui):
+    """Continue an interrupted run from Conductor's own checkpoint.
+
+    Conductor writes checkpoints under $TMPDIR/conductor/checkpoints, and every run here already
+    has a TMPDIR of its own — so a run's checkpoints are exactly its own. Resuming re-enters the
+    step that did not finish; inside a fan-out step, steps/fanout.py then re-runs only the members
+    that did not finish. Conductor's unit is the step, this stack's unit is the member, and the two
+    together are what makes an interrupted cycle continue instead of starting over.
+    """
+    if not re.fullmatch(r"[a-z0-9-]{6,40}", ui) or not meta_path(ui).exists():
+        print(json.dumps({"error": "no such run"})); return 1
+    meta = json.loads(meta_path(ui).read_text())
+    if meta.get("state") == "running" and launcher_alive(meta):
+        print(json.dumps({"error": "this run is still going"})); return 1
+    d = run_dir(ui)
+    tmp = d / "tmp"
+    cps = sorted((tmp / "conductor" / "checkpoints").glob("*.json"), key=lambda p: p.stat().st_mtime)
+    if not cps:
+        print(json.dumps({"error": "no checkpoint for this run — nothing to resume from"})); return 1
+    meta.update({"state": "running", "resumed_at": time.time(), "resumed_from": cps[-1].name,
+                 "launcher_pid": os.getpid(), "instance": instance_id()})
+    meta_path(ui).write_text(json.dumps(meta))
+    argv = ["conductor", "--silent", "resume", "--from", str(cps[-1]), "--no-interactive"]
+    env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor")}
+    with open(d / "run.log", "ab") as log:
         rc = subprocess.run(argv, cwd="/work", stdout=log, stderr=subprocess.STDOUT, env=env).returncode
     meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})
     meta_path(ui).write_text(json.dumps(meta))
@@ -182,4 +214,5 @@ def cmd_list():
 if __name__ == "__main__":
     a = sys.argv[1]
     sys.exit({"start": lambda: cmd_start(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]),
+              "resume": lambda: cmd_resume(sys.argv[2]),
               "show": lambda: cmd_show(sys.argv[2]), "list": cmd_list}[a]())
