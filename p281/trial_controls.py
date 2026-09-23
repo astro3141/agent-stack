@@ -20,6 +20,8 @@ fails if the fix is reverted. What each group pins:
             only, and every step is one execution in the record
   running   unattended operation: one cycle at a time, a skip and a refusal both recorded, and
             the health report counting what actually happened
+  trajectory  what a run did, read from what was already recorded, with assertions that are true
+            or false — never a judgement of whether the result was any good
   evidence  a judgement points at the call that made it and the artifact it was about, and the
             index travels with the record
   repeat    every step says what a repeat of it does, and the three that would have been wrong
@@ -637,6 +639,73 @@ def controls_running():
     check("the soak measures without cleaning up", "cleanup" not in soak.split("#!")[1].split("set -u")[1], True)
 
 
+# ---------------------------------------------------------------- what a run did
+def controls_trajectory():
+    print("trajectory — the ground an evaluation stands on, and not the evaluation")
+    import importlib.util as il
+    spec = il.spec_from_file_location("traj_ctl", "/work/p281/trajectory.py")
+    tj = il.module_from_spec(spec)
+    sys.modules["traj_ctl"] = tj
+    spec.loader.exec_module(tj)
+
+    # a run as its records describe it — the reader is driven with a synthetic view
+    view = {"ui_id": "u1", "workflow": "novel-a", "profile": "research-default",
+            "suite": "s1", "state": "finished", "terminated_at": "done_pass",
+            "conductor_run": "abcd1234", "workspace_prefix": "/nowhere",
+            "inputs": {"max_repairs": "1"}, "output": {"decision": "PASS", "repairs": 1},
+            "capabilities": {"record": True}, "mlflow": {"run_id": "r1"},
+            "steps": [{"step": "route"}, {"step": "author"}, {"step": "done_pass"}]}
+    calls = [
+        {"call": "abcd1234-author-claude", "provider": "claude", "principal": "novel-author",
+         "status": "COMPLETED", "permission_requests": 2, "approvals_requested": 1,
+         "decided_by_rules": 1, "rule_denials": 0, "tokens": 100, "wall_ms": 1000, "attempts": 2},
+        {"call": "abcd1234-story-codex", "provider": "codex", "principal": "novel-reviewer",
+         "status": "COMPLETED", "permission_requests": 1, "approvals_requested": 0,
+         "decided_by_rules": 1, "rule_denials": 1, "tokens": 50, "wall_ms": 500, "attempts": 1},
+    ]
+    tj._view = lambda ui: view
+    tj.calls_of = lambda v: calls
+    tj.evidence_of = lambda v: {"decision": "PASS", "items": 3, "by": ["story"],
+                                "linked_to_a_call": 3}
+    t = tj.of_run("u1")
+    check("the calls are counted by provider", t["by_provider"], {"claude": 1, "codex": 1})
+    check("and by the principal they ran as",
+          t["by_principal"], {"novel-author": 1, "novel-reviewer": 1})
+    check("a rule deciding is not a person being asked",
+          (t["permission_requests"], t["decided_by_rules"], t["approvals_requested"]), (3, 2, 1))
+    check("a refusal by a rule is counted as one", t["rule_denials"], 1)
+    check("retries are counted from attempts", t["retries"], 1)
+    check("cost is summed, not invented", (t["tokens"], t["wall_ms"]), (150, 1500))
+    check("the loop is read against the run's own bound", t["loop"],
+          {"rounds": 1, "bound": 1, "within": True})
+    a = t["assertions"]
+    check("every assertion is true, false or unknown — never an opinion",
+          sorted(a), ["every_call_had_a_principal", "loop_within_bound",
+                      "reached_a_terminal_step", "recorded"])
+    check("this run's assertions hold", [a[k] for k in sorted(a)], [True, True, True, True])
+
+    # a loop over its bound is caught
+    view2 = {**view, "output": {"decision": "BLOCK", "repairs": 3}}
+    tj._view = lambda ui: view2
+    check("a loop past its bound is false, not absent",
+          tj.of_run("u1")["assertions"]["loop_within_bound"], False)
+
+    # a call with no principal, where the workflow assigns them
+    tj._view = lambda ui: view
+    tj.calls_of = lambda v: [calls[0], {**calls[1], "principal": ""}]
+    check("a call without its role's principal is caught",
+          tj.of_run("u1")["assertions"]["every_call_had_a_principal"], False)
+
+    # a workflow that assigns none is not judged for it
+    tj.calls_of = lambda v: [{**c, "principal": ""} for c in calls]
+    check("a workflow that assigns no principals is not accused",
+          tj.of_run("u1")["assertions"]["every_call_had_a_principal"], None)
+
+    src = open("/work/p281/trajectory.py", encoding="utf-8").read()
+    for word in ("accuracy", "grade", "grader", "score", "correct"):
+        check(f"it does not grade ({word})", word in src.lower().split("assertions")[0], False)
+
+
 # ---------------------------------------------------------------- evidence, joined to its claim
 def controls_evidence():
     print("evidence — a judgement says what it rests on")
@@ -974,6 +1043,7 @@ if __name__ == "__main__":
     controls_boundary()
     controls_chains()
     controls_running()
+    controls_trajectory()
     controls_evidence()
     controls_repeat()
     controls_step_rights()

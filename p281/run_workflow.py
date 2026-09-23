@@ -2,6 +2,7 @@
 
 usage:
   run_workflow.py start <ui-id> <workflow> <profile> [key=value ...] [--allow-unrecorded]
+                        [--suite <name>]   label this run so a set can be read together
   run_workflow.py resume <ui-id>                                      continue an interrupted run
   run_workflow.py stop   <ui-id>                                      stop a run that is going
   run_workflow.py show  <ui-id>                                       JSON view of one run
@@ -57,7 +58,7 @@ def meta_path(ui):
     return run_dir(ui) / "meta.json"
 
 
-def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False):
+def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite=""):
     if workflow not in WORKFLOWS or not re.fullmatch(r"[a-z0-9-]{1,40}", profile) or not re.fullmatch(r"[a-z0-9-]{6,40}", ui):
         print(json.dumps({"error": "invalid workflow, profile or id"})); return 2
     caps = capabilities.probe()
@@ -79,6 +80,8 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False):
     tmp = d / "tmp"
     (tmp / "conductor").mkdir(parents=True, exist_ok=False)     # a fresh id only
     meta = {"ui_id": ui, "workflow": workflow, "profile": profile, "inputs": inputs,
+            # a label only: it groups runs for whoever evaluates them, and changes nothing here
+            "suite": suite,
             "started_at": time.time(), "state": "running",
             # what the stack could do when this run started, so a run read later is read in
             # the light of the stack it actually ran on
@@ -268,9 +271,12 @@ def cmd_list():
 
 if __name__ == "__main__":
     a = sys.argv[1]
-    rest = [x for x in sys.argv[5:] if x != "--allow-unrecorded"]
+    argv = sys.argv[5:]
+    suite = argv[argv.index("--suite") + 1] if "--suite" in argv and argv.index("--suite") + 1 < len(argv) else ""
+    rest = [x for i, x in enumerate(argv)
+            if x not in ("--allow-unrecorded", "--suite") and (i == 0 or argv[i - 1] != "--suite")]
     sys.exit({"start": lambda: cmd_start(sys.argv[2], sys.argv[3], sys.argv[4], rest,
-                                         "--allow-unrecorded" in sys.argv[5:]),
+                                         "--allow-unrecorded" in argv, suite),
               "resume": lambda: cmd_resume(sys.argv[2]),
               "stop": lambda: cmd_stop(sys.argv[2]),
               "show": lambda: cmd_show(sys.argv[2]), "list": cmd_list}[a]())

@@ -38,8 +38,16 @@ something this stack has been measured doing, or is marked as not covered.
 
 ## §16–18 Evaluation and the production gate
 
-**Not covered.** There is no evaluation layer: no dataset of happy / edge / failure / adversarial
-cases, no outcome, step or trajectory graders, and no grader validation. What exists instead is:
+**The trajectory layer is covered; the other two are not ours.** Whether a verdict was right or a
+lane was a good strategy is what the work means, and meaning belongs to the workflow — it needs
+labelled cases from whoever knows the domain. What the platform can answer without knowing the
+domain, it now does: `p281/trajectory.py` assembles what a run did from the records that already
+existed, with four assertions that are true or false (the loop stayed inside its bound, every call
+carried its principal, the run reached a terminal step, the run was recorded), and
+`--suite <name>` groups a set of runs for whoever evaluates them (OPERATIONS §19).
+
+Still not covered, and not ours to cover: datasets and their labels, outcome and step graders,
+grader validation. What exists beside the trajectory is:
 
 - **controls** (`p281/trial_controls.py`, 162) that pin the *machinery* against synthetic inputs —
   they answer "does the stack do what it says", not "is the workflow's judgement any good";
@@ -48,10 +56,13 @@ cases, no outcome, step or trajectory graders, and no grader validation. What ex
 - **a soak** (§11 of OPERATIONS) — stability over repetition, not quality.
 
 So by the guide's own checklist this stack is at *pilot*, not at a production gate, for any
-workflow that runs on it.
+workflow that runs on it — and closing that gap is the workflow owner's work, on the ground this
+stack now provides.
 
 ## What this review changed
 
+0. **The trajectory of a run**, assembled and assertable — the part of evaluation that needs no
+   domain knowledge ([#3](https://github.com/astro3141/agent-stack/issues/3), OPERATIONS §19).
 0. **Evidence joined to its claim** — a judgement now names the call that made it and the artifact
    it was about, and the index travels with the record
    ([#5](https://github.com/astro3141/agent-stack/issues/5), OPERATIONS §18).

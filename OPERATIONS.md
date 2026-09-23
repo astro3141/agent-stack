@@ -1050,3 +1050,48 @@ What this does not add: a criterion catalogue. The "criterion" here is the revie
 finding it made (`history:UNSUPPORTED_CLAIM`), not an entry in an acceptance-criteria document —
 this stack's workflows do not have one yet. When a workflow gains one, the field is already where
 it belongs.
+
+## 19. What a run did — the ground an evaluation stands on
+
+The design procedure asks for evaluation on three layers (§16–18). Two of them are not this
+stack's: whether a reviewer's verdict was right, or a lane was a good strategy, is what the work
+*means*, and meaning belongs to the workflow — it needs labelled cases from whoever knows the
+domain, and the paper-trading harness already evaluates itself its own way. The third layer,
+**trajectory**, needs no domain knowledge at all: it is execution fact, and this stack was already
+recording every piece of it in a different place.
+
+`p281/trajectory.py <run>` assembles one answer from those places — Conductor's event log, the
+fan-out receipts, each call's own result, the run's output, the evidence index — and reads nothing
+it cannot find:
+
+```
+evid-novel01  novel-a  PASS
+  steps            route → roles → stage → architect → author → freeze → reviews → triage
+                   → repair → freeze → reviews → triage → record_pass → done_pass
+  model calls      5  {'claude': 3, 'codex': 2}  principals {'novel-author': 3, 'novel-reviewer': 2}
+  permission asks  3  (decided by rules 3, asked a person 0, refused 0)   retried 0
+  loop             1 of 1 allowed
+  evidence         3 items, 3 tied to a call, from cold, history, story
+  cost             377,649 tokens, 194s in calls
+  assertions       loop_within_bound=yes, every_call_had_a_principal=yes,
+                   reached_a_terminal_step=yes, recorded=yes
+```
+
+**The four assertions are true or false, never an opinion**: the loop stayed inside the bound the
+run itself was given; every model call carried a principal, where the workflow assigns them (a
+workflow that assigns none is reported as `—`, not accused); the run reached a terminal step; the
+run was recorded. Those are the ones that can be asserted exactly, because the models are not
+deterministic and everything else needs repetition and statistics.
+
+One distinction the first version got wrong and the measurement corrected: a permission request
+that Preloop's **rules** decided is not a person being asked. They are counted apart
+(`decided_by_rules` / `asked_a_person`), because a stack that reports three human interventions
+where there were none is worse than one that reports nothing.
+
+**Grouping**: `run_workflow.py start … --suite <name>` labels a run, and
+`trajectory.py --suite <name>` reads the set together. The label changes nothing about the run —
+it exists so that whoever evaluates can find the runs they meant.
+
+What is deliberately absent: datasets and their labels, outcome and step graders, and grader
+validation. `trajectory.py` contains no notion of accuracy, score or correctness, and a control
+fails if one appears.
