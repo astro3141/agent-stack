@@ -98,6 +98,9 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_EXPORTER_OTLP_HEADERS: x-mlflow-experiment-id=1
       OTEL_SERVICE_NAME: cadp-commodity-composition-poc
+    # No published port: Conductor's own run dashboard binds the container's loopback and its
+    # auth accepts only loopback Host headers, so publishing one reaches nothing (measured). The
+    # agent stays without an inbound listener; see OPERATIONS.md §12.
     command: ["sleep", "infinity"]
 
   mlflow:

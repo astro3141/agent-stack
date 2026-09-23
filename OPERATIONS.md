@@ -719,3 +719,29 @@ started a run with the profile "scheduler"), and — because that profile does n
 router held before the roles step, which exposed that every hold message in the trading and novel
 workflows assumed roles had run and died on a template error instead of reporting the hold. Both
 are fixed and pinned by controls.
+
+### The other solutions' consoles, and Conductor's
+
+The panel links to what each solution owns rather than rebuilding it: **Preloop's console**
+(policy, principals, the approval history) and **MLflow** (the runs, now a parent per run with a
+child per call). Both are published on the host already, so a link is all it takes.
+
+**Conductor's own run dashboard is not linkable, and that was measured rather than assumed.**
+`conductor run --web --web-port N` does start a real-time dashboard, but it binds the *container's*
+loopback (`conductor/web/server.py`, `host="127.0.0.1"`) and its auth accepts only loopback `Host`
+headers (`conductor/web/auth.py`), so publishing the port reaches nothing: with a run in flight,
+`ss` inside the agent showed `LISTEN 127.0.0.1:8783 conductor` and the host's `curl` answered
+`000`. Reaching it would mean running a forwarder inside the agent container — a deliberate change
+to the container that is otherwise without an inbound listener, so it is not done here. A second
+reason to leave it: `CONDUCTOR_WEB_PORT` is Conductor's *own* variable for its background mode, so
+setting it in the container's environment feeds its bg-child detection.
+
+What replaces it: the panel's **run history** tab reads Conductor's event log directly (that is
+where the step-by-step progress comes from), and `conductor status` / `conductor fleet` answer the
+same question in a terminal.
+
+**One thing this measurement produced by accident.** The cycle that was running when the agent
+container was restarted left its lock behind — exactly the case §11 describes. It showed up where
+it was supposed to: `ops_health.py` and the panel both reported *"held since …, every cycle is
+skipped while it is there"*, the four scheduled cycles in between are recorded as skipped, and
+clearing it was an operator's decision (`rmdir`). Nothing had to be guessed.
