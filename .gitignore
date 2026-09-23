@@ -18,3 +18,4 @@ evidence/p281/
 
 # derived from config/*.yaml by p281/cfg.py
 config/generated/
+docker/.env
