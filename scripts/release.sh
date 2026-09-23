@@ -52,7 +52,7 @@ cmd_record() {
   docker start "$AGENT" >/dev/null 2>&1 || true
   for i in $(seq 1 15); do docker exec "$AGENT" true >/dev/null 2>&1 && break; sleep 1; done
   REV="$(git -C "$(m "$HERE")" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  DIRTY="$(git -C "$(m "$HERE")" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  DIRTY="$(git -C "$(m "$HERE")" status --porcelain --untracked-files=no 2>/dev/null | wc -l | tr -d ' ')"
   [ -n "$TAG" ] || TAG="$(date -u +%Y%m%d-%H%M%S)-$REV"
   DEST="$RELEASESU/$TAG"
   [ -e "$DEST" ] && fail "release $TAG already exists"
@@ -117,11 +117,13 @@ cmd_list() {
 }
 
 # ---------------------------------------------------------------------------- update
+# Only tracked files block a change of revision: a checkout would overwrite those. Run evidence
+# and other data that lives in the workspace is untracked and is not a reason to refuse.
 cmd_update() {
   [ -n "$TO" ] || fail "update needs --to REVISION"
   git -C "$(m "$HERE")" rev-parse --verify --quiet "$TO" >/dev/null || fail "unknown revision $TO"
-  [ -z "$(git -C "$(m "$HERE")" status --porcelain)" ] || \
-    fail "the workspace has uncommitted changes — commit or stash them first"
+  [ -z "$(git -C "$(m "$HERE")" status --porcelain --untracked-files=no)" ] || \
+    fail "the workspace has uncommitted changes to tracked files — commit or stash them first"
   echo "== keeping the release in use before changing anything"
   ( TAG=""; cmd_record )
   echo
@@ -150,8 +152,8 @@ cmd_rollback() {
   [ -f "$SRC/release.kv" ] || fail "no release $TO in $RELEASES"
   REV="$(sed -n 's/^workspace_revision=//p' "$SRC/release.kv")"
   echo "== rolling back to $TO (workspace $REV)"
-  [ -z "$(git -C "$(m "$HERE")" status --porcelain)" ] || \
-    fail "the workspace has uncommitted changes — commit or stash them first"
+  [ -z "$(git -C "$(m "$HERE")" status --porcelain --untracked-files=no)" ] || \
+    fail "the workspace has uncommitted changes to tracked files — commit or stash them first"
 
   git -C "$(m "$HERE")" checkout --quiet "$REV" || fail "cannot check out $REV"
   say "workspace" "$(git -C "$(m "$HERE")" rev-parse --short HEAD)"
