@@ -25,7 +25,8 @@ sys.path.insert(0, "/work/p281")
 import settings
 
 WORKFLOWS = {"auto": "p281/workflows/auto.yaml", "research-r": "p281/workflows/research-r.yaml",
-             "novel-a": "p281/workflows/novel-a.yaml"}
+             "novel-a": "p281/workflows/novel-a.yaml",
+             "trading-b": "p281/workflows/trading-b.yaml"}
 RUNS = Path("/work/evidence/ui-runs")
 SAFE = re.compile(r"[A-Za-z0-9._\- ]{0,200}")
 
