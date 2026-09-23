@@ -7,7 +7,7 @@ metadata:
   description: Deny write_marker to test that policy prevents the underlying effect
 mcp_servers:
 - name: cadp278-toolsvc
-  url: http://cadp278-toolsvc:8000/mcp
+  url: http://toolsvc:8000/mcp
   transport: http-streaming
   auth_type: none
 tools:

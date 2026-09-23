@@ -5,7 +5,7 @@ metadata:
   description: Require approval for write_marker to exercise the approval branch
 mcp_servers:
 - name: cadp278-toolsvc
-  url: http://cadp278-toolsvc:8000/mcp
+  url: http://toolsvc:8000/mcp
   transport: http-streaming
   auth_type: none
 approval_workflows:
