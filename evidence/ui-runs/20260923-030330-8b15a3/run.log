@@ -1,0 +1,11 @@
+{
+  "profile": "research-default",
+  "route": "ROUTE: codex: within limits",
+  "decision": "PASS",
+  "provider": "codex",
+  "status": "COMPLETED",
+  "model_adapter_reported": "gpt-6-astra",
+  "model_served": "unknown",
+  "mlflow_run_id": "6980a6664f3b4ee59376d1e0a764a455",
+  "record_error": ""
+}
