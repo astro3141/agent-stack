@@ -28,15 +28,21 @@ ENV HOME=/home/agent \
     PYTHONUNBUFFERED=1
 
 # Claude Code (agent runtime). Installs to $HOME/.local/bin.
-RUN curl -fsSL https://claude.ai/install.sh | bash
+# Pinned to the version in use (OPERATIONS.md §3). Unpinned, every rebuild drifts: a candidate
+# build on 2026-09-23 pulled Claude 2.1.280, Conductor 0.1.39 and Preloop CLI 0.16.0.
+ARG CLAUDE_CODE_VERSION=2.1.278
+RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}
 
 # uv + Conductor with the extras this PoC needs.
 RUN pip install --no-cache-dir --user uv
-RUN uv tool install 'conductor-cli[telemetry,claude-agent-sdk] @ git+https://github.com/microsoft/conductor.git'
+ARG CONDUCTOR_COMMIT=87f7788e60c7cbb8895832b9edfb4e63f3924590
+RUN uv tool install "conductor-cli[telemetry,claude-agent-sdk] @ git+https://github.com/microsoft/conductor.git@${CONDUCTOR_COMMIT}"
 
 # Preloop CLI, so onboarding happens INSIDE the container and never touches the host.
+ARG PRELOOP_CLI_VERSION=0.15.0
 RUN curl -fsSL https://preloop.ai/install/cli -o /tmp/preloop-cli.sh \
-    && INSTALL_DIR=/home/agent/.local/bin sh /tmp/preloop-cli.sh < /dev/null || true
+    && PRELOOP_VERSION=${PRELOOP_CLI_VERSION} INSTALL_DIR=/home/agent/.local/bin \
+       sh /tmp/preloop-cli.sh < /dev/null || true
 RUN test -x /home/agent/.local/bin/preloop
 
 # Linux-side virtualenv for the fixture's pytest (the host .venv is a Windows venv).
