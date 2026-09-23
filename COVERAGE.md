@@ -61,6 +61,10 @@ stack now provides.
 
 ## What this review changed
 
+0. **The stack claims its own Preloop** — a fresh instance is registered, the runtime's credential
+   issued and this stack's policy applied by `scripts/up.sh`, with the one call that would silently
+   create a second tenant guarded by a row count
+   ([#6](https://github.com/astro3141/agent-stack/issues/6), OPERATIONS §22).
 0. **The runtime cannot change what it is judged by** — not its own approval, not its tool rights,
    not the account's policy, not a credential. The boundary is drawn on the network the agent lives
    on and checked from that position on every bring-up
@@ -85,5 +89,4 @@ stack now provides.
 
 | gap | why it matters | issue |
 |---|---|---|
-| the stack cannot bring up its own Preloop — the first user is made by hand | a fresh machine, or a restore without the Preloop database, does not come up unattended | [#6](https://github.com/astro3141/agent-stack/issues/6) |
 | graders and datasets | the trajectory of a run is now recorded (§16–18), but whether a judgement was *right* still needs labelled cases from whoever knows the domain — the workflow's work, not the platform's | — |

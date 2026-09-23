@@ -86,6 +86,27 @@ if [ "$MODE" != "--check" ]; then
     -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml" \
     -f "$HERE/docker/preloop.cadp.yaml" up -d $FORCE || exit 1
   sleep 8
+
+  # A fresh Preloop has no user, and without one nothing in this stack is governed. Claiming it is
+  # this stack's work, not the operator's: it is our own container, the bootstrap token is already
+  # in it, and nobody has to decide anything (OPERATIONS.md §22). The fact is established by
+  # counting rows — `POST /auth/register` on a claimed instance would quietly create a *second
+  # account*, so the bootstrap refuses to run without being told the instance is unclaimed.
+  preloop_exec() {
+    docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT"       -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml"       exec -T "$@" 2>/dev/null
+  }
+  users="$(preloop_exec postgres psql -U postgres -d preloop -Atc 'select count(*) from "user"' | tr -d '
+')"
+  if [ "$users" = "0" ]; then
+    echo "== Preloop has no user yet — claiming it"
+    preloop_exec api printenv PRELOOP_BOOTSTRAP_TOKEN       | docker exec -i "$STACK-admin" /opt/venv/bin/python /work/p281/bootstrap_preloop.py           --unclaimed --api http://preloop-api:8000       || { echo "  the instance could not be claimed — nothing below will be governed" >&2; exit 1; }
+    # A claimed instance still enforces nothing until this stack's policy is on it: the MCP
+    # servers, the tools and the approval workflow all come from policy/. Generating reads the
+    # provider logins (agent); applying writes to Preloop (admin) — OPERATIONS.md §21.
+    echo "== applying this stack's policy to the new instance"
+    docker exec "$STACK-agent" /opt/venv/bin/python /work/p281/cfg.py generate >/dev/null 2>&1 || true
+    docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/  /' || true
+  fi
 fi
 
 fail=0

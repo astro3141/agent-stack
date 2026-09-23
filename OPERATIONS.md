@@ -1212,3 +1212,64 @@ ok    runtime may not mint credentials             403
 And verified the other way: a full `trading-b` run under the tightened guard completed normally —
 2 model calls, 1 permission request decided by rules, evidence written, recorded — with no refusal
 in the guard's log for anything the run did.
+
+## 22. Claiming a fresh Preloop, so the stack can bring itself up
+
+Until this existed, `scripts/up.sh` brought up every container and then stopped being able to do
+anything useful if Preloop had no user: registration closes after the first one, and the first one
+was made by hand, once, on this machine. A new machine — or a restore that does not carry
+`preloop-oss_postgres-data` — did not come up.
+
+**Why the stack does it and the operator does not.** A provider login is a person's: a third
+party's account, on the vendor's own page, tied to that person. Preloop is ours — a container this
+stack starts, claimed against localhost with the bootstrap token the install already holds. Nobody
+decides anything, so nobody needs to be asked.
+
+**The sharp edge, and what guards it.** `POST /api/v1/auth/register` is gated by the bootstrap
+token only while the instance has **no** users. Afterwards `REGISTRATION_ENABLED` (true by default)
+lets the same call through — and it creates a **second account** whose user is that account's owner,
+silently. So `p281/bootstrap_preloop.py` refuses to run unless the caller asserts `--unclaimed`, and
+`up.sh` establishes that by counting rows in Preloop's own table rather than by trying:
+
+```
+users="$(preloop_exec postgres psql -U postgres -d preloop -Atc 'select count(*) from "user"')"
+[ "$users" = "0" ] && … bootstrap_preloop.py --unclaimed …
+```
+
+The bootstrap token is read from Preloop's own api container and passed on **stdin**, never as an
+argument. The password is generated with a CSPRNG, written to `docker/preloop-owner.env` (mode
+0600, git-ignored) and never printed: the output names the file, not its contents. The console is
+the one place a person still signs in, and that is what the file is for.
+
+Then the Preloop CLI does the rest — managed agent, durable credential, permission hook — and the
+policy in `policy/` is applied, because a claimed instance still enforces nothing until it is
+(§21: generating reads the provider logins in the agent, applying writes from the admin side).
+
+**Measured against a throwaway Preloop** (its own project and volumes, no published ports, torn
+down with `down -v` afterwards), from an empty home:
+
+```
+{"ok": true, "user": "owner", "secrets_file": "…/owner.env", "onboarded": true}
+
+/tmp/boot3/.preloop/agents:  claude-code-4a43258eebfa   (hook written, token redacted here)
+preloop-boot user table:     owner | owner
+```
+
+Three things it found that a plan would not have:
+
+1. **The image ships no `~/.claude/settings.json`**, and the home is a volume, so on a fresh
+   machine the CLI's onboarding fails outright: *"failed to parse Claude Code config"*. An empty
+   object is enough for it to proceed, so the bootstrap writes one when the file is absent — and
+   nothing else, because what goes in that file afterwards is the agent's own configuration.
+2. **Preloop rejects the obvious addresses**: `owner@localhost` (no dot), `owner@stack.local` and
+   `owner@stack.invalid` (reserved suffixes). `owner@agent-stack.internal` is accepted and resolves
+   nowhere, which is the right shape for an account that exists so a stack can run.
+3. The directory of the secrets file is created rather than assumed.
+
+A repeat is guarded (§17): on a claimed instance the answer is `{"ok": true, "already": true}` and
+nothing is written.
+
+**What this does not do.** It does not restore anything. A claimed instance is an empty one: the
+approval history, the principals and their rules, and the custodied credentials live in the Preloop
+database, which is `scripts/backup.sh`'s business, not this step's. And the provider logins stay the
+operator's — a fresh machine still needs a person to sign in to Claude, Codex and Grok.

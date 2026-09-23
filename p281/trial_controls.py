@@ -1134,7 +1134,46 @@ def controls_approval_boundary():
           "This probe runs wherever it is run from, which is the point" in ops, True)
 
 
+def controls_bootstrap():
+    print("")
+    print("claiming a fresh Preloop — the stack's work, not the operator's")
+    import contextlib, importlib.util as il, io
+    spec = il.spec_from_file_location("boot_ctl", "/work/p281/bootstrap_preloop.py")
+    bp = il.module_from_spec(spec); sys.modules["boot_ctl"] = bp; spec.loader.exec_module(bp)
+    src = open("/work/p281/bootstrap_preloop.py", encoding="utf-8").read()
+    up = open("/work/scripts/up.sh", encoding="utf-8").read()
+
+    # The sharp edge this guards: on a claimed instance the same call creates a second *account*.
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = bp.main(["--api", "http://nowhere:8000"])
+    check("it refuses to register without being told the instance is unclaimed", code, 2)
+    check("and says why, rather than failing silently",
+          "second account" in out.getvalue(), True)
+    check("the caller establishes that by counting rows, not by trying",
+          'select count(*) from "user"' in up and "--unclaimed" in up, True)
+    check("a repeat is declared and guarded", bp.REPEATABLE, "guarded")
+
+    # nothing about the credential is chosen here, and nothing is printed
+    check("the password is generated", "secrets.token_urlsafe" in src, True)
+    check("and never printed — only the path it went to",
+          "password" not in src.split("def main(")[1].split("print(json.dumps(out")[0]
+          .replace('"secrets_file"', ""), True)
+    check("the file it goes to is not versioned",
+          "preloop-owner.env" in open("/work/docker/.gitignore", encoding="utf-8").read(), True)
+    check("the address default is one Preloop accepts and that resolves nowhere",
+          "owner@agent-stack.internal" in src, True)
+
+    # a claimed instance is not yet a governed one
+    check("the policy is applied right after the claim",
+          "applying this stack's policy to the new instance" in up, True)
+    check("generating reads the logins in the agent, applying writes from the admin side",
+          '"$STACK-agent" /opt/venv/bin/python /work/p281/cfg.py generate' in up
+          and '"$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py apply' in up, True)
+
+
 if __name__ == "__main__":
+    controls_bootstrap()
     controls_approval_boundary()
     controls_boundary()
     controls_chains()
