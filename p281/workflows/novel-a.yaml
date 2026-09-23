@@ -206,8 +206,8 @@ agents:
     type: script
     description: Record the run (never fails the workflow)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py", "{{ route.output.profile }}", "novel-a",
-           "{{ triage.output.decision }}", "{{ triage.output.draft_sha256 }}"]
+    args: ["/work/p281/steps/record.py"]
+    stdin: "{{ {'execute': {'provider': roles.output.author_provider, 'model_route': roles.output.author_route, 'run_id': triage.output.draft_id, 'status': 'COMPLETED'}, 'check': {'decision': triage.output.decision, 'reason': triage.output.reason}, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
       experiment_id: {type: string}
@@ -219,7 +219,8 @@ agents:
     type: script
     description: Record a blocked run
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py", "{{ route.output.profile }}", "novel-a", "BLOCK", ""]
+    args: ["/work/p281/steps/record.py"]
+    stdin: "{{ {'check': {'decision': 'BLOCK', 'reason': 'novel-a blocked'}, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
       experiment_id: {type: string}
@@ -231,7 +232,8 @@ agents:
     type: script
     description: Record a run the router held
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py", "{{ workflow.input.profile }}", "novel-a", "HOLD", ""]
+    args: ["/work/p281/steps/record.py"]
+    stdin: "{{ {'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
       experiment_id: {type: string}

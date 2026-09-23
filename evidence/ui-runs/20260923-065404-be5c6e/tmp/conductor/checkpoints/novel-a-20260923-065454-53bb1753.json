@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "workflow_path": "/work/p281/workflows/novel-a.yaml",
+  "workflow_hash": "sha256:fbe935bb33a20409e2d6c4bd65348ff507a583d61731e784fc63d0e0bed5ed0b",
+  "created_at": "2026-09-23T06:54:54.077950+00:00",
+  "trigger": "failure",
+  "failure": {
+    "error_type": "ValidationError",
+    "message": "Script 'record_block' declares an output schema but stdout is not valid JSON: Expecting value: line 1 column 1 (char 0)",
+    "agent": "record_block",
+    "iteration": 5
+  },
+  "inputs": {
+    "profile": "research-default",
+    "max_repairs": "1"
+  },
+  "current_agent": "record_block",
+  "context": {
+    "workflow_inputs": {
+      "profile": "research-default",
+      "max_repairs": "1"
+    },
+    "agent_outputs": {
+      "route": {
+        "stdout": "{\"decision\": \"ROUTE\", \"provider\": \"codex\", \"reason\": \"codex: within limits\", \"model_route\": \"direct\", \"login\": \"codex\", \"profile\": \"research-default\", \"evaluated\": \"[{\\\"provider\\\": \\\"claude\\\", \\\"source\\\": \\\"codexbar:oauth\\\", \\\"observed_at\\\": null, \\\"identity_basis\\\": \\\"same-credential\\\", \\\"eligible\\\": false, \\\"why\\\": \\\"unknown: unparseable observed_at\\\"}, {\\\"provider\\\": \\\"codex\\\", \\\"source\\\": \\\"codexbar:oauth\\\", \\\"observed_at\\\": \\\"2026-09-23T06:49:59Z\\\", \\\"identity_basis\\\": \\\"email\\\", \\\"age_s\\\": 250, \\\"session_used\\\": \\\"not reported\\\", \\\"weekly_used\\\": 40, \\\"eligible\\\": true, \\\"why\\\": \\\"within limits\\\"}, {\\\"provider\\\": \\\"grok\\\", \\\"source\\\": \\\"codexbar:grok-cli-proxy\\\", \\\"observed_at\\\": \\\"2026-09-23T06:54:08Z\\\", \\\"identity_basis\\\": \\\"same-credential\\\", \\\"age_s\\\": 1, \\\"session_used\\\": \\\"not reported\\\", \\\"weekly_used\\\": 2, \\\"eligible\\\": true, \\\"why\\\": \\\"within limits\\\"}]\", \"evidence_dir\": \"/work/evidence/p281/route-737a64b7\"}\n",
+        "stderr": "",
+        "exit_code": 0,
+        "decision": "ROUTE",
+        "provider": "codex",
+        "reason": "codex: within limits",
+        "model_route": "direct",
+        "login": "codex",
+        "profile": "research-default",
+        "evaluated": "[{\"provider\": \"claude\", \"source\": \"codexbar:oauth\", \"observed_at\": null, \"identity_basis\": \"same-credential\", \"eligible\": false, \"why\": \"unknown: unparseable observed_at\"}, {\"provider\": \"codex\", \"source\": \"codexbar:oauth\", \"observed_at\": \"2026-09-23T06:49:59Z\", \"identity_basis\": \"email\", \"age_s\": 250, \"session_used\": \"not reported\", \"weekly_used\": 40, \"eligible\": true, \"why\": \"within limits\"}, {\"provider\": \"grok\", \"source\": \"codexbar:grok-cli-proxy\", \"observed_at\": \"2026-09-23T06:54:08Z\", \"identity_basis\": \"same-credential\", \"age_s\": 1, \"session_used\": \"not reported\", \"weekly_used\": 2, \"eligible\": true, \"why\": \"within limits\"}]",
+        "evidence_dir": "/work/evidence/p281/route-737a64b7"
+      },
+      "roles": {
+        "stdout": "{\"profile\": \"research-default\", \"architect_provider\": \"codex\", \"architect_login\": \"codex\", \"architect_route\": \"direct\", \"author_provider\": \"claude\", \"author_login\": \"claude\", \"author_route\": \"direct\", \"story_provider\": \"codex\", \"story_login\": \"codex\", \"story_route\": \"direct\", \"history_provider\": \"claude\", \"history_login\": \"claude\", \"history_route\": \"direct\", \"cold_provider\": \"grok\", \"cold_login\": \"grok\", \"cold_route\": \"direct\", \"missing\": \"\", \"ok\": \"yes\"}\n",
+        "stderr": "",
+        "exit_code": 0,
+        "profile": "research-default",
+        "architect_provider": "codex",
+        "architect_login": "codex",
+        "architect_route": "direct",
+        "author_provider": "claude",
+        "author_login": "claude",
+        "author_route": "direct",
+        "story_provider": "codex",
+        "story_login": "codex",
+        "story_route": "direct",
+        "history_provider": "claude",
+        "history_login": "claude",
+        "history_route": "direct",
+        "cold_provider": "grok",
+        "cold_login": "grok",
+        "cold_route": "direct",
+        "missing": "",
+        "ok": "yes"
+      },
+      "stage": {
+        "stdout": "{\"status\": \"OK\", \"workspace\": \"/ws/737a64b7\", \"staged\": \"entry.md,contract_request.md\"}\n",
+        "stderr": "",
+        "exit_code": 0,
+        "status": "OK",
+        "workspace": "/ws/737a64b7",
+        "staged": "entry.md,contract_request.md"
+      },
+      "architect": {
+        "stdout": "{\"status\": \"COMPLETED\", \"provider\": \"codex\", \"model_route\": \"direct\", \"run_id\": \"737a64b7-architect-codex\", \"workspace\": \"/ws/737a64b7\", \"produced_path\": \"/ws/737a64b7/contract.json\", \"produced\": true, \"model_session_reported\": \"gpt-6-astra\", \"model_adapter_reported\": \"gpt-6-astra\", \"model_served\": \"unknown\", \"approvals_requested\": 0, \"mcp_rule_denials\": 0, \"retryable_elsewhere\": false, \"evidence_dir\": \"/work/evidence/p281/737a64b7-architect-codex\", \"profile\": \"research-default\", \"ledger_error\": \"\", \"measurements\": {\"total_tokens\": 16312, \"wall_ms\": 35766}}\n",
+        "stderr": "",
+        "exit_code": 0,
+        "status": "COMPLETED",
+        "provider": "codex",
+        "model_route": "direct",
+        "run_id": "737a64b7-architect-codex",
+        "workspace": "/ws/737a64b7",
+        "produced_path": "/ws/737a64b7/contract.json",
+        "produced": true,
+        "model_session_reported": "gpt-6-astra",
+        "model_adapter_reported": "gpt-6-astra",
+        "model_served": "unknown",
+        "approvals_requested": 0,
+        "mcp_rule_denials": 0,
+        "retryable_elsewhere": false,
+        "evidence_dir": "/work/evidence/p281/737a64b7-architect-codex",
+        "profile": "research-default",
+        "ledger_error": "",
+        "measurements": {
+          "total_tokens": 16312,
+          "wall_ms": 35766
+        }
+      },
+      "author": {
+        "stdout": "{\"status\": \"FAILED\", \"provider\": \"claude\", \"model_route\": \"direct\", \"run_id\": \"737a64b7-author-claude\", \"workspace\": \"/ws/737a64b7\", \"produced_path\": \"/ws/737a64b7/draft.md\", \"produced\": false, \"model_session_reported\": \"default\", \"model_adapter_reported\": \"\", \"model_served\": \"unknown\", \"approvals_requested\": 0, \"mcp_rule_denials\": 0, \"retryable_elsewhere\": false, \"evidence_dir\": \"/work/evidence/p281/737a64b7-author-claude\", \"profile\": \"research-default\", \"ledger_error\": \"\", \"measurements\": {\"wall_ms\": 8732}}\n",
+        "stderr": "",
+        "exit_code": 0,
+        "status": "FAILED",
+        "provider": "claude",
+        "model_route": "direct",
+        "run_id": "737a64b7-author-claude",
+        "workspace": "/ws/737a64b7",
+        "produced_path": "/ws/737a64b7/draft.md",
+        "produced": false,
+        "model_session_reported": "default",
+        "model_adapter_reported": "",
+        "model_served": "unknown",
+        "approvals_requested": 0,
+        "mcp_rule_denials": 0,
+        "retryable_elsewhere": false,
+        "evidence_dir": "/work/evidence/p281/737a64b7-author-claude",
+        "profile": "research-default",
+        "ledger_error": "",
+        "measurements": {
+          "wall_ms": 8732
+        }
+      }
+    },
+    "current_iteration": 5,
+    "execution_history": [
+      "route",
+      "roles",
+      "stage",
+      "architect",
+      "author"
+    ],
+    "user_guidance": []
+  },
+  "limits": {
+    "current_iteration": 5,
+    "max_iterations": 30,
+    "execution_history": [
+      "route",
+      "roles",
+      "stage",
+      "architect",
+      "author"
+    ]
+  },
+  "copilot_session_ids": {},
+  "copilot_session_cwds": {},
+  "system": {
+    "pid": 2719,
+    "platform": "linux",
+    "python_version": "3.13.15",
+    "conductor_version": "0.1.37",
+    "cwd": "/work",
+    "started_at": "2026-09-23T06:54:06.873719+00:00",
+    "run_id": "737a64b7",
+    "log_file": "/work/evidence/ui-runs/20260923-065404-be5c6e/tmp/conductor/conductor-p281-novel-a-20260923-065406-737a64b7.events.jsonl",
+    "bg_mode": false
+  },
+  "instructions_preamble": null,
+  "run_id": "737a64b7",
+  "event_log_path": "/work/evidence/ui-runs/20260923-065404-be5c6e/tmp/conductor/conductor-p281-novel-a-20260923-065406-737a64b7.events.jsonl"
+}
