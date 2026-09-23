@@ -25,7 +25,8 @@ STACK="${STACK:-cadp278}"
 AGENT="$STACK-agent"
 RELEASES="${RELEASE_DIR:-$HOME/cadp-releases}"
 RELEASESU="$(u "$RELEASES")"; RELEASES="$(m "$RELEASESU")"
-IMAGES="governed-runtime mlflow toolsvc fsmcp egress ops hub"
+# services of this stack (the agent and the observer share one image)
+SERVICES="agent mlflow toolsvc fsmcp egress ops hub"
 
 say()  { printf '  %-42s %s\n' "$1" "$2"; }
 fail() { echo "release: $*" >&2; exit 1; }
@@ -62,10 +63,10 @@ cmd_record() {
   # images: give the running ones a name of their own, so a later rebuild of :local cannot take
   # them away (an untagged image is a candidate for pruning)
   : > "$DEST/images.txt"
-  for s in $IMAGES; do
+  for s in $SERVICES; do
     ref="$(image_ref "$s")"; [ -n "$ref" ] || continue
     id="$(docker inspect -f '{{.Image}}' "$STACK-$s")"
-    keep="cadp278/$s:rel-$TAG"
+    keep="${ref%%:*}:rel-$TAG"
     docker tag "$id" "$keep"
     echo "$s $ref $id $keep" >> "$DEST/images.txt"
     say "image $s" "$keep"
