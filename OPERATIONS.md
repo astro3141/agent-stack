@@ -815,6 +815,20 @@ the isolation claim rests on. It is not done, and the attempt (a published port,
 own background mode reads `CONDUCTOR_WEB_PORT` from the environment to recognise its child process,
 so that name must not be set in the container for unrelated purposes.
 
-What answers the same need: the panel's **run history** tab reads Conductor's event log directly —
-which steps ran, when, and where the run is now — and `conductor status` / `conductor fleet` answer
-it in a terminal.
+**And then it was solved from the other side.** Conductor can already draw a run from a recorded
+event log — `conductor replay` serves the same React dashboard in replay mode — and the class
+behind it takes its bind address as a parameter (`ReplayDashboard(..., host=…)`; only the CLI
+leaves it on loopback). The package is MIT. So the dashboard now runs **in a container that is not
+the agent**: `cadp278-replay`, on the ops network, with the workspace mounted **read-only**, no
+credentials, no Docker access, published on `127.0.0.1:8785`. The agent keeps its single internal
+network and gains nothing.
+
+Which run it shows is a name the ops API writes to `evidence/ops/replay.run`; the service watches
+that file, so it has no inbound API of its own — it renders an event log and reads a name, and
+that is all it can do. In the panel, each row of the run history has a **그래프** button that asks
+for that run and opens the dashboard.
+
+Measured: `GET /` answers 200 from the host, `/api/state` returns the run's events, and switching
+runs takes about two seconds (`showing cyc-…: /work/evidence/ui-runs/cyc-…/tmp/conductor/*.jsonl`
+in the container's log). What remains true is the part above — a *live* run's own dashboard
+(`conductor run --web`) is still unreachable, because that one is served from inside the agent.

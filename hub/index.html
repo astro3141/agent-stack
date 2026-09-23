@@ -154,7 +154,7 @@
 <section id="tab-runs" class="hidden">
   <div class="card">
     <h2>실행 기록</h2>
-    <table><thead><tr><th>시작</th><th>워크플로</th><th>프로필</th><th>제공자</th><th>상태</th><th>판정</th></tr></thead><tbody id="run-rows"></tbody></table>
+    <table><thead><tr><th>시작</th><th>워크플로</th><th>프로필</th><th>제공자</th><th>상태</th><th>판정</th><th>Conductor</th></tr></thead><tbody id="run-rows"></tbody></table>
   </div>
   <div class="card hidden" id="run-detail"></div>
 </section>
@@ -423,8 +423,19 @@ async function loadRuns() {
     const st = r.state === "running" ? `<span class="warn">진행 중 · ${esc(r.current_step||"")}</span>`
              : r.state === "interrupted" ? `<span class="bad">중단됨 · ${esc(r.current_step||"")}</span>` : `종료 · ${esc(r.terminated_at||"")}`;
     const d = r.decision || (r.route && r.route.decision === "HOLD" ? "HOLD" : "");
-    return `<tr style="cursor:pointer" onclick="showRun('${esc(r.ui_id)}')"><td>${new Date(r.started_at*1000).toLocaleString()}</td><td>${esc(r.workflow)}</td>
-      <td>${esc(r.profile)}</td><td>${esc((r.route||{}).provider||"—")}</td><td>${st}</td><td class="${DEC[d]||""}"><b>${esc(d)}</b></td></tr>`; }).join("");
+    return `<tr><td style="cursor:pointer" onclick="showRun('${esc(r.ui_id)}')">${new Date(r.started_at*1000).toLocaleString()}</td>
+      <td style="cursor:pointer" onclick="showRun('${esc(r.ui_id)}')">${esc(r.workflow)}</td>
+      <td>${esc(r.profile)}</td><td>${esc((r.route||{}).provider||"—")}</td><td>${st}</td>
+      <td class="${DEC[d]||""}"><b>${esc(d)}</b></td>
+      <td><button class="sub" data-replay="${esc(r.ui_id)}">그래프</button></td></tr>`; }).join("");
+  document.querySelectorAll("[data-replay]").forEach((b) => b.onclick = async (e) => {
+    e.stopPropagation();
+    b.disabled = true;
+    const out = await api("/api/replay", {ui: b.dataset.replay});
+    b.disabled = false;
+    if (out && out.url) { window.open(out.url, "conductor-replay"); }
+    else { alert("이 실행의 이벤트 로그를 찾지 못했습니다" + (out && out.error ? ": " + out.error : "")); }
+  });
 }
 let runTimer = null;
 async function showRun(id) {

@@ -232,8 +232,31 @@ services:
       # only so the panel can link to the consoles that own approvals and run comparison
       PRELOOP_CONSOLE_PORT: ${PRELOOP_CONSOLE_PORT:-3000}
       MLFLOW_PORT: ${MLFLOW_PORT:-5000}
+      REPLAY_PORT: ${REPLAY_PORT:-8785}
     ports:
       - "127.0.0.1:${OPS_PORT:-8781}:8781"
+
+  # Conductor's own run dashboard, for runs this stack has already recorded. It runs *here*
+  # rather than in the agent because the agent is single-homed on an internal network, where a
+  # published port does nothing (OPERATIONS.md §14). It holds no credentials, has no Docker
+  # access, and mounts the workspace read-only: it renders an event log and nothing else.
+  replay:
+    image: cadp278/governed-runtime:local
+    container_name: ${STACK:-cadp278}-replay
+    init: true
+    restart: unless-stopped
+    profiles: ["ui"]
+    networks:
+      - opsnet
+    volumes:
+      - type: bind
+        source: ${POC_HOST_DIR:-..}
+        target: /work
+        read_only: true
+    ports:
+      - "127.0.0.1:${REPLAY_PORT:-8785}:${REPLAY_PORT:-8785}"
+    entrypoint: ["/home/agent/.local/share/uv/tools/conductor-cli/bin/python"]
+    command: ["/work/p281/tools/replay_serve.py", "${REPLAY_PORT:-8785}"]
 
   # UX track: the UI. Talks only to the ops API; holds no Docker access and no credentials.
   hub:

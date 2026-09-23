@@ -177,6 +177,20 @@ class H(BaseHTTPRequestHandler):
             if not isinstance(code, str) or not code.strip() or len(code) > 2000:
                 return self._send(400, {"error": "missing code"})
             return self._send(200, jexec([PY, "/work/p281/login_helper.py", "code", prov, login], stdin=code))
+        if p == "/api/replay":
+            # Not a control over the stack: it chooses which recorded run the read-only dashboard
+            # shows. The name is written for the replay container to pick up; nothing is executed.
+            ui = b.get("ui")
+            if not isinstance(ui, str) or not re.fullmatch(r"[a-z0-9-]{6,40}", ui):
+                return self._send(400, {"error": "invalid run id"})
+            rc, out, err = dexec(["sh", "-c",
+                                  f"test -d /work/evidence/ui-runs/{ui} && "
+                                  f"printf %s {ui} > /work/evidence/ops/replay.run && echo ok"])
+            if rc != 0 or "ok" not in out:
+                return self._send(404, {"error": "no such run"})
+            return self._send(200, {"ui": ui,
+                                    "url": f"http://127.0.0.1:{os.environ.get('REPLAY_PORT', '8785')}/",
+                                    "note": "the dashboard switches within a couple of seconds"})
         m = re.fullmatch(r"/api/approvals/([0-9a-f-]{36})", p)
         if m:
             # Preloop owns the decision; this panel is where the person makes it, because an
