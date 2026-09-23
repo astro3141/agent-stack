@@ -137,9 +137,17 @@ class H(BaseHTTPRequestHandler):
                 last = json.loads(out) if rc == 0 else {}
             except ValueError:
                 last = {}
+            rc2, hs, _ = dexec(["cat", "/work/evidence/ops/host-state.json"])
+            try:
+                host_state = json.loads(hs) if rc2 == 0 else None
+            except ValueError:
+                host_state = None
             return self._send(200, {
                 "health": health,
                 "composition": last.get("composition"),
+                # backups and releases live outside every container; this is what the host last
+                # wrote down about them (scripts/host-state.sh), shown with its age
+                "host_state": host_state,
                 # the consoles that own what this panel deliberately does not rebuild
                 "links": {
                     "preloop": f"http://127.0.0.1:{os.environ.get('PRELOOP_CONSOLE_PORT', '3000')}",

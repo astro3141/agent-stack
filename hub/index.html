@@ -67,6 +67,20 @@
   </div>
 
   <div class="card">
+    <h2>라우팅 — 지금 무엇이 돌 수 있나</h2>
+    <div class="row muted" id="dash-route">불러오는 중…</div>
+    <table><thead><tr><th>제공자</th><th>로그인</th><th>경로</th><th>적격</th><th>세션</th><th>주간</th><th>관측</th></tr></thead>
+      <tbody id="dash-route-rows"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>백업과 릴리스 — 호스트에 있는 것</h2>
+    <div class="muted">컨테이너에서는 보이지 않는 곳에 있습니다. 호스트가 마지막으로 확인한 내용이며,
+      갱신은 <code>scripts/up.sh --check</code> 또는 <code>scripts/host-state.sh</code>입니다.</div>
+    <div id="dash-host"><span class="muted">불러오는 중…</span></div>
+  </div>
+
+  <div class="card">
     <h2>무인 사이클</h2>
     <div class="row" id="dash-cycles"><span class="muted">불러오는 중…</span></div>
     <table id="dash-reasons-tbl" class="hidden">
@@ -105,6 +119,8 @@
         <tr><td>무인 사이클 한 번</td><td><code>scripts/cycle.sh trading-b</code></td></tr>
         <tr><td>오래된 실행 정리 (미리보기 먼저)</td><td><code>scripts/cleanup.sh --days 14 --keep 20</code></td></tr>
         <tr><td>연속 실행 측정</td><td><code>scripts/soak.sh 12 trading-b</code></td></tr>
+        <tr><td>백업 만들기 / 복원</td><td><code>scripts/backup.sh --out DIR --key FILE</code> · <code>scripts/restore.sh</code></td></tr>
+        <tr><td>릴리스 기록 / 되돌리기</td><td><code>scripts/release.sh record｜update｜rollback</code></td></tr>
         <tr><td>운영 상태 한 번에 보기</td><td><code>docker exec cadp278-agent /opt/venv/bin/python /work/p281/ops_health.py</code></td></tr>
       </tbody>
     </table>
@@ -361,6 +377,43 @@ async function loadOverview() {
       `<div class="kv"><div>사이클당 워크스페이스</div><div>${per(g.ws_kb || 0)} KB</div>` +
       `<div>사이클당 증거</div><div>${per(g.evidence_kb || 0)} KB</div>` +
       `<div>사이클당 실행 디렉터리</div><div>${per(g.evidence_dirs || 0)}개</div></div>`;
+  }
+
+  // routing: the same answer the router would give right now, for the profile this page is on
+  try {
+    const prof = ($("#profile") && $("#profile").value) || "research-default";
+    const a = await api("/api/accounts?profile=" + encodeURIComponent(prof));
+    $("#dash-route").innerHTML = a && a.decision
+      ? `<span class="chip ${a.decision === "ROUTE" ? "ok" : "bad"}">${esc(a.decision)}</span>` +
+        `<span>${esc(a.chosen || "—")}</span> <span class="muted">${esc(a.reason || "")}</span>` +
+        `<span class="muted">· 프로필 ${esc(a.profile)}</span>`
+      : `<span class="warn">라우팅 상태를 읽지 못했습니다</span>`;
+    $("#dash-route-rows").innerHTML = ((a && a.providers) || []).map((p) =>
+      `<tr><td>${esc(p.provider)}${p.provider === a.chosen ? ' <span class="chip ok">선택</span>' : ""}</td>` +
+      `<td>${esc(p.login)}</td><td>${esc(p.route)}</td>` +
+      `<td class="${p.eligible ? "ok" : "bad"}">${p.eligible ? "예" : "아니오"} <span class="muted">${esc(p.why || "")}</span></td>` +
+      `<td>${p.session_used == null ? "—" : esc(p.session_used) + "%"}</td>` +
+      `<td>${p.weekly_used == null ? "—" : esc(p.weekly_used) + "%"}</td>` +
+      `<td class="muted">${esc(ago(p.age_s))}</td></tr>`).join("");
+  } catch (e) { $("#dash-route").innerHTML = `<span class="warn">라우팅 상태를 읽지 못했습니다</span>`; }
+
+  // what only the host can see
+  const hs = o.host_state;
+  if (!hs) {
+    $("#dash-host").innerHTML = `<span class="warn">호스트 상태 기록이 없습니다</span> ` +
+      `<span class="muted">— <code>scripts/host-state.sh</code>로 만듭니다</span>`;
+  } else {
+    const seen = Math.round((Date.now() - new Date(hs.at.replace(" ", "T")).getTime()) / 1000);
+    const b = hs.backups || {}, nb = b.newest || {}, r = hs.releases || {};
+    $("#dash-host").innerHTML =
+      `<div class="kv">` +
+      `<div>백업</div><div>${b.count ? `${b.count}개 · 최신 <code>${esc(nb.name)}</code> ${esc(nb.size_mb)}MB (${esc(nb.at)})`
+                                     : `<span class="bad">없음</span> — <code>scripts/backup.sh --out DIR --key FILE</code>`}</div>` +
+      `<div>보관 위치</div><div class="mono muted">${esc(b.dir)}</div>` +
+      `<div>릴리스</div><div>${r.count ? (r.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join(" ")
+                                       : `<span class="warn">기록된 릴리스 없음</span> — <code>scripts/release.sh record &lt;tag&gt;</code>`}</div>` +
+      `<div>확인 시각</div><div>${esc(ago(seen))} <span class="muted">(${esc(hs.at)})</span></div>` +
+      `</div>`;
   }
 
   const L = o.links || {};

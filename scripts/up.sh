@@ -126,6 +126,8 @@ check "observation fresh (< 10 min)"     yes "$(in_agent 'python3 -c "
 import json,datetime as d
 r=json.load(open(\"/obs/codex.raw.json\")); t=d.datetime.fromisoformat(r[\"collected_at\"].replace(\"Z\",\"+00:00\"))
 print(\"yes\" if r.get(\"exit\")==0 and (d.datetime.now(d.timezone.utc)-t).total_seconds()<600 else \"no\")"')"
+# what only the host can see (backups, kept releases) — written down with the time it was looked at
+bash "$HERE/scripts/host-state.sh" >/dev/null 2>&1 || true
 echo "== capabilities in this composition"
 in_agent 'python3 /work/p281/capabilities.py' || true
 echo

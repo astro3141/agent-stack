@@ -697,7 +697,14 @@ One address for a person: `http://127.0.0.1:8780`. It carries the three things t
 signing a provider in, **answering a pending approval**, and reading enough state to judge whether
 this is healthy — and nothing else (CONTRACT.md, "What belongs on a screen").
 
-**The dashboard** is one read of what the stack already records: which capabilities it has right
+**The dashboard** covers what we added as well as what we run on: routing (what the router would
+decide right now, and each provider's eligibility, quota and observation age) and the state of
+backups and kept releases. Those two live on the **host**, outside every container, so no container
+can see them: `scripts/host-state.sh` writes what the host has into
+`evidence/ops/host-state.json` (run by `up.sh --check`, or on its own), and the panel shows it with
+the age of that look — a backup that existed last week is not a backup that exists.
+
+The rest of it is one read of what the stack already records: which capabilities it has right
 now (probed, not declared), which composition it is running and when it was last checked, how the
 unattended cycles have gone (run / skipped / refused, the spread of durations, where they stopped
 and why, which never reached MLflow), whether a cycle lock is held, and what the last soak found
