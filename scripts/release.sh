@@ -21,7 +21,21 @@ export MSYS_NO_PATHCONV=1
 u() { if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
 m() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
-HERE="$(cd "$(dirname "$0")/.." && pwd)"
+HERE="${RELEASE_SH_HOME:-$(cd "$(dirname "$0")/.." && pwd)}"
+# An update or a rollback checks out another revision of this very workspace — including this
+# script. A shell reads a script as it goes, so replacing the file underneath a running one can
+# change behaviour halfway or break it outright. Run from a copy instead.
+if [ -z "${RELEASE_SH_PINNED:-}" ]; then
+  SELF_COPY="${TMPDIR:-/tmp}/cadp-release-$$.sh"
+  cp "$0" "$SELF_COPY"
+  RELEASE_SH_PINNED=1 RELEASE_SH_HOME="$HERE" RELEASE_SH_COPY="$SELF_COPY" \
+    exec bash "$SELF_COPY" "$@"
+fi
+cleanup_all() {
+  [ -n "${CAND_DIR:-}" ] && { git -C "$(m "$HERE")" worktree remove --force "$(m "$CAND_DIR")" >/dev/null 2>&1 || true; rm -rf "$CAND_DIR"; }
+  rm -f "${RELEASE_SH_COPY:-}"
+}
+trap cleanup_all EXIT
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
 STACK="${STACK:-cadp278}"
 AGENT="$STACK-agent"
@@ -242,8 +256,6 @@ cmd_update() {
   echo "== candidate $TO"
   CAND_DIR="$(u "${TMPDIR:-/tmp}")/cadp-candidate-$$"
   CAND_IMAGE="cadp278/governed-runtime:cand-$(git_here rev-parse --short "$TO")"
-  cand_cleanup() { git_here worktree remove --force "$(m "$CAND_DIR")" >/dev/null 2>&1 || true; rm -rf "$CAND_DIR"; }
-  trap cand_cleanup EXIT
   git_here worktree add --quiet --detach "$(m "$CAND_DIR")" "$TO" || fail "could not prepare a candidate worktree"
   # A worktree is the whole repository, and this stack may sit below its root (it does in the
   # repository layout, poc/281-routing/). The candidate's docker/ is therefore under the same
