@@ -241,7 +241,7 @@ cmd_update() {
   cand_cleanup() { git_here worktree remove --force "$(m "$CAND_DIR")" >/dev/null 2>&1 || true; rm -rf "$CAND_DIR"; }
   trap cand_cleanup EXIT
   git_here worktree add --quiet --detach "$(m "$CAND_DIR")" "$TO" || fail "could not prepare a candidate worktree"
-  docker build --quiet -t "$CAND_IMAGE" -f "$CAND_DIR/docker/agent.Dockerfile" "$CAND_DIR/docker" >/dev/null \
+  docker build --quiet -t "$CAND_IMAGE" -f "$(m "$CAND_DIR")/docker/agent.Dockerfile" "$(m "$CAND_DIR")/docker" >/dev/null \
     || fail "the candidate build failed; nothing was changed"
   say "built" "$CAND_IMAGE"
   DIFFS=""
