@@ -24,7 +24,7 @@ quota:
 
 tools:
   native_tools: false             # native write/shell removed; file work only via Preloop MCP
-  preloop_policy: policy/b-fsmcp.yaml   # applied to Preloop by `cfg.py apply`
+  preloop_policy: policy/b-test.yaml   # applied to Preloop by `cfg.py apply`
 
 execution:
   timeout_ms: 600000
