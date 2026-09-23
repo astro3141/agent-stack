@@ -5,6 +5,10 @@ PASS only if the adapter reported COMPLETED *and* the file holds exactly the exp
 A DENIED result with the file absent is reported as DENIED (a governance outcome, not a failure
 to retry elsewhere).
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "yes"   # reads and judges; writes nothing outside its own output
 import hashlib, json, os, sys
 
 path, expected, status = sys.argv[1:4]

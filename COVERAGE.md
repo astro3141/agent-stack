@@ -23,7 +23,7 @@ something this stack has been measured doing, or is marked as not covered.
 | Timeout | runaway execution stopped | yes — per step in the workflow, per call in the adapter (`timeout_ms`) | — |
 | **Cancellation** | a run can be stopped | **yes, as of this review** — `run_workflow.py stop`, `POST /api/runs/<id>/stop`, and a **중지** button on a running row. Conductor does the stopping (graceful cancel → signal → force) | **yes** |
 | Retry | runtime failure re-executed | **partial** — one bounded retry for a provider's own "login is refreshing" (reported as `attempts`), and a fan-out member that fails is isolated. There is no general retry policy, and a chained member stops at its first failed step by design | attempts and failures shown |
-| Idempotency | side effects not repeated | **not addressed.** One cycle at a time is enforced by a lock, and run ids are unique, but a repeated run repeats its writes; nothing marks a step as safe to re-execute | — |
+| Idempotency | side effects not repeated | **covered where it changes a decision.** Every step declares what a repeat does (`REPEATABLE`), and the three that were wrong about it are guarded: freezing the same draft is one round, a repeated triage spends no repair round, and one run and judgement write one record (`idempotency_key`). Artifact writes are still plain writes, in the run's own workspace (OPERATIONS §17) | — |
 | Approval | a human gate before risky work | yes — Preloop's approval channel, with the **decision in the panel** | yes |
 | Audit | tool / model / execution trace | yes — the adapter's evidence per call, Preloop's own records, MLflow runs, and Conductor's OTel spans in MLflow | linked |
 
@@ -52,6 +52,9 @@ workflow that runs on it.
 
 ## What this review changed
 
+0. **Idempotency where it matters** — three steps changed a judgement when repeated (a round, a
+   repair bound, a record); all three are guarded and every step now declares what a repeat does
+   ([#4](https://github.com/astro3141/agent-stack/issues/4), OPERATIONS §17).
 0. **Tool rights per step** — the gap the review named first is closed: a role runs as its own
    principal, and a reviewer can no longer rewrite what it judges ([#2](https://github.com/astro3141/agent-stack/issues/2), measured in OPERATIONS §10).
 1. **Cancellation was missing and is now here** — including in the panel, because stopping a run
@@ -64,5 +67,4 @@ workflow that runs on it.
 | gap | why it matters | issue |
 |---|---|---|
 | evaluation layer | without outcome/step/trajectory evaluation over a dataset, "it worked" is a handful of runs | [#3](https://github.com/astro3141/agent-stack/issues/3) |
-| idempotency of side effects | a re-run repeats its writes; nothing marks a step safe to repeat | [#4](https://github.com/astro3141/agent-stack/issues/4) |
 | semantic evidence index | evidence exists but is not linked to the criterion it supports | [#5](https://github.com/astro3141/agent-stack/issues/5) |

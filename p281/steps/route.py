@@ -2,6 +2,10 @@
 
 Emits the router decision flat for Conductor; the full evaluation is kept in the evidence dir.
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "yes"   # re-observes quota and decides again; writes its own evidence directory
 import json, os, subprocess, sys
 sys.path.insert(0, "/work/p281")
 import settings

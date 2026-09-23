@@ -11,6 +11,10 @@ a slow child first, every later child was recorded as ending when the slow one d
 measurement that flatters the thing being measured is worse than none, so the waiting is done in a
 thread per child and each child stamps its own end.
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "no"   # it starts whatever it was given
 import subprocess, threading, time
 
 

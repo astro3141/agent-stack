@@ -8,6 +8,10 @@ two, deterministically, and never edits content.
   r_stage.py review  candidate + both verifications → /ws/<run>/   (for the reviewer)
   r_stage.py back    /ws/<run>/review.json          → run directory (input-verify re-hashes it)
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "yes"   # prepares the research run's workspace from fixtures
 import hashlib, json, os, shutil, sys
 from pathlib import Path
 sys.path.insert(0, "/work/p281")

@@ -7,6 +7,10 @@ every model step of the run shares, so a later step can read what an earlier one
 Writes are only possible through the Preloop MCP server (native write/shell are removed);
 Preloop's rules decide them. Emits the normalized result flat for Conductor.
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "no"   # a model call: it costs, and the answer is not the same twice
 import json, os, subprocess, sys, time
 sys.path.insert(0, "/work/p281")
 import settings

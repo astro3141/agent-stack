@@ -968,3 +968,36 @@ dashboard shows it:
 Reading, not editing: changing any of them stays in the console that owns it. This is the honest
 boundary of "we do not rebuild other products' screens" — we do not, but we do look at the switches
 that would make our own claims untrue.
+
+## 17. Repeating a step
+
+The design procedure lists idempotency as a runtime concern, and this stack had not looked at it.
+Looking meant running each step twice with the same input and seeing what changed. Three things
+did, and two of them changed a *judgement*:
+
+| step | what a repeat did | what it does now |
+|---|---|---|
+| `novel_stage.py freeze` | froze the same bytes again as **a new draft** (`d01` → `d02`), inventing a round nobody wrote | the same content is the same round, and says so (`repeated: true`); different content is `d02` |
+| `novel_stage.py triage` | counted repairs by **how many findings files existed**, so running it three times took `repairs_done` from 0 to 2 and, at the bound, **turned a REPAIR into a BLOCK with no new work in between** | a repair is counted per *draft* (`findings-d01.json`), so the same round asked again is the same ask |
+| `record.py` | wrote **another MLflow run** for the same run and judgement — two of the same cycle in every comparison drawn from it | the same run and judgement return the record already written (`idempotency_key`, tagged and searched); a different judgement is a different record |
+
+`trade_stage.py packet` was already idempotent by construction (rebuilt twice, hashes compared —
+that was the point of building it twice), and so are `baseline`, `evaluate` and the forecast scorer.
+
+**Every step now says what a repeat of it does**, in the step itself:
+
+```python
+REPEATABLE = "guarded"   # freeze returns the same draft for the same bytes; triage counts per draft
+```
+
+`yes` — the same result; `guarded` — it recognises the repeat; `no` — it does the work again. The
+`no` ones are the model calls (`agent_task.py`, `execute.py`, and the two that start them,
+`tasks.py` and `task_chain.py`): a repeat costs money and does not answer the same way twice, which
+is exactly why a re-run of a lane is a deliberate act (§ trial B) rather than something a resumed
+run does by itself. A control fails if any step stops declaring, or if a model call is ever marked
+repeatable.
+
+**What this does not claim.** Writes through the file tools are still plain writes: a second run of
+a workflow writes its artifacts again, in its own workspace. What is fixed is the class that was
+actually dangerous here — a repeat that changes a *decision* (a round, a bound, a record) rather
+than a byte.

@@ -9,6 +9,10 @@ Nothing here calls a model. The workflow's routing decisions are made by this sc
 disk, which is the point of the trial: the models produce semantics, the graph edge is chosen
 deterministically.
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "guarded"   # stage resets the round; freeze returns the same draft for the same bytes; triage counts a repair per draft, not per run of the step
 import glob, hashlib, json, os, shutil, sys
 
 sys.path.insert(0, "/work/p281")
@@ -53,6 +57,19 @@ def cmd_freeze():
         return 0
     body = open(p, encoding="utf-8").read()
     sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    # Freezing the same bytes again is not a new round. A round is a *new draft*; running this step
+    # twice — a resumed run, a step re-executed by hand — used to mint d02 from d01's own content
+    # and quietly spend one of the repair bound's rounds. Same content, same round.
+    prev = f"{WS}/draft_meta.json"
+    if os.path.isfile(prev):
+        try:
+            meta = json.load(open(prev, encoding="utf-8"))
+        except ValueError:
+            meta = {}
+        if meta.get("draft_sha256") == sha and os.path.isfile(meta.get("path", "")):
+            out(status="OK", repeated=True, **{k: meta[k] for k in
+                ("draft_id", "draft_sha256", "chars", "path") if k in meta})
+            return
     n = len(glob.glob(f"{WS}/draft-*.md")) + 1
     frozen = f"{WS}/draft-{n:02d}.md"
     shutil.copyfile(p, frozen)          # the immutable copy reviewers are pointed at
@@ -158,7 +175,11 @@ def cmd_triage(max_repairs, required="story,history"):
     reviews = {k: read_review(f"review_{k}.json", members.get(k), required=k in need)
                for k in ("story", "history", "cold")}
     story, history, cold = reviews["story"], reviews["history"], reviews["cold"]
-    done = len(glob.glob(f"{WS}/findings-*.json"))          # repairs already asked for
+    # Repairs already asked for, counted by the *draft* each was asked about — not by how many
+    # times this step ran. Counting files let a repeated triage (a resumed run, a step re-executed)
+    # inflate the count and, at the bound, turn a REPAIR into a BLOCK with no new work in between.
+    this_round = f"{WS}/findings-{meta.get('draft_id', 'd00')}.json"
+    done = len([f for f in glob.glob(f"{WS}/findings-d*.json") if f != this_round])
     # Required reviews must be usable; the Cold Reader is advisory and may be missing entirely.
     missing = [f"{n} ({reviews[n].get('why')})" for n in need if not reviews[n].get("usable")]
     if rnd is None:
@@ -175,8 +196,8 @@ def cmd_triage(max_repairs, required="story,history"):
     else:
         decision, reason = "REPAIR", "; ".join(f.get("what", "")[:80] for f in blocking)[:300]
         json.dump({"findings": blocking}, open(f"{WS}/findings.json", "w"), ensure_ascii=False, indent=1)
-        json.dump({"findings": blocking}, open(f"{WS}/findings-{done + 1}.json", "w"),
-                  ensure_ascii=False, indent=1)
+        # one file per draft asked to be repaired: asking again about the same draft is the same ask
+        json.dump({"findings": blocking}, open(this_round, "w"), ensure_ascii=False, indent=1)
     out(status="OK", decision=decision, reason=reason, repairs_done=done,
         blocking_count=len(blocking),
         cold_available="yes" if cold.get("usable") else "no",

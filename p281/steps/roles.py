@@ -25,6 +25,10 @@ per subject), the vendor carries the model, and they are chosen separately. The 
 name here and nothing else — its credential reaches the adapter from the environment, never from
 a workflow or an argument.
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "yes"   # a function of the profile and this run's router decision
 import json, os, sys
 
 sys.path.insert(0, "/work/p281")

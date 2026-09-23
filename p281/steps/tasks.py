@@ -26,6 +26,10 @@ steps (v0.1.37), and every routed model call here is a script step. Without this
 writes its own fan-out — which is exactly what the first two trials did, twice, with their domain
 rules mixed into it.
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "no"   # it starts model calls
 import hashlib, json, os, sys
 
 sys.path.insert(0, "/work/p281")

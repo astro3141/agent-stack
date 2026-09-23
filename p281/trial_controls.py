@@ -20,6 +20,8 @@ fails if the fix is reverted. What each group pins:
             only, and every step is one execution in the record
   running   unattended operation: one cycle at a time, a skip and a refusal both recorded, and
             the health report counting what actually happened
+  repeat    every step says what a repeat of it does, and the three that would have been wrong
+            about it are guarded: freeze, triage's repair count, and the record
   step-rights  a role may run as its own principal, and that reaches the call
   panel     the web surface carries only what needs a person — a login and an approval — and the
             cycle's rules live in one place, whatever calls them
@@ -633,6 +635,97 @@ def controls_running():
     check("the soak measures without cleaning up", "cleanup" not in soak.split("#!")[1].split("set -u")[1], True)
 
 
+# ---------------------------------------------------------------- repeating a step
+def controls_repeat():
+    print("repeat — the same step run twice does not invent work")
+    import glob as _glob, importlib.util as il, io, contextlib
+    # 1) every step declares it
+    missing = [os.path.basename(f) for f in sorted(_glob.glob("/work/p281/steps/*.py"))
+               if "REPEATABLE" not in open(f, encoding="utf-8").read()]
+    check("every step says what a repeat of it does", missing, [])
+    vals = {os.path.basename(f): re.search(r'REPEATABLE = "(\w+)"',
+                                           open(f, encoding="utf-8").read()).group(1)
+            for f in sorted(_glob.glob("/work/p281/steps/*.py"))}
+    check("a model call is never claimed repeatable",
+          [k for k in ("agent_task.py", "execute.py", "tasks.py", "task_chain.py")
+           if vals.get(k) != "no"], [])
+
+    ws = real_ws()
+    ns = load("/work/p281/steps/novel_stage.py", "ns_rep", ws)
+    open(f"{ws}/draft.md", "w").write("one and only draft\n")
+
+    def freeze():
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ns.cmd_freeze()
+        return json.loads(buf.getvalue().strip().splitlines()[-1])
+
+    # 2) freezing the same bytes is the same round — it used to mint a new draft each time
+    first = freeze()
+    again = freeze()
+    check("freezing the same draft twice is one round",
+          (first["draft_id"], again["draft_id"], again.get("repeated")), ("d01", "d01", True))
+    open(f"{ws}/draft.md", "w").write("a repaired draft\n")
+    check("a different draft is a new round", freeze()["draft_id"], "d02")
+
+    # 3) a repeated triage must not spend a repair round
+    blocking = {"reviewer": "x", "usable": True, "verdict": "REPAIR",
+                "findings": [{"kind": "FACT_ERROR", "severity": "BLOCKING", "what": "wrong"}]}
+    ok = {"reviewer": "x", "usable": True, "verdict": "PASS",
+          "findings": [{"kind": "NONE", "severity": "MINOR", "what": "f"}]}
+    meta = json.load(open(f"{ws}/draft_meta.json", encoding="utf-8"))
+    members = {}
+    for n, doc in (("story", blocking), ("history", ok), ("cold", ok)):
+        json.dump(doc, open(f"{ws}/review_{n}.json", "w"))
+        members[n] = {"artifact": f"review_{n}.json", "status": "COMPLETED", "produced": True,
+                      "sha256": ns.sha_file(f"{ws}/review_{n}.json")}
+    json.dump({"context": meta["draft_sha256"], "members": members},
+              open(f"{ws}/reviews_round.json", "w"))
+    seen = []
+    for _ in range(3):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ns.cmd_triage("2")
+        d = json.loads(buf.getvalue().strip().splitlines()[-1])
+        seen.append((d["decision"], d["repairs_done"]))
+    check("a repeated triage neither spends a round nor flips to BLOCK",
+          seen, [("REPAIR", 0)] * 3)
+    shutil.rmtree(ws, ignore_errors=True)
+
+    # 4) the record of one run and one judgement is written once
+    spec = il.spec_from_file_location("record_rep", "/work/p281/steps/record.py")
+    rec = il.module_from_spec(spec)
+    sys.modules["record_rep"] = rec
+    spec.loader.exec_module(rec)
+    created, store = [], {}
+    def fake(path, body=None, method="POST"):
+        if "get-by-name" in path:
+            return {"experiment": {"experiment_id": "9"}}
+        if path.endswith("runs/search"):
+            k = body["filter"].split("'")[1]
+            return {"runs": [{"info": {"run_id": store[k]}}]} if k in store else {"runs": []}
+        if path.endswith("runs/create"):
+            created.append(body.get("run_name"))
+            return {"run": {"info": {"run_id": f"r{len(created)}"}}}
+        if path.endswith("log-batch"):
+            for t in body.get("tags", []):
+                if t["key"] == "idempotency_key" and t["value"]:
+                    store[t["value"]] = body["run_id"]
+        return {}
+    rec.call, rec.put_artifact = fake, (lambda *a: None)
+    os.environ["CONDUCTOR_SELF_RUN_ID"] = "run-abc"
+    ex = {"run_id": "run-1", "provider": "claude", "status": "COMPLETED", "model_route": "direct",
+          "model_session_reported": "", "model_adapter_reported": "", "model_served": "",
+          "evidence_dir": "", "profile": "research-default", "measurements": {}}
+    pay = {"execute": ex, "check": {"decision": "PASS", "reason": "r", "file_sha256": "abc"},
+           "route": {}}
+    ids = [rec.record(pay)["mlflow_run_id"] for _ in range(3)]
+    check("recording the same run and judgement writes one record", (ids, len(created)),
+          (["r1", "r1", "r1"], 1))
+    other = rec.record({**pay, "check": {"decision": "BLOCK", "reason": "r", "file_sha256": "abc"}})
+    check("a different judgement is a different record", other["mlflow_run_id"], "r2")
+
+
 # ---------------------------------------------------------------- tool rights per step
 def controls_step_rights():
     print("step-rights — a step runs with its role's rights, not the run's")
@@ -803,6 +896,7 @@ if __name__ == "__main__":
     controls_boundary()
     controls_chains()
     controls_running()
+    controls_repeat()
     controls_step_rights()
     controls_panel()
     controls_composition()

@@ -4,6 +4,10 @@ usage: execute.py <provider> <file_name> <content>
 Knows nothing about any vendor: it builds the common request, calls run-agent.mjs, and
 re-emits the normalized result as one flat JSON object for Conductor's output schema.
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "no"   # a model call
 import json, os, subprocess, sys
 sys.path.insert(0, "/work/p281")
 import settings

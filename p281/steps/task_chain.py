@@ -18,6 +18,10 @@ kept — so a chain of four calls is four executions in the record, not one.
 It does not know what any step means. Which steps a member has, and what a failure of one of them
 costs, is the workflow's (CONTRACT.md).
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "no"   # it starts model calls, in order
 import json, os, subprocess, sys, time
 
 sys.path.insert(0, "/work/p281")

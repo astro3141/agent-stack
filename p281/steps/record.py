@@ -27,6 +27,10 @@ Recording is observation. Its failure is reported, never allowed to change the r
 step always exits 0 and the workflow routes on the Gate decision as before (#278 N5). One child
 that cannot be written does not lose the parent, and the failure is named in `record_error`.
 """
+
+# What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
+# "guarded" — it recognises the repeat; "no" — it does the work again.
+REPEATABLE = "guarded"   # the same run and judgement return the record already written (idempotency_key)
 import json, os, sys, time, urllib.request
 
 sys.path.insert(0, "/work/p281")
@@ -149,17 +153,41 @@ def execution_metrics(ex):
                     "mcp_rule_denials": ex.get("mcp_rule_denials")})
 
 
+def existing(exp_id, key):
+    """The run already recorded under this key, if there is one. A record is an observation of a
+    thing that happened once; recording it twice — a resumed run, a step re-executed — would put
+    two of the same run in the comparison and quietly double every count taken from it."""
+    if not key:
+        return None
+    try:
+        r = call("/api/2.0/mlflow/runs/search",
+                 {"experiment_ids": [exp_id], "max_results": 1,
+                  "filter": f"tags.idempotency_key = '{key}'"})
+    except Exception:
+        return None                      # cannot tell: record, and let the duplicate be visible
+    runs = r.get("runs") or []
+    return runs[0]["info"]["run_id"] if runs else None
+
+
 def record(payload):
     ck = payload.get("check") or {}
     rt = payload.get("route") or {}
     cid = os.environ.get("CONDUCTOR_SELF_RUN_ID", "")
+    # what makes this record the same record: the run, and the judgement being recorded
+    key = payload.get("idempotency_key") or (
+        f"{cid}:{ck.get('decision', '')}" if cid else "")
     exps, errors = executions_of(payload)
     exp_id = experiment_id(payload)
+    already = existing(exp_id, key)
+    if already:
+        return {"mlflow_run_id": already, "experiment_id": exp_id, "executions": len(exps),
+                "children": 0, "repeated": True, "record_error": "; ".join(errors)}
 
     if not exps:
         # HOLD: the router started nothing.
         rid = new_run(exp_id, f"{cid}-hold")
-        log(rid, {"conductor.run_id": cid, "provider": "none", "status": "HOLD",
+        log(rid, {"conductor.run_id": cid, "idempotency_key": key,
+                  "provider": "none", "status": "HOLD",
                   "gate.decision": "NOT_RUN", "route.decision": rt.get("decision"),
                   "route.reason": rt.get("reason"), "route.evaluated": rt.get("evaluated"),
                   "evidence_dir": rt.get("evidence_dir")})
@@ -170,7 +198,7 @@ def record(payload):
     if len(exps) == 1:
         ex = exps[0]
         rid = new_run(exp_id, ex["run_id"])
-        log(rid, execution_tags(ex, ck, rt, cid), execution_metrics(ex),
+        log(rid, {**execution_tags(ex, ck, rt, cid), "idempotency_key": key}, execution_metrics(ex),
             [("provider", ex["provider"]), ("native_tools", "false")])
         res = os.path.join(ex["evidence_dir"], "result.json")
         if os.path.exists(res):
@@ -182,7 +210,7 @@ def record(payload):
     # Several executions: the parent carries the run's judgement, each child its own execution.
     done = [e for e in exps if e.get("status") == "COMPLETED"]
     rid = new_run(exp_id, f"{cid}-run")
-    log(rid, {"conductor.run_id": cid,
+    log(rid, {"conductor.run_id": cid, "idempotency_key": key,
               "status": "COMPLETED" if len(done) == len(exps) else "PARTIAL",
               "gate.decision": ck.get("decision", ""), "gate.reason": ck.get("reason", ""),
               "file_sha256": ck.get("file_sha256", ""),
