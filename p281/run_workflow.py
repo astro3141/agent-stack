@@ -53,7 +53,7 @@ def cmd_start(ui, workflow, profile, pairs):
     inputs = {}
     for kv in pairs:
         k, _, v = kv.partition("=")
-        if not re.fullmatch(r"[a-z_]{1,30}", k) or not SAFE.fullmatch(v):
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,29}", k) or not SAFE.fullmatch(v):
             print(json.dumps({"error": f"invalid input {k!r}"})); return 2
         inputs[k] = v
     d = run_dir(ui)
