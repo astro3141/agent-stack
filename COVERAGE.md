@@ -17,14 +17,14 @@ something this stack has been measured doing, or is marked as not covered.
 | Run identity | workflow run / step execution ID | yes — a UI run id, Conductor's own run id, a per-call `run_id` (`<run>-<label>-<provider>`), and an MLflow run per call under a parent per run | yes: run history, run detail, MLflow link |
 | State persistence | state recovered after a restart | **partial** — the run's workspace and every artifact survive, and `resume` exists; but Conductor writes a checkpoint only when a run *fails* (measured: 2 of 51 runs have one), so a run that was stopped is started again, not resumed | state shown; `resume` is a command |
 | Artifact persistence | reference and version kept | yes — artifacts live in the run's workspace, and the things that must not drift carry a hash: the frozen draft (`draft_meta.json`), the cycle's packet (`packet_sha256`), each fan-out member's output (receipt `sha256`) | partly (run detail, report) |
-| **Tool enforcement** | allow/deny **per step** | **covered.** A role names the principal it runs as (`story=codex:novel-reviewer`), the name reaches the call, and Preloop enforces that principal's rights — including on the argument: the novel workflow's reviewers may write `review_*` and are denied the draft ("Access denied: Scoped rule 2"), measured both directly and in a run where five calls carried two principals across three vendors | the account policy's state is shown; `p281/principals.py list` / `check` answer per principal |
+| **Tool enforcement** | allow/deny **per step** | **covered.** A role names the principal it runs as (`story=codex:novel-reviewer`), the name reaches the call, and Preloop enforces that principal's rights — including on the argument: the novel workflow's reviewers may write `review_*` and are denied the draft ("Access denied: Scoped rule 2"), measured both directly and in a run where five calls carried two principals across three vendors — and the party being judged cannot rewrite them (§21) | the account policy's state is shown; `p281/principals.py list` / `check` answer per principal |
 | Secrets | kept out of the model's context | yes — credentials live in volumes (`/route`, Preloop's own), never in a prompt or an argument, and the adapter neither stores nor logs a token (`mcp_principal` takes it from the environment and records only the name) | — |
 | Isolation | sandbox / container / worktree | yes — one container per concern, the agent single-homed on an internal network, egress through an allowlist proxy. **Per-run directories are not access isolation** (the file server serves all of `/ws`), and that is recorded rather than implied | capabilities line |
 | Timeout | runaway execution stopped | yes — per step in the workflow, per call in the adapter (`timeout_ms`) | — |
 | **Cancellation** | a run can be stopped | **yes, as of this review** — `run_workflow.py stop`, `POST /api/runs/<id>/stop`, and a **중지** button on a running row. Conductor does the stopping (graceful cancel → signal → force) | **yes** |
 | Retry | runtime failure re-executed | **partial** — one bounded retry for a provider's own "login is refreshing" (reported as `attempts`), and a fan-out member that fails is isolated. There is no general retry policy, and a chained member stops at its first failed step by design | attempts and failures shown |
 | Idempotency | side effects not repeated | **covered where it changes a decision.** Every step declares what a repeat does (`REPEATABLE`), and the three that were wrong about it are guarded: freezing the same draft is one round, a repeated triage spends no repair round, and one run and judgement write one record (`idempotency_key`). Artifact writes are still plain writes, in the run's own workspace (OPERATIONS §17) | — |
-| Approval | a human gate before risky work | yes — Preloop's approval channel, with the **decision in the panel**, and the runtime **refused** the decision: it reaches Preloop only through a guard that answers 403 to `approve` / `decline` / `decide` and to any write to the standing bypasses, while reads pass. A route restriction, not a rights one — this build of Preloop cannot express the latter (OPERATIONS §13, §20) | yes |
+| Approval | a human gate before risky work | yes — Preloop's approval channel, with the **decision in the panel**, and the runtime **refused** it: the governed network reaches Preloop only through a guard that refuses writes to the control plane by default (deciding an approval, standing bypasses, tool rights, credentials, the account's policy) and passes every read. A route restriction, not a rights one — this build of Preloop cannot express the latter (OPERATIONS §13, §20, §21) | yes |
 | Audit | tool / model / execution trace | yes — the adapter's evidence per call, Preloop's own records, MLflow runs, and Conductor's OTel spans in MLflow | linked |
 
 ## §13–15 The separations the guide insists on
@@ -61,9 +61,11 @@ stack now provides.
 
 ## What this review changed
 
-0. **The runtime cannot answer its own approval** — the boundary is drawn on the network the agent
-   lives on, checked from that position on every bring-up
-   ([#1](https://github.com/astro3141/agent-stack/issues/1), OPERATIONS §20).
+0. **The runtime cannot change what it is judged by** — not its own approval, not its tool rights,
+   not the account's policy, not a credential. The boundary is drawn on the network the agent lives
+   on and checked from that position on every bring-up
+   ([#1](https://github.com/astro3141/agent-stack/issues/1),
+   [#7](https://github.com/astro3141/agent-stack/issues/7), OPERATIONS §20–21).
 0. **The trajectory of a run**, assembled and assertable — the part of evaluation that needs no
    domain knowledge ([#3](https://github.com/astro3141/agent-stack/issues/3), OPERATIONS §19).
 0. **Evidence joined to its claim** — a judgement now names the call that made it and the artifact
@@ -83,6 +85,5 @@ stack now provides.
 
 | gap | why it matters | issue |
 |---|---|---|
-| a governed party can still rewrite its own tool rules (`PUT /agents/{id}/governance`) | the same self-serving shape as deciding one's own approval; the guard can close it once the principal commands run from the admin side | [#7](https://github.com/astro3141/agent-stack/issues/7) |
 | the stack cannot bring up its own Preloop — the first user is made by hand | a fresh machine, or a restore without the Preloop database, does not come up unattended | [#6](https://github.com/astro3141/agent-stack/issues/6) |
 | graders and datasets | the trajectory of a run is now recorded (§16–18), but whether a judgement was *right* still needs labelled cases from whoever knows the domain — the workflow's work, not the platform's | — |
