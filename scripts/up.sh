@@ -70,7 +70,11 @@ FORCE=""; [ "$MODE" = "--recreate" ] && FORCE="--force-recreate"
 
 if [ "$MODE" != "--check" ]; then
   echo "== PoC stack (composition: $COMPOSITION)"
-  (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d $FORCE) || exit 1
+  # `--build` because the images whose source is this tree (agent, ops, hub, toolsvc, fsmcp,
+  # egress, mlflow) are built from it: without it an edit to ops/server.py or hub/index.html
+  # simply does not reach the running stack, and nothing says so. Layers are cached, so an
+  # unchanged tree costs a few seconds.
+  (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --build $FORCE) || exit 1
   # `up` only starts; a service left out of this composition would keep running from the last one,
   # and freeing its memory is the reason for choosing a smaller composition in the first place.
   # Removing the container leaves its data alone: MLflow's database and artifacts are a bind mount.

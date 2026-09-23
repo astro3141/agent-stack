@@ -1273,3 +1273,49 @@ nothing is written.
 approval history, the principals and their rules, and the custodied credentials live in the Preloop
 database, which is `scripts/backup.sh`'s business, not this step's. And the provider logins stay the
 operator's — a fresh machine still needs a person to sign in to Claude, Codex and Grok.
+
+## 23. A stopped run can be continued
+
+The review's own finding was that stopping a run left nothing to continue from: Conductor wrote a
+checkpoint only when a run *failed* (2 of 51 runs had one), so a stopped run was started again
+rather than resumed — every model call paid for twice.
+
+The cause was one sentence in `conductor stop --help`: it escalates *"a graceful cancel **via the
+dashboard** (which lets the run checkpoint), then a platform signal, then forceful termination"*.
+Our runs had no dashboard, so the first rung of that ladder was missing and the stop went straight
+to a signal.
+
+So runs now start with `--web --web-port 0`. **This is not a dashboard for anyone to look at**: it
+binds the container's loopback and is not published (§14 still holds — past runs are read through
+the replay container). It exists because `conductor stop`, which runs in the same container, needs
+it to cancel gracefully.
+
+**Measured, end to end:**
+
+```
+stop    Stopped workflow 'novel-a' (PID 9921, port 33619)
+        checkpoints/novel-a-20260923-213638-fc5b8e17.json   ← written by the graceful cancel
+        current_agent: author   failure: "Workflow stopped by user via dashboard"
+resume  route → roles → stage → architect → author → author → freeze → reviews → triage
+        → record_pass → done_pass        PASS, 4 model calls
+```
+
+The step list is the evidence: `author → author` is the step that was interrupted, re-entered. The
+steps before it did not run again — a full run of this workflow makes five model calls, and this
+one made four.
+
+**Two things it exposed**, both of the same family as the mirror problem this repo was created to
+kill — something true in the tree and not true in what runs:
+
+1. **A resumed run read as the failure it was stopped at.** A stop and its resume share one event
+   log, and the view took the first ending it saw. It now takes the last: a `workflow_completed`
+   clears the earlier error, and `resumable` asks whether the *last* thing recorded was the
+   workflow completing — not whether the log "ended", because a stop ends it too.
+2. **Nothing in this tree built its own images.** `scripts/up.sh` only ran `up -d`, so an edit to
+   `ops/server.py` or `hub/index.html` never reached the running panel and nothing said so — the
+   resume route answered "no such route" from a container built two hours earlier. `up.sh` now
+   runs `up -d --build`; with layers cached a bring-up costs about 25 seconds.
+
+**In the panel**: a run that stopped before it finished, and has a checkpoint, offers **재개** next
+to **중지**. Whether an interrupted run is worth continuing is the same kind of judgement as
+stopping it was, so it is offered in the same place; the run resumes detached, as a start does.

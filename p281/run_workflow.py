@@ -89,7 +89,13 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite=""):
             "unrecorded": bool(allow_unrecorded and not caps["record"]["available"]),
             "launcher_pid": os.getpid(), "instance": instance_id()}
     meta_path(ui).write_text(json.dumps(meta))
-    argv = ["conductor", "--silent", "run", WORKFLOWS[workflow], "--no-interactive", "-i", f"profile={profile}"]
+    # `--web` is not for anyone to look at: the dashboard binds the container's loopback and is
+    # not published (OPERATIONS §14). It is here because `conductor stop` escalates *starting from
+    # a graceful cancel via the dashboard*, and that is the path that lets a run write a
+    # checkpoint. Without it a stopped run leaves nothing to resume from. Port 0 = auto-selected,
+    # so concurrent runs do not collide.
+    argv = ["conductor", "--silent", "run", WORKFLOWS[workflow], "--no-interactive",
+            "--web", "--web-port", "0", "-i", f"profile={profile}"]
     for k, v in inputs.items():
         argv += ["-i", f"{k}={v}"]
     env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor")}
@@ -116,7 +122,7 @@ def cmd_resume(ui):
         print(json.dumps({"error": "this run is still going"})); return 1
     d = run_dir(ui)
     tmp = d / "tmp"
-    cps = sorted((tmp / "conductor" / "checkpoints").glob("*.json"), key=lambda p: p.stat().st_mtime)
+    cps = checkpoints_for(ui)
     if not cps:
         print(json.dumps({"error": "no checkpoint for this run — nothing to resume from"})); return 1
     meta.update({"state": "running", "resumed_at": time.time(), "resumed_from": cps[-1].name,
@@ -161,6 +167,12 @@ def cmd_stop(ui):
     return 0
 
 
+def checkpoints_for(ui):
+    """This run's checkpoints, oldest first. Its own TMPDIR, so they cannot be another run's."""
+    return sorted((run_dir(ui) / "tmp" / "conductor" / "checkpoints").glob("*.json"),
+                  key=lambda p: p.stat().st_mtime)
+
+
 def events_for(ui):
     files = glob.glob(str(run_dir(ui) / "tmp" / "conductor" / "*.events.jsonl"))
     return Path(files[0]) if len(files) == 1 else None    # exactly this run's log, or nothing
@@ -180,7 +192,10 @@ def view(meta):
     ui = meta["ui_id"]
     out = {**meta, "steps": [], "current_step": None, "route": None, "terminated_at": None,
            "termination_reason": None, "output": None, "conductor_run": None, "error": None,
-           "mlflow": None, "workspace_prefix": None, "ended": False, "ended_event_at": None}
+           "mlflow": None, "workspace_prefix": None, "ended": False, "ended_event_at": None,
+           # whether the *last* thing this log recorded was the workflow completing. A stop and a
+           # later resume both write to the same log, so only the last one describes the run.
+           "completed_ok": False}
     p = events_for(ui)
     if p:
         out["conductor_run"] = p.name.rsplit("-", 1)[-1].split(".")[0]
@@ -217,12 +232,18 @@ def view(meta):
                 out["termination_reason"] = d.get("termination_reason")
             elif t == "workflow_completed":
                 out["output"] = d.get("output"); out["ended"] = True; out["ended_event_at"] = e.get("timestamp")
+                # A resumed run continues in the same event log, so the stop that interrupted it is
+                # still in there. The run ended after it: the failure was superseded, and reporting
+                # it as the run's outcome would describe a run that no longer exists.
+                out["error"] = None
+                out["completed_ok"] = True
             elif t in ("workflow_failed", "agent_failed", "script_failed"):
                 # an explicit failed terminate (HOLD, BLOCK, DENIED …) carries the workflow output
                 if isinstance(d.get("output"), dict):
                     out["output"] = d["output"]
                 if t == "workflow_failed":
                     out["ended"] = True; out["ended_event_at"] = e.get("timestamp")
+                    out["completed_ok"] = False
                     # a failed terminate reports where and why only here
                     out["terminated_at"] = out["terminated_at"] or d.get("terminated_by") or d.get("agent_name")
                     out["termination_reason"] = out["termination_reason"] or d.get("termination_reason")
@@ -264,7 +285,14 @@ def cmd_list():
     for m in metas:
         v = view(json.loads(m.read_text()))
         rows.append({k: v.get(k) for k in ("ui_id", "workflow", "profile", "state", "started_at", "current_step",
-                                            "terminated_at", "route")} | {"decision": (v.get("output") or {}).get("decision")})
+                                            "terminated_at", "route")}
+                    | {"decision": (v.get("output") or {}).get("decision"),
+                       # a run that stopped before it ended, and has something to continue from
+                       # A stop *is* an end in Conductor's log (it fails the run), so "not ended"
+                       # is the wrong test: what matters is whether the last thing recorded was
+                       # the workflow completing, and whether there is a checkpoint to go on from.
+                       "resumable": bool(v.get("state") != "running" and not v.get("completed_ok")
+                                         and checkpoints_for(v["ui_id"]))})
     print(json.dumps(rows))
     return 0
 

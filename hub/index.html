@@ -116,7 +116,7 @@
   <div class="card">
     <h2>이 화면이 하는 일 — 그리고 하지 않는 일</h2>
     <div class="muted">사람이 판단해야 하는 것만 화면에 둡니다: 제공자 로그인(코드 입력), 도구 호출 승인,
-      진행 중인 실행 중지, 그리고 그 판단에 필요한 상태 읽기. 나머지는 스택을 바꾸는 일이라 명령과 설정 파일로 합니다 —
+      진행 중인 실행 중지와 중지된 실행의 재개, 그리고 그 판단에 필요한 상태 읽기. 나머지는 스택을 바꾸는 일이라 명령과 설정 파일로 합니다 —
       되돌리기 어려워서가 아니라, 사람이 아니어도 되는 일이기 때문입니다.</div>
     <table>
       <thead><tr><th>하려는 것</th><th>명령</th></tr></thead>
@@ -504,6 +504,7 @@ async function loadRuns() {
       <td class="${DEC[d]||""}"><b>${esc(d)}</b></td>
       <td><button class="sub" data-replay="${esc(r.ui_id)}">그래프</button>` +
       (r.state === "running" ? `<button class="sub" data-stop="${esc(r.ui_id)}">중지</button>` : "") +
+      (r.resumable ? `<button class="sub" data-resume="${esc(r.ui_id)}">재개</button>` : "") +
       `</td></tr>`; }).join("");
   document.querySelectorAll("[data-stop]").forEach((b) => b.onclick = async (e) => {
     e.stopPropagation();
@@ -511,6 +512,14 @@ async function loadRuns() {
     b.disabled = true;
     const out = await api(`/api/runs/${b.dataset.stop}/stop`, {});
     alert(out && out.rc === 0 ? "중지를 요청했습니다: " + (out.output || "") : "중지하지 못했습니다: " + esc((out && (out.error || out.output)) || ""));
+    loadRuns();
+  });
+  document.querySelectorAll("[data-resume]").forEach((b) => b.onclick = async (e) => {
+    e.stopPropagation();
+    if (!confirm("중지된 지점부터 이어서 실행합니다. 끝난 단계는 다시 하지 않고, 멈춘 단계부터 다시 들어갑니다.")) return;
+    b.disabled = true;
+    const out = await api(`/api/runs/${b.dataset.resume}/resume`, {});
+    alert(out && out.resuming ? "재개했습니다." : "재개하지 못했습니다: " + esc((out && out.error) || ""));
     loadRuns();
   });
   document.querySelectorAll("[data-replay]").forEach((b) => b.onclick = async (e) => {

@@ -15,7 +15,7 @@ something this stack has been measured doing, or is marked as not covered.
 | concern | the guide's minimum | here | in the panel |
 |---|---|---|---|
 | Run identity | workflow run / step execution ID | yes — a UI run id, Conductor's own run id, a per-call `run_id` (`<run>-<label>-<provider>`), and an MLflow run per call under a parent per run | yes: run history, run detail, MLflow link |
-| State persistence | state recovered after a restart | **partial** — the run's workspace and every artifact survive, and `resume` exists; but Conductor writes a checkpoint only when a run *fails* (measured: 2 of 51 runs have one), so a run that was stopped is started again, not resumed | state shown; `resume` is a command |
+| State persistence | state recovered after a restart | **covered for a stopped run.** Runs carry a loopback-only dashboard, which is the rung `conductor stop` starts from, so a stop now writes a checkpoint and `resume` re-enters the step that was interrupted — measured: a stopped `novel-a` finished PASS in 4 model calls where a full run makes 5 (OPERATIONS §23). A run whose *container* died mid-step still has only what the last checkpoint holds | state shown, and **재개** beside **중지** |
 | Artifact persistence | reference and version kept | yes — artifacts live in the run's workspace, and the things that must not drift carry a hash: the frozen draft (`draft_meta.json`), the cycle's packet (`packet_sha256`), each fan-out member's output (receipt `sha256`) | partly (run detail, report) |
 | **Tool enforcement** | allow/deny **per step** | **covered.** A role names the principal it runs as (`story=codex:novel-reviewer`), the name reaches the call, and Preloop enforces that principal's rights — including on the argument: the novel workflow's reviewers may write `review_*` and are denied the draft ("Access denied: Scoped rule 2"), measured both directly and in a run where five calls carried two principals across three vendors — and the party being judged cannot rewrite them (§21) | the account policy's state is shown; `p281/principals.py list` / `check` answer per principal |
 | Secrets | kept out of the model's context | yes — credentials live in volumes (`/route`, Preloop's own), never in a prompt or an argument, and the adapter neither stores nor logs a token (`mcp_principal` takes it from the environment and records only the name) | — |
@@ -82,8 +82,10 @@ stack now provides.
    principal, and a reviewer can no longer rewrite what it judges ([#2](https://github.com/astro3141/agent-stack/issues/2), measured in OPERATIONS §10).
 1. **Cancellation was missing and is now here** — including in the panel, because stopping a run
    that is going is the same kind of decision as answering an approval.
-2. **A stopped run leaves no checkpoint**, so it is restarted rather than resumed. Measured, and
-   written down rather than assumed from the presence of `conductor resume`.
+2. **A stopped run now leaves a checkpoint and can be continued** — the missing piece was the
+   graceful-cancel rung of `conductor stop`, which needs a dashboard to exist at all (OPERATIONS
+   §23). Along the way: a resumed run used to read as the failure it was stopped at, and nothing
+   in this tree built its own images, so panel changes silently did not run.
 
 ## What it did not change (open, with issues)
 

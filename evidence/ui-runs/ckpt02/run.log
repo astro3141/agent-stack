@@ -1,0 +1,23 @@
+╭───────────────────────────── ❌ ExecutionError ──────────────────────────────╮
+│                                                                              │
+│  Workflow stopped by user via dashboard                                      │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+{
+  "profile": "research-default",
+  "route": "ROUTE: claude: within limits",
+  "roles": "architect=codex author=claude story=codex history=claude cold=grok",
+  "decision": "PASS",
+  "reason": "no blocking finding in the required reviews",
+  "draft_id": "d01",
+  "draft_sha256": "54acd5da11197f838d21dc3a0ba253d470b26ff729592847b62b5f565f6115ff",
+  "chars": 1023,
+  "repairs": 0,
+  "cold_available": "no",
+  "cold_continue_reading": "",
+  "review_overlap": 1.63,
+  "review_wall_s": 38.21,
+  "reviews_failed": "cold",
+  "mlflow_run_id": "15b94762ebb34ba7be78edd467228c7b",
+  "record_error": ""
+}

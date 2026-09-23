@@ -1172,7 +1172,65 @@ def controls_bootstrap():
           and '"$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py apply' in up, True)
 
 
+def controls_resume():
+    print("")
+    print("stopping and continuing — a stop that leaves something to go on from")
+    import importlib.util as il, json as _json, pathlib, tempfile
+    spec = il.spec_from_file_location("rw_ctl", "/work/p281/run_workflow.py")
+    rw = il.module_from_spec(spec); sys.modules["rw_ctl"] = rw; spec.loader.exec_module(rw)
+    src = open("/work/p281/run_workflow.py", encoding="utf-8").read()
+    up = open("/work/scripts/up.sh", encoding="utf-8").read()
+    hub = open("/work/hub/index.html", encoding="utf-8").read()
+    ops_server = open("/work/ops/server.py", encoding="utf-8").read()
+
+    check("a run is started with the dashboard that makes a graceful stop possible",
+          '"--web", "--web-port", "0"' in src, True)
+    check("and the reason is written down, not the feature",
+          "checkpoint" in src.split('"--web", "--web-port", "0"')[0][-700:], True)
+
+    # The view, driven with a log that was stopped and then finished — the shape a resume leaves.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        d = root / "u1" / "tmp" / "conductor"
+        (d / "checkpoints").mkdir(parents=True)
+        (d / "checkpoints" / "c1.json").write_text("{}")
+        log = d / "conductor-p281-novel-a-20260101-000000-abcd1234.events.jsonl"
+        stopped = {"type": "workflow_failed", "timestamp": 1,
+                   "data": {"error_type": "ExecutionError", "message": "stopped by user",
+                            "agent_name": "author"}}
+        finished = {"type": "workflow_completed", "timestamp": 2,
+                    "data": {"output": {"decision": "PASS"}}}
+        rw.RUNS = root
+        meta = {"ui_id": "u1", "state": "finished", "launcher_pid": 1, "instance": "x"}
+
+        log.write_text(_json.dumps(stopped) + chr(10))
+        v = rw.view(dict(meta))
+        check("a stopped run reads as stopped", (bool(v["error"]), v["completed_ok"]), (True, False))
+        check("and is offered for continuing",
+              bool(v["state"] != "running" and not v["completed_ok"] and rw.checkpoints_for("u1")), True)
+
+        log.write_text(_json.dumps(stopped) + chr(10) + _json.dumps(finished) + chr(10))
+        v = rw.view(dict(meta))
+        check("after the resume it reads as what it became, not what it was",
+              (v["error"], v["completed_ok"], (v["output"] or {}).get("decision")),
+              (None, True, "PASS"))
+        check("and is no longer offered for continuing",
+              bool(v["state"] != "running" and not v["completed_ok"]), False)
+
+    check("the panel can continue what it stopped",
+          '/api/runs/([a-z0-9-]{6,40})/resume' in ops_server, True)
+    check("and does it detached, like a start",
+          'run_workflow.py", "resume", m.group(1)], detach=True' in ops_server, True)
+    check("the button appears only for a run that can be continued",
+          'r.resumable ? `<button class="sub" data-resume=' in hub, True)
+
+    # the reason none of the above reached the running panel until it was found
+    check("the bring-up builds the images whose source is this tree",
+          "up -d --build" in up, True)
+
+
 if __name__ == "__main__":
+    controls_resume()
     controls_bootstrap()
     controls_approval_boundary()
     controls_boundary()

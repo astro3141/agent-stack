@@ -17,7 +17,7 @@ Routes
   POST /api/accounts/<provider>/code      body {"code": "...", "login": optional}
   POST /api/accounts/<provider>/cancel    body {"login": optional}
   GET  /api/runs                          POST /api/runs  body {"workflow","profile","inputs":{}}
-  GET  /api/runs/<ui-id>
+  GET  /api/runs/<ui-id>                  POST /api/runs/<ui-id>/stop   POST /api/runs/<ui-id>/resume
   GET  /api/approvals                     pending approval requests (read-only)
 """
 import json, os, re, secrets, subprocess, time
@@ -241,6 +241,15 @@ class H(BaseHTTPRequestHandler):
             # Stopping a run that is going is a person's call — the same kind of decision as an
             # approval, and the only other one this panel makes. Conductor does the stopping.
             return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "stop", m.group(1)]))
+        m = re.fullmatch(r"/api/runs/([a-z0-9-]{6,40})/resume", p)
+        if m:
+            # The other half of stopping. Whether an interrupted run is worth continuing is the
+            # same kind of judgement as stopping it was, so it is offered in the same place.
+            # Detached, like a start: resuming re-enters the step that did not finish and runs on.
+            rc, out, err = dexec([PY, "/work/p281/run_workflow.py", "resume", m.group(1)], detach=True)
+            if rc != 0:
+                return self._send(502, {"error": (err or out or "could not resume").strip()[-300:]})
+            return self._send(200, {"ui": m.group(1), "resuming": True})
         m = re.fullmatch(r"/api/approvals/([0-9a-f-]{36})", p)
         if m:
             # Preloop owns the decision; this panel is where the person makes it, because an
