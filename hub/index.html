@@ -154,7 +154,7 @@
   <div class="card">
     <h2>승인 대기 (Preloop)</h2>
     <div id="appr" class="muted">불러오는 중…</div>
-    <div class="row muted">승인·거절은 Preloop 콘솔에서 합니다: <a href="http://localhost:3000" target="_blank" rel="noopener">localhost:3000</a></div>
+    <div class="row muted">판정은 여기서 합니다. 판정의 이력과 그 근거가 된 정책은 <a href="http://localhost:3000" target="_blank" rel="noopener">Preloop 콘솔</a>이 주인입니다.</div>
   </div>
 </section>
 
@@ -531,7 +531,7 @@ async function showRun(id) {
     const waiting = r.state === "running" && r.workspace_prefix ? (await api("/api/approvals")).filter?.((a) => a.cwd && a.cwd.startsWith(r.workspace_prefix)) : [];
     const decision = o.decision || (rt.decision === "HOLD" ? "HOLD" : "");
     const why = rt.decision === "HOLD" ? `라우터가 실행을 보류했습니다: ${rt.reason}` :
-                waiting && waiting.length ? `Preloop 승인 대기 중 (${waiting.map((w) => w.tool + " " + (w.target||"")).join(", ")}) — Preloop 콘솔에서 승인/거절` :
+                waiting && waiting.length ? `Preloop 승인 대기 중 (${waiting.map((w) => w.tool + " " + (w.target||"")).join(", ")}) — 운영 탭에서 판정` :
                 r.state === "interrupted" ? "중단됨 — 실행이 끝나기 전에 실행기가 사라졌습니다(재시작 등). 자동 재개하지 않습니다." :
                 r.termination_reason || (r.state === "running" ? "진행 중" : "");
     const ml = r.mlflow && r.mlflow.run_id ? `<a href="http://127.0.0.1:5000/#/experiments/${esc(r.mlflow.experiment_id)}/runs/${esc(r.mlflow.run_id)}" target="_blank" rel="noopener">MLflow 기록 열기</a>` : "—";
