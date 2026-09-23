@@ -13,7 +13,7 @@ quota:
 
 tools:
   native_tools: false
-  preloop_policy: policy/b-test.yaml
+  preloop_policy: policy/b-fsmcp.yaml
 
 execution:
   timeout_ms: 600000
