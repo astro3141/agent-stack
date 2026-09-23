@@ -10,35 +10,27 @@ containers, not from the compose files.
 
 | what | value |
 |---|---|
-| PoC workspace (`D:\Work\poc-278`, mounted as `/work`) | `a4cb26e`, clean tree |
-| repository (`D:\Work\cadp`, `main`) | `9a54921` (#284 merged) |
+| this tree (`D:\Work\poc-278`, mounted as `/work`) — the repository, and what runs | `main` of `astro3141/agent-stack` |
 | research workspace (`D:\Work\research-280`, mounted as `/research`) | not a git tree; 49 MB of data |
+| `cadp` | no longer part of what runs here: it keeps issue #281, the history up to #292, and `poc/278-composition/` |
 
-**The workspace and the repository are not the same tree.** The workspace is the ancestor: it
-carries #278 material and local notes that were never mirrored. One difference changes behaviour
-(`docker/compose.poc.yaml` used to be listed here as a second one; the two copies are in fact
-identical — what differs per host is `docker/.env`, which is not published):
+**This tree is the repository** (`astro3141/agent-stack`, private), and that is a change: the
+measurements used to be made here and mirrored into `cadp` under `poc/281-routing/`. Two trees
+produced exactly one class of bug, and review found it rather than we did: `novel_reviews.py`
+was published calling `fanout.run_all(..., ledger=…)` against a `run_all(jobs)`
+published without that parameter, so the copy that ran was the other one and "measured on the
+running stack" described code no reader could execute. A mirror check was written, then widened
+twice as it kept finding what it did not compare (fixtures and policy; deletions; the root
+documents). None of that is needed now: there is one tree, and it is the one that runs.
 
-| file | workspace (running) | repository |
+What the move did **not** carry: the composition's own history, which stays in `cadp` under
+`poc/278-composition/`. This history starts at `9cce003`, the snapshot taken when that work ended.
+
+One difference from the published copy survived the move and is worth keeping in mind:
+
+| file | this tree (running) | the copy in `cadp` history |
 |---|---|---|
 | `docker/agent.Dockerfile` | unpinned installs; copies one host CA file | Claude 2.1.278, Conductor `87f7788e`, Preloop CLI 0.15.0 pinned; `ca/` directory, certificates unversioned |
-
-**Everything else on both sides must be identical, and that is now checked.** A review of the
-published tree found `p281/steps/novel_reviews.py` calling `fanout.run_all(..., ledger=…)` against
-a `run_all(jobs)` that had been published without that parameter: the workspace ran (it still had
-the ledger version), the published pair stopped with a `TypeError` before a reviewer started, and
-the runs reported as "measured on the running stack" were of code no reader could execute. The
-per-member ledger was dropped from this scope on purpose, so the workspace was brought back to the
-published interface — and `scripts/mirror-check.sh` now compares every file that exists on both
-sides, with these two as its only documented exceptions. It is run before publishing, and a
-difference fails it.
-
-Its first version compared code and documents only: a changed `p281/fixtures/trading/packet.json`
-(what every lane decides from) and a changed `policy/b-fsmcp.yaml` (what the tools may do) both
-passed as `MIRROR OK`, which review demonstrated on two temporary trees. Inputs and policy decide
-what a run produces, so both are compared now (83 files); each of those two cases fails the check.
-Generated configuration (`config/generated/`, written by `cfg.py` per host) and anything holding
-credentials stay out of it — they are not published and are per-host by design.
 
 So **the running agent image was built from the unpinned Dockerfile**, and the versions in it are
 whatever the installers returned on 2026-09-22 (§3). The pinned Dockerfile in the repository has

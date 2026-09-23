@@ -90,5 +90,5 @@ mirrored calling `fanout.run_all(..., ledger=…)` while the published `fanout.p
 `run_all(jobs)` — the reviewers never started there. Per-member resume is out of this scope, so the
 ledger was removed from the workspace too, and `p281/trial_controls.py` now runs the real reviews
 and lanes steps against the real `fanout` (a stub interpreter stands in for the model call), which
-reproduces that `TypeError` if the call is reverted. `scripts/mirror-check.sh` compares the two
-trees so a published file cannot again differ from the one that was measured.
+reproduces that `TypeError` if the call is reverted. That tree is now the repository itself, so a published
+file can no longer differ from the one that was measured.
