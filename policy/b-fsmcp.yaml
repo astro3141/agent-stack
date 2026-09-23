@@ -56,3 +56,5 @@ defaults:
   unknown_tools: allow
   require_approval_for_new_tools: false
   inherit_from_parent: true
+
+# touched to force a real apply during the update test
