@@ -76,7 +76,7 @@ if [ "$MODE" != "--check" ]; then
   # Removing the container leaves its data alone: MLflow's database and artifacts are a bind mount.
   drop=""
   case ",$COMPOSE_PROFILES," in *,record,*) ;; *) drop="$drop mlflow";; esac
-  case ",$COMPOSE_PROFILES," in *,ui,*) ;; *) drop="$drop ops hub";; esac
+  case ",$COMPOSE_PROFILES," in *,ui,*) ;; *) drop="$drop ops hub replay";; esac
   if [ -n "$drop" ]; then
     echo "   not in this composition:$drop"
     (cd "$HERE/docker" && COMPOSE_PROFILES="record,ui" docker compose -f compose.poc.yaml rm -sf $drop >/dev/null) || exit 1

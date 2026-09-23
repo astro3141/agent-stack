@@ -712,7 +712,8 @@ def controls_composition():
     svcs = (yaml.safe_load(open("/work/docker/compose.poc.yaml", encoding="utf-8"))
             or {}).get("services") or {}
     optional = sorted(n for n, v in svcs.items() if (v or {}).get("profiles"))
-    check("only these services are optional", optional, ["hub", "mlflow", "ops"])
+    # the screen's services (hub, ops, the replay dashboard) and recording are the optional ones
+    check("only these services are optional", optional, ["hub", "mlflow", "ops", "replay"])
     for must in ("egress", "toolsvc", "fsmcp", "quota", "agent"):
         check(f"{must} can never be dropped", must in optional, False)
 
