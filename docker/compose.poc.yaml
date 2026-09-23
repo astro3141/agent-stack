@@ -87,6 +87,12 @@ services:
       - ws:/ws
       - quota-obs:/obs:ro
       - route-creds:/route
+    # The credentials of the role principals a workflow may ask for (mcp_principal). Operator
+    # supplied, never versioned (docker/.gitignore), and the adapter reads them from the
+    # environment rather than storing any of them.
+    env_file:
+      - path: principals.env
+        required: false
     environment:
       POC_DIR: /work
       POC_PY: /opt/venv/bin/python

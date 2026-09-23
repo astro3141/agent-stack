@@ -3,7 +3,7 @@
 usage: task_chain.py <member.json>          (started by steps/tasks.py, one process per member)
 
 member.json: {"label": str, "steps": [step, ...]}
-  step = {"kind": "model", "provider", "login", "route", "prompt", "expected"}
+  step = {"kind": "model", "provider", "login", "route", "prompt", "expected", "principal"?}
        | {"kind": "script", "argv": [...], "expected": <file or "">}
 
 A member is a *sequence*, because a lane of an experiment is often one: a deterministic base that
@@ -37,7 +37,8 @@ for i, st in enumerate(member["steps"], 1):
     started = time.time()
     if st["kind"] == "model":
         argv = [PY, "/work/p281/steps/agent_task.py", st["provider"], st.get("route", "direct"),
-                name, st["prompt"], st["expected"], prof, st.get("login", st["provider"])]
+                name, st["prompt"], st["expected"], prof, st.get("login", st["provider"]),
+                st.get("principal", "")]
     else:
         argv = st["argv"]
     p = subprocess.run(argv, capture_output=True, text=True)

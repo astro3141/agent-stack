@@ -3,7 +3,7 @@
 usage: tasks.py <receipt-path> <context> <profile> <spec> [<spec> ...]
        tasks.py <receipt-path> <context> <profile> --plan <plan.json>
 
-       spec = label:provider:login:route:prompt-file:expected-file   (one call per member)
+       spec = label:provider:login:route:prompt-file:expected-file[:principal]
        plan = {"members": [{"label", "steps": [...]}, ...]}          (a member may be a sequence,
               run in order by steps/task_chain.py; members still run at the same time)
 
@@ -73,11 +73,13 @@ if sys.argv[4:5] == ["--plan"]:
                      "argv": [PY, "/work/p281/steps/task_chain.py", mp]})
 else:
     for spec in sys.argv[4:]:
-        label, provider, login, route, prompt, expected = spec.split(":")
+        parts = spec.split(":")
+        label, provider, login, route, prompt, expected = parts[:6]
+        principal = parts[6] if len(parts) > 6 else ""
         jobs.append({"key": label, "label": label, "provider": provider, "expected": expected,
                      "produces": f"{WS}/{expected}",
                      "argv": [PY, "/work/p281/steps/agent_task.py", provider, route, label,
-                              prompt, expected, prof, login]})
+                              prompt, expected, prof, login, principal]})
 
 rows, wall = fanout.run_all(jobs)
 

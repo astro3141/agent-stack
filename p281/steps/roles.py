@@ -1,6 +1,6 @@
 """Conductor script step: assign a provider to each role of a role-split workflow.
 
-usage: roles.py <profile> <router-evidence-dir> <role>=<provider> [...]
+usage: roles.py <profile> <router-evidence-dir> <role>=<provider>[:<principal>] [...]
 
 The router (steps/route.py) answers "may anything run, and on which provider" from quota, and its
 answer names one provider. A role-split workflow needs more than that: each role is bound to a
@@ -18,6 +18,12 @@ guessed or substituted:
 
 No evaluation to read is not "fine": it is reported as unavailable, the same way the router holds
 a run when it cannot see a quota.
+
+A role may also name the **principal** it runs as (`story=codex:novel-reviewer`). That is what
+makes tool rights per *step* rather than per run: the principal carries the rights (Preloop governs
+per subject), the vendor carries the model, and they are chosen separately. The principal is a
+name here and nothing else — its credential reaches the adapter from the environment, never from
+a workflow or an argument.
 """
 import json, os, sys
 
@@ -57,7 +63,8 @@ elig = eligibility()
 out = {"profile": prof_name}
 missing, ineligible = [], []
 for arg in specs:
-    role, _, provider = arg.partition("=")
+    role, _, rest = arg.partition("=")
+    provider, _, principal = rest.partition(":")
     why = ""
     if provider not in candidates:
         # the profile does not carry this provider: say so, do not substitute another vendor
@@ -70,11 +77,13 @@ for arg in specs:
         why, bucket = elig[provider][1], ineligible
     if why:
         out[f"{role}_provider"] = out[f"{role}_login"] = out[f"{role}_route"] = ""
+        out[f"{role}_principal"] = ""
         bucket.append(f"{role}:{provider} ({why})")
         continue
     out[f"{role}_provider"] = provider
     out[f"{role}_login"] = logins.get(provider, provider)
     out[f"{role}_route"] = routes.get(provider, "preloop_gateway")
+    out[f"{role}_principal"] = principal
 out["missing"] = ",".join(missing)
 out["ineligible"] = ",".join(ineligible)
 out["ok"] = "yes" if not missing and not ineligible else "no"

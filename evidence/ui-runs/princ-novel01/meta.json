@@ -1,0 +1,1 @@
+{"ui_id": "princ-novel01", "workflow": "novel-a", "profile": "research-default", "inputs": {}, "started_at": 1790192897.7833464, "state": "finished", "capabilities": {"tool_rights": true, "approvals": true, "egress": true, "record": true, "admission": true}, "unrecorded": false, "launcher_pid": 35, "instance": "2424078@19dabd10eac8", "exit": 0, "ended_at": 1790193038.937743}

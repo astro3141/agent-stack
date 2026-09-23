@@ -20,6 +20,7 @@ fails if the fix is reverted. What each group pins:
             only, and every step is one execution in the record
   running   unattended operation: one cycle at a time, a skip and a refusal both recorded, and
             the health report counting what actually happened
+  step-rights  a role may run as its own principal, and that reaches the call
   panel     the web surface carries only what needs a person — a login and an approval — and the
             cycle's rules live in one place, whatever calls them
   reduced   a smaller composition may drop recording and the screen — never what the stack's
@@ -632,6 +633,50 @@ def controls_running():
     check("the soak measures without cleaning up", "cleanup" not in soak.split("#!")[1].split("set -u")[1], True)
 
 
+# ---------------------------------------------------------------- tool rights per step
+def controls_step_rights():
+    print("step-rights — a step runs with its role's rights, not the run's")
+    import subprocess, types
+    root = tempfile.mkdtemp(prefix="p281-princ-")
+    ev = os.path.join(root, "route")
+    os.makedirs(ev)
+    json.dump({"decision": "ROUTE", "provider": "codex", "reason": "x",
+               "evaluated": [{"provider": p, "eligible": True, "why": "within limits"}
+                             for p in ("codex", "claude", "grok")]},
+              open(f"{ev}/decision.json", "w"))
+    out = json.loads(subprocess.run(
+        ["/opt/venv/bin/python", "/work/p281/steps/roles.py", "research-default", ev,
+         "author=claude:novel-author", "story=codex:novel-reviewer", "cold=grok"],
+        capture_output=True, text=True).stdout.strip().splitlines()[-1])
+    check("a role carries the principal it runs as", out["author_principal"], "novel-author")
+    check("two roles on different vendors can share one",
+          out["story_principal"], "novel-reviewer")
+    check("a role without one is still bound", (out["cold_provider"], out["cold_principal"]),
+          ("grok", ""))
+    check("the vendor is unchanged by it", out["author_provider"], "claude")
+    shutil.rmtree(root, ignore_errors=True)
+
+    # it has to reach the call, or it is decoration
+    at = open("/work/p281/steps/agent_task.py", encoding="utf-8").read()
+    check("the task passes it to the adapter", '"mcp_principal": principal' in at, True)
+    check("and only when there is one", 'if principal else {}' in at, True)
+    ad = open("/work/p281/run-agent.mjs", encoding="utf-8").read()
+    check("the adapter fails closed without the credential",
+          "is not set" in ad and "PRELOOP_MCP_" in ad, True)
+
+    y = open("/work/p281/workflows/novel-a.yaml", encoding="utf-8").read()
+    check("the author and the reviewers are different principals",
+          ("author=claude:novel-author" in y and "story=codex:novel-reviewer" in y), True)
+    for role in ("architect", "author", "story", "history", "cold"):
+        check(f"{role}'s call carries its principal", f"{role}_principal" in y, True)
+
+    comp = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
+    check("their credentials come from a file that is not versioned",
+          "principals.env" in comp, True)
+    check("and that file is ignored by git",
+          "principals.env" in open("/work/docker/.gitignore", encoding="utf-8").read(), True)
+
+
 # ---------------------------------------------------------------- the panel and its one control
 def controls_panel():
     print("panel — only what needs a person, and one implementation behind it")
@@ -758,6 +803,7 @@ if __name__ == "__main__":
     controls_boundary()
     controls_chains()
     controls_running()
+    controls_step_rights()
     controls_panel()
     controls_composition()
     controls_recorder()

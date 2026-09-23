@@ -609,11 +609,50 @@ differing:
 | no `mcp_principal` (regression) | `COMPLETED`, file written with the adapter's own credential |
 | `mcp_principal` on Grok | `FAILED` — refused: Grok reads its credential from `/route/grok/config.toml`, so the adapter cannot substitute it for one call. Per-role for Grok would need a login directory (and config file) per role. |
 
-**What is still not built.** Nothing maps a workflow role to a principal: `steps/roles.py` binds a
-role to a vendor and a login, and no step passes `mcp_principal`, so no workflow uses this yet.
-Where the credentials come from is also left open on purpose — the adapter reads an environment
-variable, so an operator can inject them from wherever they are kept, and `cfg.py` would own the
-role → principal mapping the day a workflow needs it.
+**Since then it is wired, and a workflow uses it.** A role may name the principal it runs as —
+`steps/roles.py` takes `story=codex:novel-reviewer` — and the name travels to the call
+(`agent_task.py` → `mcp_principal`), through the fan-out (`tasks.py` spec, `task_chain.py` step)
+and into the adapter, which fails closed when that principal has no credential. The vendor and the
+principal are chosen separately, so three vendors share one reviewer's rights.
+
+The novel workflow now runs its steps as two principals: **`novel-author`** (architect, author) and
+**`novel-reviewer`** (story, history, cold reader). The reviewer's rights are not a tool switch but
+a rule on the argument — Preloop's scoped rules take a condition — so a reviewer can still write
+its own review and nothing else:
+
+```
+write_file: allow when args.path.contains('review_')
+write_file: deny  when (anything else)
+```
+
+Measured against the file server with the two credentials:
+
+| principal | wrote `review_x.json` | wrote `draft.md` |
+|---|---|---|
+| `novel-author` | — | **written** |
+| `novel-reviewer` | **written** | **"Access denied: Scoped rule 2"** |
+
+And in a real run (`princ-novel01`, PASS at `d01`), the five calls of one run carried two
+principals across three vendors:
+
+```
+6e8be4fc-architect-codex   codex   novel-author
+6e8be4fc-author-claude     claude  novel-author
+6e8be4fc-story-codex       codex   novel-reviewer
+6e8be4fc-history-claude    claude  novel-reviewer
+6e8be4fc-cold-grok         grok    novel-reviewer
+```
+
+The credentials are the operator's: `p281/principals.py create <name>` prints the line for
+`docker/principals.env` (git-ignored, loaded into the agent as environment) and writes nothing
+itself; `principals.py list` shows what each principal may do, and `principals.py check <name>`
+asks the file server rather than trusting the configuration. A principal whose credential is not in
+that file is simply unavailable, and a step that asks for it fails closed.
+
+**One limit of the platform, found on the way.** Preloop composes a credential's name as
+`"Managed Agent Credential: <display name> / <name>"` into a `varchar(100)`, so a long display name
+fails with an unexplained HTTP 500 (the reason is only in the api container's log). The principals
+here are named `Role: <name>` to stay inside it.
 
 **Two lifecycle facts worth keeping.** Deleting a managed agent (`DELETE /api/v1/agents/{id}`)
 revokes its credential immediately — the same token went from HTTP 200 to 401 — but the API key

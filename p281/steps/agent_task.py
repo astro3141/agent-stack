@@ -1,6 +1,7 @@
 """Conductor script step: one model task through the routing/execution layer.
 
 usage: agent_task.py <provider> <model_route> <label> <prompt-file> <expected-file>
+       [<profile> [<login> [<principal>]]]
 The prompt file may use {WS} for the run's shared workspace (/ws/<conductor run id>), which
 every model step of the run shares, so a later step can read what an earlier one wrote.
 Writes are only possible through the Preloop MCP server (native write/shell are removed);
@@ -13,6 +14,8 @@ import settings
 provider, model_route, label, prompt_file, expected = sys.argv[1:6]
 prof_name = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else "research-default"
 login = sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else provider
+# the principal whose tool rights this step runs with; empty means the adapter's own credential
+principal = sys.argv[8] if len(sys.argv) > 8 and sys.argv[8] else ""
 RT, PROF = settings.runtime(), settings.profile(prof_name) or {}
 run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 ws = f"{RT['paths']['workspace_root']}/{run}"
@@ -22,6 +25,7 @@ evid = f"{RT['paths']['evidence_root']}/{run_id}"
 os.makedirs(evid, exist_ok=True)
 req = {"run_id": run_id, "provider": provider, "model_route": model_route or "preloop_gateway",
        "login": login, "profile": prof_name,
+       **({"mcp_principal": principal} if principal else {}),
        "cwd": ws, "timeout_ms": (PROF.get("execution") or {}).get("timeout_ms", 600000),
        "native_tools": (PROF.get("tools") or {}).get("native_tools", False), "evidence_dir": evid,
        "prompt": open(prompt_file, encoding="utf-8").read().replace("{WS}", ws)}
@@ -53,6 +57,7 @@ exp_path = os.path.join(ws, expected)
 print(json.dumps({
     "status": r.get("status", "FAILED"),
     "provider": provider,
+    "principal": principal,
     "model_route": r.get("model_route") or model_route,
     "run_id": run_id,
     "workspace": ws,

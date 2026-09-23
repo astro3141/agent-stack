@@ -17,7 +17,7 @@ something this stack has been measured doing, or is marked as not covered.
 | Run identity | workflow run / step execution ID | yes — a UI run id, Conductor's own run id, a per-call `run_id` (`<run>-<label>-<provider>`), and an MLflow run per call under a parent per run | yes: run history, run detail, MLflow link |
 | State persistence | state recovered after a restart | **partial** — the run's workspace and every artifact survive, and `resume` exists; but Conductor writes a checkpoint only when a run *fails* (measured: 2 of 51 runs have one), so a run that was stopped is started again, not resumed | state shown; `resume` is a command |
 | Artifact persistence | reference and version kept | yes — artifacts live in the run's workspace, and the things that must not drift carry a hash: the frozen draft (`draft_meta.json`), the cycle's packet (`packet_sha256`), each fan-out member's output (receipt `sha256`) | partly (run detail, report) |
-| **Tool enforcement** | allow/deny **per step** | **partial, and this is the real gap.** Rights are enforced per *principal* by Preloop (measured per credential and per managed agent), and the adapter can present a principal per call (`mcp_principal`). **No workflow binds a step to a principal**, so in practice every step of a run shares one set of tool rights | the account policy's state is shown; per-step rights do not exist to show |
+| **Tool enforcement** | allow/deny **per step** | **covered.** A role names the principal it runs as (`story=codex:novel-reviewer`), the name reaches the call, and Preloop enforces that principal's rights — including on the argument: the novel workflow's reviewers may write `review_*` and are denied the draft ("Access denied: Scoped rule 2"), measured both directly and in a run where five calls carried two principals across three vendors | the account policy's state is shown; `p281/principals.py list` / `check` answer per principal |
 | Secrets | kept out of the model's context | yes — credentials live in volumes (`/route`, Preloop's own), never in a prompt or an argument, and the adapter neither stores nor logs a token (`mcp_principal` takes it from the environment and records only the name) | — |
 | Isolation | sandbox / container / worktree | yes — one container per concern, the agent single-homed on an internal network, egress through an allowlist proxy. **Per-run directories are not access isolation** (the file server serves all of `/ws`), and that is recorded rather than implied | capabilities line |
 | Timeout | runaway execution stopped | yes — per step in the workflow, per call in the adapter (`timeout_ms`) | — |
@@ -41,7 +41,7 @@ something this stack has been measured doing, or is marked as not covered.
 **Not covered.** There is no evaluation layer: no dataset of happy / edge / failure / adversarial
 cases, no outcome, step or trajectory graders, and no grader validation. What exists instead is:
 
-- **controls** (`p281/trial_controls.py`, 147) that pin the *machinery* against synthetic inputs —
+- **controls** (`p281/trial_controls.py`, 162) that pin the *machinery* against synthetic inputs —
   they answer "does the stack do what it says", not "is the workflow's judgement any good";
 - **capability trials** (`TRIAL-A`, `TRIAL-B`) — a handful of runs each, which the guide explicitly
   says is not production readiness;
@@ -52,6 +52,8 @@ workflow that runs on it.
 
 ## What this review changed
 
+0. **Tool rights per step** — the gap the review named first is closed: a role runs as its own
+   principal, and a reviewer can no longer rewrite what it judges ([#2](https://github.com/astro3141/agent-stack/issues/2), measured in OPERATIONS §10).
 1. **Cancellation was missing and is now here** — including in the panel, because stopping a run
    that is going is the same kind of decision as answering an approval.
 2. **A stopped run leaves no checkpoint**, so it is restarted rather than resumed. Measured, and
@@ -61,7 +63,6 @@ workflow that runs on it.
 
 | gap | why it matters | issue |
 |---|---|---|
-| tool rights per step | the guide's Step Contract has `capabilities: allow/deny`; here every step of a run shares one principal's rights. The pieces exist (`mcp_principal`, per-principal governance) and nothing binds them to a step | [#2](https://github.com/astro3141/agent-stack/issues/2) |
 | evaluation layer | without outcome/step/trajectory evaluation over a dataset, "it worked" is a handful of runs | [#3](https://github.com/astro3141/agent-stack/issues/3) |
 | idempotency of side effects | a re-run repeats its writes; nothing marks a step safe to repeat | [#4](https://github.com/astro3141/agent-stack/issues/4) |
 | semantic evidence index | evidence exists but is not linked to the criterion it supports | [#5](https://github.com/astro3141/agent-stack/issues/5) |
