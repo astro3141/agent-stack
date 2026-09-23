@@ -83,6 +83,6 @@ stack now provides.
 
 | gap | why it matters | issue |
 |---|---|---|
-| a governed party can still rewrite its own tool rules (`PUT /agents/{id}/governance`) | the same self-serving shape as deciding one's own approval; the guard can close it once the principal commands run from the admin side | [#1](https://github.com/astro3141/agent-stack/issues/1) |
+| a governed party can still rewrite its own tool rules (`PUT /agents/{id}/governance`) | the same self-serving shape as deciding one's own approval; the guard can close it once the principal commands run from the admin side | [#7](https://github.com/astro3141/agent-stack/issues/7) |
 | the stack cannot bring up its own Preloop — the first user is made by hand | a fresh machine, or a restore without the Preloop database, does not come up unattended | [#6](https://github.com/astro3141/agent-stack/issues/6) |
 | graders and datasets | the trajectory of a run is now recorded (§16–18), but whether a judgement was *right* still needs labelled cases from whoever knows the domain — the workflow's work, not the platform's | — |
