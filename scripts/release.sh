@@ -203,7 +203,7 @@ cmd_update() {
       say "replacing" "/home/agent/.local with the new image's toolchain"
       docker stop "$AGENT" >/dev/null 2>&1 || true
       docker run --rm -v "$STACK-agent-home:/vol" --entrypoint sh "$NEW_IMAGE" -c \
-        'rm -rf /vol/.local.new && cp -a /home/agent/.local /vol/.local.new && [ -x /vol/.local.new/bin/claude ]' \
+        'rm -rf /vol/.local.new && cp -a /home/agent/.local /vol/.local.new && [ -e /vol/.local.new/bin/claude -o -L /vol/.local.new/bin/claude ] && [ -d /vol/.local.new/share/claude ]' \
         || fail "could not stage the new toolchain; nothing was replaced"
       docker run --rm -v "$STACK-agent-home:/vol" alpine sh -c \
         'rm -rf /vol/.local.old && mv /vol/.local /vol/.local.old && mv /vol/.local.new /vol/.local && rm -rf /vol/.local.old' \
@@ -257,7 +257,7 @@ cmd_rollback() {
   # usable replacement exists
   docker stop "$AGENT" >/dev/null 2>&1 || true
   docker run --rm -v "$STACK-agent-home:/vol" -v "$(m "$SRC"):/in:ro" alpine sh -c \
-    'rm -rf /vol/.local.new && mkdir -p /vol/.local.new && tar xzf /in/toolchain.tar.gz -C /vol/.local.new --strip-components=1 && [ -x /vol/.local.new/bin/claude ]' \
+    'rm -rf /vol/.local.new && mkdir -p /vol/.local.new && tar xzf /in/toolchain.tar.gz -C /vol/.local.new --strip-components=1 && [ -e /vol/.local.new/bin/claude -o -L /vol/.local.new/bin/claude ] && [ -d /vol/.local.new/share/claude ]' \
     || fail "the release's toolchain did not unpack — the running one is untouched"
   say "verified" "images, archives, and the unpacked toolchain"
 
