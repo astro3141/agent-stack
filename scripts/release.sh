@@ -57,8 +57,9 @@ tool_cmd() {
     node)        echo 'node -v';;
   esac
 }
-tool_running()  { docker exec "$AGENT" sh -c "$(tool_cmd "$1")" 2>/dev/null | head -1 | tr -d '\r'; }
-tool_in_image() { docker run --rm --entrypoint sh "$1" -c "$(tool_cmd "$2")" 2>/dev/null | head -1 | tr -d '\r'; }
+# A tool that cannot answer is information, not a reason to abort: the caller decides.
+tool_running()  { docker exec "$AGENT" sh -c "$(tool_cmd "$1")" 2>/dev/null | head -1 | tr -d '' || true; }
+tool_in_image() { docker run --rm --entrypoint sh "$1" -c "$(tool_cmd "$2")" 2>/dev/null | head -1 | tr -d '' || true; }
 
 # Docker Desktop reports a bind source either as the host path or in the VM's own form.
 norm_host() {
