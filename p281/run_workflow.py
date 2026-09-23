@@ -147,7 +147,10 @@ def view(meta):
                     out["route"] = {k: r.get(k) for k in ("decision", "provider", "reason", "model_route", "profile")}
                 except Exception:
                     pass
-            elif t == "script_completed" and d.get("agent_name") in ("record", "record_hold"):
+            # every recording step, whatever the workflow calls it (record, record_hold,
+            # record_pass, record_block, record_cycle …) — the screen showed no MLflow link for
+            # the trial workflows because it knew only the first two names
+            elif t == "script_completed" and str(d.get("agent_name") or "").startswith("record"):
                 try:
                     r = json.loads(d.get("stdout") or "{}")
                     out["mlflow"] = {"run_id": r.get("mlflow_run_id"), "experiment_id": r.get("experiment_id"),
