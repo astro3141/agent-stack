@@ -26,6 +26,16 @@ workflow:
       required: false
       default: "1"
       description: how many repair rounds are allowed before the chapter is blocked
+    story_prompt:
+      type: string
+      required: false
+      default: /work/p281/prompts/novel-review-story.md
+      description: story-review prompt (a stricter one exercises the repair loop)
+    cold_login:
+      type: string
+      required: false
+      default: ""
+      description: override the Cold Reader's login (a missing one exercises advisory failure)
   limits:
     max_iterations: 30
     timeout_seconds: 3000
@@ -148,9 +158,9 @@ agents:
     description: Story + history (required) and Cold Reader (advisory), started together
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/novel_reviews.py", "{{ route.output.profile }}",
-           "review-story:{{ roles.output.story_provider }}:{{ roles.output.story_login }}:{{ roles.output.story_route }}:/work/p281/prompts/novel-review-story.md:review_story.json:required",
+           "review-story:{{ roles.output.story_provider }}:{{ roles.output.story_login }}:{{ roles.output.story_route }}:{{ workflow.input.story_prompt }}:review_story.json:required",
            "review-history:{{ roles.output.history_provider }}:{{ roles.output.history_login }}:{{ roles.output.history_route }}:/work/p281/prompts/novel-review-history.md:review_history.json:required",
-           "review-cold:{{ roles.output.cold_provider }}:{{ roles.output.cold_login }}:{{ roles.output.cold_route }}:/work/p281/prompts/novel-cold.md:review_cold.json:advisory"]
+           "review-cold:{{ roles.output.cold_provider }}:{{ workflow.input.cold_login or roles.output.cold_login }}:{{ roles.output.cold_route }}:/work/p281/prompts/novel-cold.md:review_cold.json:advisory"]
     timeout: 900
     output:
       status: {type: string}
@@ -207,7 +217,7 @@ agents:
     description: Record the run (never fails the workflow)
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/record.py"]
-    stdin: "{{ {'execute': {'provider': roles.output.author_provider, 'model_route': roles.output.author_route, 'run_id': triage.output.draft_id, 'status': 'COMPLETED'}, 'check': {'decision': triage.output.decision, 'reason': triage.output.reason}, 'route': route.output} | tojson }}"
+    stdin: "{{ {'execute': author.output, 'check': {'decision': triage.output.decision, 'reason': triage.output.reason, 'file_sha256': triage.output.draft_sha256}, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
       experiment_id: {type: string}
