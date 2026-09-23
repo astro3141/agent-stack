@@ -1,3 +1,6 @@
 
 # credentials of the role principals — operator supplied, never versioned
 principals.env
+
+# a credential of the operator's own for the panel, when they make one
+operator.env

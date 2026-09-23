@@ -14,8 +14,10 @@ services:
   api:
     networks:
       default: {}
-      poc-governed:
-        aliases: [api]
+      # NOT poc-governed: the agent reaches Preloop only through the guard, which is what holds
+      # the name `api` there and refuses approval decisions (docker/apiguard.conf, OPERATIONS §20)
+      poc-admin:
+        aliases: [preloop-api]
       poc-toolnet:
         aliases: [api]
     ports:
@@ -23,22 +25,22 @@ services:
   console:
     networks:
       default: {}
-      poc-governed:
-        aliases: [console]
+      poc-admin:
+        aliases: [preloop-console]
     ports:
       - "${PRELOOP_CONSOLE_PORT:-3000}:80"
   gateway:
     networks:
       default: {}
-      poc-governed:
-        aliases: [gateway]
+      poc-admin:
+        aliases: [preloop-gateway]
     ports:
       - "${PRELOOP_GATEWAY_PORT:-8001}:8000"
 
 networks:
-  poc-governed:
+  poc-admin:
     external: true
-    name: ${STACK:-cadp278}-governed
+    name: ${STACK:-cadp278}-adminnet
   poc-toolnet:
     external: true
     name: ${STACK:-cadp278}-toolnet

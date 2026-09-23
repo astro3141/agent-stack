@@ -1039,7 +1039,77 @@ def controls_composition():
     check("down takes everything, whatever was up", 'COMPOSE_PROFILES="record,ui"' in down, True)
 
 
+def controls_approval_boundary():
+    print("")
+    print("the approval boundary — a route, and it says so")
+    guard = open("/work/docker/apiguard.conf", encoding="utf-8").read()
+    compose = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
+    preloop = open("/work/docker/preloop.cadp.yaml", encoding="utf-8").read()
+    up = open("/work/scripts/up.sh", encoding="utf-8").read()
+
+    # what the guard refuses, and what it deliberately does not. The refusals are one table, so
+    # the control reads that table rather than the file: a rule elsewhere would not be enforced.
+    table = guard.split("$guard_refusal {")[1].split("}")[0]
+    for verb in ("approve", "decline", "decide"):
+        check(f"deciding by {verb} is refused", verb in table, True)
+    check("a write to the standing bypasses is refused",
+          "(POST|PUT|PATCH|DELETE) /api/v1/approval-bypasses" in guard, True)
+    check("reading what is waiting is not refused",
+          "~^GET" not in guard and "Reading is untouched" in guard, True)
+    check("the refusal does not depend on the credential presented",
+          "whatever credential is presented" in guard, True)
+
+    # the agent resolves Preloop's names to the guard, and Preloop itself is off that network
+    for name in ("api", "console", "gateway"):
+        check(f"the guard holds the name {name}", f"aliases: [api, console, gateway]" in compose, True)
+        check(f"Preloop answers to preloop-{name} on the admin side",
+              f"aliases: [preloop-{name}]" in preloop, True)
+    check("Preloop is no longer on the governed network",
+          "poc-governed:" not in preloop.split("networks:")[-1], True)
+    check("the agent is not on the admin network",
+          "adminnet" not in compose.split("  agent:")[1].split("  mlflow:")[0], True)
+
+    # the panel decides from the admin side, with the code and a credential it can read
+    check("the panel reaches Preloop past the guard",
+          "P281_PRELOOP_API: http://preloop-api:8000" in compose, True)
+    check("the panel runs the decision itself, not in the agent",
+          'jlocal(["/work/p281/approvals.py", "decide"' in
+          open("/work/ops/server.py", encoding="utf-8").read(), True)
+
+    # approvals.py takes both from where it runs
+    import importlib.util as il, os
+    spec = il.spec_from_file_location("appr_ctl", "/work/p281/approvals.py")
+    ap = il.module_from_spec(spec); sys.modules["appr_ctl"] = ap; spec.loader.exec_module(ap)
+    old_env = dict(os.environ)
+    try:
+        os.environ["P281_PRELOOP_API"] = "http://preloop-api:8000"
+        os.environ["PRELOOP_OPERATOR_TOKEN"] = "an-operators-own"
+        check("the address comes from where it runs", ap._api(), "http://preloop-api:8000")
+        check("an operator's own credential is used first", ap._token(), "an-operators-own")
+        del os.environ["PRELOOP_OPERATOR_TOKEN"]
+        os.environ["P281_CREDENTIAL_HOME"] = "/nowhere"
+        try:
+            ap._token(); ok = False
+        except RuntimeError:
+            ok = True
+        check("with no credential it fails closed rather than borrowing one", ok, True)
+    finally:
+        os.environ.clear(); os.environ.update(old_env)
+
+    # and the boundary is checked from the position it constrains, on every bring-up
+    check("every bring-up checks the runtime may read approvals",
+          'check "runtime may read approvals"       200' in up, True)
+    check("every bring-up checks the runtime may not decide them",
+          'check "runtime may not decide approvals" 403' in up, True)
+
+    # the claim is not overstated anywhere
+    ops = open("/work/p281/ops_health.py", encoding="utf-8").read()
+    check("the probe reports the position it was run from, not a property of the credential",
+          "This probe runs wherever it is run from, which is the point" in ops, True)
+
+
 if __name__ == "__main__":
+    controls_approval_boundary()
     controls_boundary()
     controls_chains()
     controls_running()

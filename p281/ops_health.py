@@ -114,11 +114,15 @@ def risks():
     """Standing facts an operator should not have to rediscover. Probed, not assumed.
 
     The one that matters here: in Preloop OSS 0.15.0 an API key resolves to its *user* and the
-    endpoints are guarded by that user's role, so the credential the runtime holds — which has to
-    be a managed-agent credential for the permission hook to work at all — carries whatever the
-    creating user may do. If that user is the account owner, the governed party can answer its own
-    approval requests. Asking the API is the only honest way to know: a 403 means refused, a 404
-    means it was allowed and only the request id was wrong.
+    endpoints are guarded by that user's role, so every credential of the account carries
+    `decide_approvals` and no setting inside Preloop takes it away (this build exposes no way to
+    add a second user to an account). What answers the request instead is the **route**: the agent
+    reaches Preloop only through the guard, which refuses a decision whatever credential is
+    presented (docker/apiguard.conf, OPERATIONS.md §20).
+
+    This probe runs wherever it is run from, which is the point — it reports what *this* position
+    can do. From the agent a 403 is the guard; a 404 means the decision was allowed and only the
+    request id was wrong, so the guard is not in the path.
     """
     out = []
     try:
@@ -135,15 +139,16 @@ def risks():
         except urllib.error.HTTPError as e:
             code = e.code
         if code != 403:
-            out.append({"risk": "the runtime's own credential can decide approvals",
-                        "detail": f"the approvals endpoint answered {code} to it (403 would be a refusal)",
-                        "why_it_matters": "an approval is the one decision reserved for a person, "
-                                          "and the party being governed holds a credential that can make it",
-                        "what_would_fix_it": "issue the runtime's managed-agent credential under a "
-                                             "Preloop user whose role lacks decide_approvals "
-                                             "(viewer, analyst and tracker_manager do)"})
+            out.append({"risk": "from here, an approval can be decided",
+                        "detail": f"the approvals endpoint answered {code} (403 would be a refusal)",
+                        "why_it_matters": "an approval is the one decision reserved for a person; "
+                                          "run from the agent this means the party being governed "
+                                          "can answer its own request",
+                        "what_would_fix_it": "the guard must hold the name the agent resolves for "
+                                             "Preloop (scripts/up.sh brings up apiguard; "
+                                             "docker/apiguard.conf holds the refusals)"})
     except Exception as e:
-        out.append({"risk": "could not check whether the runtime credential can approve",
+        out.append({"risk": "could not check whether an approval can be decided from here",
                     "detail": f"{type(e).__name__}: {e}"})
     return out
 

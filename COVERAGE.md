@@ -24,7 +24,7 @@ something this stack has been measured doing, or is marked as not covered.
 | **Cancellation** | a run can be stopped | **yes, as of this review** — `run_workflow.py stop`, `POST /api/runs/<id>/stop`, and a **중지** button on a running row. Conductor does the stopping (graceful cancel → signal → force) | **yes** |
 | Retry | runtime failure re-executed | **partial** — one bounded retry for a provider's own "login is refreshing" (reported as `attempts`), and a fan-out member that fails is isolated. There is no general retry policy, and a chained member stops at its first failed step by design | attempts and failures shown |
 | Idempotency | side effects not repeated | **covered where it changes a decision.** Every step declares what a repeat does (`REPEATABLE`), and the three that were wrong about it are guarded: freezing the same draft is one round, a repeated triage spends no repair round, and one run and judgement write one record (`idempotency_key`). Artifact writes are still plain writes, in the run's own workspace (OPERATIONS §17) | — |
-| Approval | a human gate before risky work | yes — Preloop's approval channel, with the **decision in the panel** | yes |
+| Approval | a human gate before risky work | yes — Preloop's approval channel, with the **decision in the panel**, and the runtime **refused** the decision: it reaches Preloop only through a guard that answers 403 to `approve` / `decline` / `decide` and to any write to the standing bypasses, while reads pass. A route restriction, not a rights one — this build of Preloop cannot express the latter (OPERATIONS §13, §20) | yes |
 | Audit | tool / model / execution trace | yes — the adapter's evidence per call, Preloop's own records, MLflow runs, and Conductor's OTel spans in MLflow | linked |
 
 ## §13–15 The separations the guide insists on
@@ -61,6 +61,9 @@ stack now provides.
 
 ## What this review changed
 
+0. **The runtime cannot answer its own approval** — the boundary is drawn on the network the agent
+   lives on, checked from that position on every bring-up
+   ([#1](https://github.com/astro3141/agent-stack/issues/1), OPERATIONS §20).
 0. **The trajectory of a run**, assembled and assertable — the part of evaluation that needs no
    domain knowledge ([#3](https://github.com/astro3141/agent-stack/issues/3), OPERATIONS §19).
 0. **Evidence joined to its claim** — a judgement now names the call that made it and the artifact
@@ -80,4 +83,6 @@ stack now provides.
 
 | gap | why it matters | issue |
 |---|---|---|
-| evaluation layer | without outcome/step/trajectory evaluation over a dataset, "it worked" is a handful of runs | [#3](https://github.com/astro3141/agent-stack/issues/3) |
+| a governed party can still rewrite its own tool rules (`PUT /agents/{id}/governance`) | the same self-serving shape as deciding one's own approval; the guard can close it once the principal commands run from the admin side | [#1](https://github.com/astro3141/agent-stack/issues/1) |
+| the stack cannot bring up its own Preloop — the first user is made by hand | a fresh machine, or a restore without the Preloop database, does not come up unattended | [#6](https://github.com/astro3141/agent-stack/issues/6) |
+| graders and datasets | the trajectory of a run is now recorded (§16–18), but whether a judgement was *right* still needs labelled cases from whoever knows the domain — the workflow's work, not the platform's | — |

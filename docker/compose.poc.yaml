@@ -39,6 +39,12 @@ networks:
   toolnet:
     name: ${STACK:-cadp278}-toolnet
     internal: true
+  # The admin side of Preloop: the api / console / gateway containers live here, together with
+  # the guard that fronts them for the governed network and the panel that answers approvals.
+  # The agent is NOT a member — that is the whole point (OPERATIONS.md §20).
+  adminnet:
+    name: ${STACK:-cadp278}-adminnet
+    internal: true
 
 volumes:
   agent-home:
@@ -217,6 +223,25 @@ services:
         aliases: [egress]
       egressnet: {}
 
+  # The approval boundary as a route: on the governed network this holds the names the agent
+  # resolves for Preloop (api, console, gateway), and it refuses the two requests that would let
+  # the governed party answer its own approval. Everything else passes through untouched.
+  apiguard:
+    image: nginx:1.27-alpine
+    container_name: ${STACK:-cadp278}-apiguard
+    init: true
+    restart: unless-stopped
+    networks:
+      governed:
+        # the agent's settings name Preloop by these; the names now resolve to this proxy
+        aliases: [api, console, gateway]
+      adminnet: {}
+    volumes:
+      - type: bind
+        source: ${POC_HOST_DIR:-..}/docker/apiguard.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+
   # UX track: the only component with Docker control — a fixed set of actions over HTTP.
   # Published on 127.0.0.1 only, which narrows who can reach it, not what it can do.
   ops:
@@ -231,10 +256,33 @@ services:
     profiles: ["ui"]
     networks:
       - opsnet
+      # the panel answers approvals itself: the agent's route to Preloop refuses that, and the
+      # panel is where the person is (OPERATIONS.md §20)
+      - adminnet
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # the approval code and the record it appends to; the panel holds no other part of the tree
+      - type: bind
+        source: ${POC_HOST_DIR:-..}
+        target: /work
+      # read-only, and only for the Preloop credential under it: this build gives a second
+      # credential the same rights, so the panel is separated from the runtime by its route
+      - type: volume
+        source: agent-home
+        target: /home/agent
+        read_only: true
+    env_file:
+      # PRELOOP_OPERATOR_TOKEN — a credential of the operator's own, if they make one. Absent,
+      # the panel uses the hook credential it can read below, which this build cannot separate
+      # by rights anyway.
+      - path: operator.env
+        required: false
     environment:
       OPS_AGENT_CONTAINER: ${STACK:-cadp278}-agent
+      # Preloop, addressed on the admin side — past the guard, which is what makes a decision
+      # possible from here and impossible from the agent
+      P281_PRELOOP_API: http://preloop-api:8000
+      P281_CREDENTIAL_HOME: /home/agent
       # only so the panel can link to the consoles that own approvals and run comparison
       PRELOOP_CONSOLE_PORT: ${PRELOOP_CONSOLE_PORT:-3000}
       MLFLOW_PORT: ${MLFLOW_PORT:-5000}

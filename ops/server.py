@@ -37,6 +37,23 @@ def dexec(args, stdin=None, detach=False, timeout=120):
     return r.returncode, r.stdout, r.stderr
 
 
+def jlocal(args, timeout=60):
+    """Run one of this tree's scripts *here*, not in the agent.
+
+    Approvals are the reason this exists. The agent's route to Preloop refuses a decision
+    (docker/apiguard.conf), and it should: the party being governed must not answer its own
+    request. This container is on the admin side and carries its own credential, so the decision
+    is made where the person is (OPERATIONS.md §20).
+    """
+    r = subprocess.run(["python3"] + args, capture_output=True, text=True, timeout=timeout)
+    for cand in (r.stdout.strip(), (r.stdout.strip().splitlines() or [""])[-1]):
+        try:
+            return json.loads(cand)
+        except Exception:
+            continue
+    return {"error": (r.stderr or r.stdout or f"exit {r.returncode}").strip()[-400:]}
+
+
 def jexec(args, **kw):
     rc, out, err = dexec(args, **kw)
     for cand in (out.strip(), (out.strip().splitlines() or [""])[-1]):   # whole output, else last line
@@ -126,7 +143,7 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/runs":
             return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "list"]))
         if p == "/api/approvals":          # what is waiting for a person right now
-            return self._send(200, jexec([PY, "/work/p281/approvals.py"]))
+            return self._send(200, jlocal(["/work/p281/approvals.py"]))
         if p == "/api/overview":
             # One read for the panel: what the stack can do now, how the unattended cycles have
             # been going, what the last check found, and where the other solutions' own consoles
@@ -217,13 +234,15 @@ class H(BaseHTTPRequestHandler):
             # Preloop owns the decision; this panel is where the person makes it, because an
             # approval is the one thing here that cannot proceed without one. Everything else an
             # operator does to this stack is a command, not a button (see the panel's own note).
+            # It runs *here*, with this container's own credential: the agent may read what is
+            # waiting but its route refuses the decision (OPERATIONS.md §20).
             d = b.get("decision")
             if d not in ("approve", "decline"):
                 return self._send(400, {"error": "decision must be approve or decline"})
             comment = b.get("comment") or ""
             if not isinstance(comment, str) or len(comment) > 500:
                 return self._send(400, {"error": "comment must be a string of at most 500 chars"})
-            out = jexec([PY, "/work/p281/approvals.py", "decide", m.group(1), d, comment])
+            out = jlocal(["/work/p281/approvals.py", "decide", m.group(1), d, comment])
             return self._send(200 if out.get("ok") else 502, out)
         if p == "/api/runs":
             wf, prof, inputs = b.get("workflow"), b.get("profile") or "research-default", b.get("inputs") or {}

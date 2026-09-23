@@ -815,30 +815,28 @@ actually holds (`~/.preloop/agents/*/permission_hook.json`, sha12 `57dfc1f6…`)
    call — deliberately requires no permission at all: it only requires that the bearer be a
    **managed-agent credential** (`_managed_agent_for_api_key`).
 
-So the runtime must hold a managed-agent credential to be governed at all, and in this version that
-credential inherits whatever its creating user may do. Ours was created by the account owner.
+So the runtime must hold a managed-agent credential to be governed at all, and that credential
+inherits whatever its creating user may do. Ours was created by the account owner.
 
-Tracked as **agent-stack issue #1**, with the verification order it needs.
+**The fix this section used to propose — a second Preloop user with a role lacking
+`decide_approvals` — does not exist in this build.** Asked rather than assumed:
 
-**What would actually fix it, in this version:** create the runtime's managed agent under a second
-Preloop user whose role lacks `decide_approvals`. Three of the seven roles qualify — `viewer` (12
-permissions), `analyst` (20), `tracker_manager` (18) — and since the hook endpoint checks no
-permission, a `viewer` credential should still pass it. That is a change to who holds what, so it
-needs a user created deliberately (account creation is the operator's, not ours) and a verification
-pass: permission-check still answers, MCP tools still work, and `approve` now returns 403.
+| asked of the running API | answer |
+|---|---|
+| `GET /api/v1/users` | 404 |
+| `GET /api/v1/invitations` | 404 |
+| `GET /api/v1/teams` | 404 |
+| `GET /api/v1/roles` | 200 — all seven roles are seeded (owner 68 … viewer 12) |
 
-**Until then, two things are done rather than assumed.** Every decision made through the panel
-records the fingerprint of the credential that made it (`evidence/ops/controls.jsonl`), so "who
-answered this" stays answerable. And `p281/ops_health.py` probes the limit on every read and
-reports it — it appears in the panel's dashboard too, where the person answering approvals will
-see it:
+The console ships an invite dialog and calls `/api/v1/invitations`; the API has no such route.
+And `POST /api/v1/auth/register` is not a way round it: its handler creates a **new Account**,
+makes the new user that account's primary user and gives it the `owner` role, so a second
+registration is a second tenant rather than a second member. The roles exist and cannot be handed
+out. What closes the gap instead is §20 — the route.
 
-```
-risk        the runtime's own credential can decide approvals
-            the approvals endpoint answered 404 to it (403 would be a refusal)
-            fix: issue the runtime's managed-agent credential under a Preloop user whose role
-                 lacks decide_approvals (viewer, analyst and tracker_manager do)
-```
+Still true, and still worth keeping: every decision made through the panel records the fingerprint
+of the credential that made it (`evidence/ops/controls.jsonl`), so "who answered this" stays
+answerable afterwards.
 
 ## 14. Conductor's run dashboard cannot be opened from the host, and why
 
@@ -1095,3 +1093,60 @@ it exists so that whoever evaluates can find the runs they meant.
 What is deliberately absent: datasets and their labels, outcome and step graders, and grader
 validation. `trajectory.py` contains no notion of accuracy, score or correctness, and a control
 fails if one appears.
+
+## 20. The approval boundary is a route, not a right
+
+An approval is the one decision this stack reserves for a person. §13 measured why Preloop cannot
+express that here: every credential of the account carries `decide_approvals`, and there is no way
+to make one that does not. So the boundary is drawn where this stack does have authority — **the
+network the agent lives on**.
+
+The agent is single-homed on `governed`. It reached Preloop by the names `api`, `console` and
+`gateway`; those names now belong to `apiguard` (nginx, `docker/apiguard.conf`), which is the only
+member of both that network and the admin one. Preloop's containers answer to `preloop-api`,
+`preloop-console` and `preloop-gateway` on the admin side, and are no longer on `governed` at all.
+The console had to be included because its own nginx proxies `/api/` to the same API — blocking one
+name and leaving the other would have been a boundary in name only.
+
+The guard keeps one table of refusals, matched on method and decoded path:
+
+| refused from the governed network | left alone |
+|---|---|
+| `POST /api/v1/approval-requests/<id>/{approve,decline,decide}` | reading what is waiting |
+| writes to `/api/v1/approval-bypasses` | reading the standing bypasses |
+
+Everything else passes through untouched, streamed rather than buffered so MCP's SSE and a 300-second
+tool call behave as they did.
+
+**Measured from inside the agent, with the runtime's own credential:**
+
+```
+api:8000   GET  /api/v1/approval-requests?status=pending   200   [{"tool_name":"Edit", …
+api:8000   GET  /api/v1/approval-bypasses                  200   []
+api:8000   POST /api/v1/approval-bypasses                  403   the runtime may not create or revoke …
+api:8000   POST /approval-requests/<id>/approve            403   the runtime may not decide approvals
+api:8000   POST /approval-requests/<id>/decide             403   the runtime may not decide approvals
+console    POST /approval-requests/<id>/approve            403   the runtime may not decide approvals
+console    GET  /api/v1/agents                             200   (the rest of the API is untouched)
+```
+
+and from the panel, which is on the admin side: the same decision on the same invented id answers
+`HTTP 404: Approval request not found` — it reached Preloop, and was not refused. `p281/approvals.py`
+now takes both its address (`P281_PRELOOP_API`) and its credential (`PRELOOP_OPERATOR_TOKEN`, else
+the hook credential under `P281_CREDENTIAL_HOME`) from where it runs, and `ops/server.py` runs it
+locally instead of `docker exec`-ing into the agent. With neither credential it fails closed.
+
+`scripts/up.sh` checks both directions on every bring-up, from the position the rule constrains:
+
+```
+ok    runtime may read approvals                   200
+ok    runtime may not decide approvals             403
+```
+
+**What this is not.** It is a route restriction, not a rights restriction. The runtime's credential
+still carries the permission, and anyone holding it from another network position can still decide.
+`p281/ops_health.py` says so in the way it now reports: the probe describes *the position it was run
+from*, and a 404 from the agent would mean the guard is not in the path. The same guard could close
+the other self-serving route — a governed party rewriting its own tool rules through
+`PUT /agents/{id}/governance` — once the principal commands run from the admin side rather than in
+the agent; they do not yet, so that route is still open and is written down here rather than implied.

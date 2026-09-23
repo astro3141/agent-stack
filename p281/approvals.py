@@ -1,4 +1,4 @@
-"""Pending Preloop approval requests, and answering them — for the panel, in the agent container.
+"""Pending Preloop approval requests, and answering them — for the panel.
 
 An approval is the one thing in this stack that *must* wait for a person: an agent asked to do
 something its rules do not decide on its own, and the run stops until someone says yes or no. That
@@ -25,9 +25,34 @@ PAGE = 100
 MAX_PAGES = 100          # a hard stop; beyond this the answer is reported as incomplete
 
 
+def _token():
+    """The credential to answer as.
+
+    The panel reads the runtime's hook credential from the agent's home, mounted read-only
+    (`P281_CREDENTIAL_HOME`), because in this build of Preloop a second credential would carry the
+    same rights anyway: what separates the panel from the runtime is the route, not the rights
+    (OPERATIONS.md §20). The agent may still *read* what is waiting; deciding from there is
+    refused by the guard. `PRELOOP_OPERATOR_TOKEN` is honoured first, so an operator who has a
+    distinct credential can have the record name it.
+    """
+    tok = os.environ.get("PRELOOP_OPERATOR_TOKEN")
+    if tok:
+        return tok
+    home = os.environ.get("P281_CREDENTIAL_HOME") or os.path.expanduser("~")
+    hooks = glob.glob(f"{home}/.preloop/agents/*/permission_hook.json")
+    if not hooks:
+        raise RuntimeError("no credential: neither PRELOOP_OPERATOR_TOKEN nor a permission hook "
+                           f"under {home} — approvals cannot be read or answered from here")
+    return json.load(open(hooks[0], encoding="utf-8"))["token"]
+
+
+def _api():
+    """Preloop's address. The panel addresses the admin side directly; the agent goes via the guard."""
+    return os.environ.get("P281_PRELOOP_API") or settings.runtime()["preloop"]["api_url"]
+
+
 def fetch_pending():
-    tok = json.load(open(glob.glob(os.path.expanduser("~/.preloop/agents/*/permission_hook.json"))[0]))["token"]
-    api = settings.runtime()["preloop"]["api_url"]
+    tok, api = _token(), _api()
     now = datetime.now(timezone.utc)
     out, skip = [], 0
     for _ in range(MAX_PAGES):
@@ -56,8 +81,7 @@ def fetch_pending():
 
 def decide(request_id, approve, comment=""):
     """Answer one request. Preloop owns the decision; this records that it was given here."""
-    tok = json.load(open(glob.glob(os.path.expanduser("~/.preloop/agents/*/permission_hook.json"))[0]))["token"]
-    api = settings.runtime()["preloop"]["api_url"]
+    tok, api = _token(), _api()
     verb = "approve" if approve else "decline"
     body = json.dumps({"approved": bool(approve),
                        "comment": (comment or "")[:500]}).encode()
@@ -75,9 +99,10 @@ def decide(request_id, approve, comment=""):
     except Exception as e:
         out = {"ok": False, "id": request_id, "decision": verb, "error": f"{type(e).__name__}: {e}"}
     # the operations record, on our side: which credential answered what, and whether it took.
-    # The fingerprint matters because in Preloop OSS 0.15.0 the runtime's own credential is
-    # authorised to decide approvals (measured; OPERATIONS.md §13) — so "who answered" is a
-    # question that has to stay answerable afterwards.
+    # The fingerprint matters because in Preloop OSS 0.15.0 every credential of the account
+    # carries `decide_approvals` (measured; OPERATIONS.md §13) and what separates the runtime
+    # from the operator is the route, not the rights (§20) — so "who answered" has to stay
+    # answerable afterwards.
     try:
         os.makedirs("/work/evidence/ops", exist_ok=True)
         with open("/work/evidence/ops/controls.jsonl", "a", encoding="utf-8") as f:
