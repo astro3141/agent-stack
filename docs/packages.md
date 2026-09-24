@@ -24,9 +24,32 @@ scripts/packages.sh verify            # is what is on disk still the commit the 
 scripts/up.sh                         # applies what it declares
 ```
 
-Domain content belongs in its own repository: a platform repository should say which workflows it
-runs, not carry them. The fetch happens on the host, so no git credential is ever inside the
-governed runtime.
+**Its own repository is the recommendation; `from: local` is the exception.** A platform repository
+should say which workflows it runs, not carry them — and it is the repository that can be published,
+which a package inside it inherits. Write the package in its own repository from the start if any
+of these is true:
+
+* it carries **domain content** — a strategy, a client's rules, a project's policy;
+* it **names something real** — a repository, a branch, a person, an account;
+* it **snapshots another repository's files**, even as a fixture;
+* it would be wrong to publish alongside the platform.
+
+`from: local` is for what the platform repository can publish about itself: the example here, and
+the capability trials that exist to show the stack runs a shape.
+
+Measured twice, and the second time is the argument. The trading package lived here for 36 files
+before it moved out. The devflow package landed here complete — and carried a private repository's
+name, its branch layout and a snapshot of its policy, in Korean, quoting an internal document. No
+control caught either one; a publication audit did, which is a bad place to find out. Splitting
+afterwards is not free: the content stays in this repository's history, and getting it out means
+rewriting every commit.
+
+**Instance registration is not package content either.** A file that says *which* project a package
+runs against — `config/<package>/projects/<name>.yaml`, naming a repository and a branch — is this
+instance's configuration, like `config/instance.env`. Git-ignore it here and keep a fixture or an
+example in its place; the package's own repository holds the rules, this one holds neither.
+
+The fetch happens on the host, so no git credential is ever inside the governed runtime.
 
 That repository ignores what the runtime writes — `__pycache__/` and `*.pyc` at least. `verify`
 compares the working tree against the pinned commit, so a compiled step that is tracked makes every

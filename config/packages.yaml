@@ -6,10 +6,13 @@
 # actually installed. `scripts/packages.sh verify` answers whether what is on disk is still that.
 #
 #   from: local     it lives in this repository, under packages/<name>; this repo's history is its
-#                   history. The trials and the example stay here.
+#                   history. The example and the capability trials stay here — what this repository
+#                   can publish about itself, and nothing else.
 #   from: <git url> it lives in its own repository and is fetched into packages/<name>, which is
-#                   then git-ignored here. Domain content — a trading strategy, a client's
-#                   workflow — belongs in its own repository, not in the platform's.
+#                   then git-ignored here. **This is the recommendation** (docs/packages.md): a
+#                   package that carries domain content, names something real, or snapshots another
+#                   repository's files is written in its own repository from the start. Splitting
+#                   afterwards leaves the content in this repository's history.
 #
 # The fetch happens on the **host**, never in a container: a git credential inside the governed
 # runtime would be a new thing for the agent to reach, and there is no reason for it.

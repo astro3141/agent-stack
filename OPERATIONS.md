@@ -2284,6 +2284,15 @@ whether what is on disk is still the commit the lock names, and a bring-up says 
 reported, not enforced, because a package edited during development is an ordinary state and being
 told is the point.
 
+**Which way round is the default.** Its own repository, from the start — `from: local` is for the
+example and the capability trials. Said as a rule in docs/packages.md, because it was learned twice:
+trading moved out after 36 files, and devflow landed here complete, carrying a private repository's
+name, its branch layout and a snapshot of its policy. Neither was caught by a control; the second
+was caught by an audit asking whether this repository could be published, which is a bad place to
+find out. A split afterwards does not undo it — the content stays in the history, and removing it
+means rewriting every commit. The same line applies to *instance registration*: a file naming which
+project a package runs against is this instance's configuration, not this repository's content.
+
 **Why the host fetches.** Cloning from inside a container would put a git credential where the
 governed runtime can reach it, for no reason: a package is a directory and the host can put it
 there. This is the same line as §36's market credentials — a capability the agent does not need is

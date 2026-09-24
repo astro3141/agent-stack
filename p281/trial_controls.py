@@ -1259,6 +1259,15 @@ def controls_package_sources():
           "git clone" in sh and "docker exec" not in sh.split("case \"$CMD\"")[1], True)
     check("a bring-up says when what is on disk is not what the lock names",
           "packages.sh\" verify" in up_sh or "packages.sh verify" in up_sh, True)
+    pkdoc = open("/work/docs/packages.md", encoding="utf-8").read()
+    check("its own repository is the documented default, not the exception",
+          "Its own repository is the recommendation" in pkdoc, True)
+    check("and the test for it is written down, not a slogan",
+          all(w in pkdoc for w in ("carries **domain content**", "names something real",
+                                   "snapshots another repository")), True)
+    check("which the declaration file repeats where a package is added",
+          "This is the recommendation" in open("/work/config/packages.yaml", encoding="utf-8").read(),
+          True)
     check("a pin check that fails says which files it means",
           "edited on disk: $changed" in sh, True)
     check("and where a file the runtime writes belongs",
