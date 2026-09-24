@@ -6,11 +6,14 @@ is the shape: several lanes decide from one frozen packet in the same cycle, a d
 runs beside the model lanes, every proposal is validated identically, a failing lane is isolated,
 and the cycle ends in a comparison.
 
-The packet is a fixture with invented numbers (`p281/fixtures/trading/packet.json`). No market data
+The packet is a fixture with invented numbers, carried by the package. No market data
 and no external API: this stack's egress reaches model providers only, so KIS/DART-style sources
 are out of scope by construction.
 
-`p281/workflows/trading-b.yaml`.
+`trading-b.yaml`, then and now in the trading package — which has since moved to its own
+repository (docs/packages.md: a package that carries domain content is written there from the
+start). What this page records is the *stack* running that shape; the workflow's own files are
+not in this repository.
 
 ## What ran
 
@@ -92,7 +95,7 @@ member and no other, every step kept as its own record — and `steps/tasks.py -
 the workflow writes. What each lane is made of stays in `trade_stage.py shapes-plan`, which is the
 trading workflow's own step (CONTRACT.md).
 
-**Measured** (`p281/workflows/trading-shapes.yaml`, one frozen packet, fixture data):
+**Measured** (`trading-shapes`, one frozen packet, fixture data):
 
 | lane | provider | steps | seconds | gross | next-session return | vs benchmark |
 |---|---|---|---|---|---|---|
