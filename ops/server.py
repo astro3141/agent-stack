@@ -183,7 +183,8 @@ class H(BaseHTTPRequestHandler):
                     "preloop": f"http://127.0.0.1:{os.environ.get('PRELOOP_CONSOLE_PORT', '3000')}",
                     "mlflow": f"http://127.0.0.1:{os.environ.get('MLFLOW_PORT', '5000')}",
                     # runs and traces land in different experiments: the records this stack writes
-                    # (p281-routing) and Conductor's OTel spans (cadp-278-composition-poc). The
+                    # (p281-routing) and Conductor's OTel spans (the OTEL_SERVICE_NAME the agent
+                    # container sets, `agent-stack`; older spans carry the name it had before). The
                     # second one is a dashboard nothing here pointed at until it was reviewed.
                     "mlflow_traces": f"http://127.0.0.1:{os.environ.get('MLFLOW_PORT', '5000')}"
                                      f"/#/experiments/1?compareRunsMode=TRACES",

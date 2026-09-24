@@ -186,7 +186,7 @@ if [ -n "$CLONE_FROM" ]; then
   git clone --quiet "$(m "$CLONE_FROM")" "$(m "$WORKSPACEU")"
   [ -n "$REV" ] && git -C "$(m "$WORKSPACEU")" checkout --quiet "$REV"
   # A backup taken before the move keeps the stack under poc/281-routing (it was mirrored into
-  # the cadp repository then). Restoring one of those still has to work.
+  # an earlier repository then). Restoring one of those still has to work.
   [ -d "$WORKSPACEU/poc/281-routing" ] && WORKSPACEU="$WORKSPACEU/poc/281-routing"
   say "cloned" "$(git -C "$(m "$WORKSPACEU")" rev-parse --short HEAD)"
 fi
