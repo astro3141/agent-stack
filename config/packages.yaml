@@ -27,7 +27,8 @@ packages:
     from: local
     note: capability trial — role-split chapter with a bounded repair loop
   devflow:
-    from: local
+    from: https://github.com/astro3141/agent-stack-devflow.git
+    ref: main
     note: >
       the development workflow — one package for every project, each project configured by its
       registration (config/devflow/projects/) and its own policy and hook in its repository

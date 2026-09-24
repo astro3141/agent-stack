@@ -2384,9 +2384,12 @@ the platform's, the decision is the workflow's.
 
 ## 39. A development workflow that every project configures, and none is built into
 
-`packages/devflow` is the development workflow of 개발 범용 워크플로 v0.1 — 준비 → 구현 → 검증·리뷰 →
-통합·출시 → 완료 — as one package. It is a workflow, so it lives where §27 says workflows live; the
-platform was not edited (`p281/` has no change). What is one project's is not in the package: a
+`devflow` is the development workflow of 개발 범용 워크플로 v0.1 — 준비 → 구현 → 검증·리뷰 →
+통합·출시 → 완료 — as one package. It is a workflow, so it lives where §27 says workflows live, and like
+trading it is declared and pinned rather than carried (§37): its repository is
+`astro3141/agent-stack-devflow`, installed by `scripts/packages.sh install devflow` into
+`packages/devflow/` and locked in `config/packages.lock`. The platform was not edited (`p281/` has no
+change). What is one project's is not in the package: a
 project is **registered** (`config/devflow/projects/<name>.yaml`: repository, canonical branch,
 where its policy is) and brings its **policy and hook** in its own repository (`.devflow/`), read at
 the canonical commit a run evaluates. The execution profile stays what it was — which provider may
@@ -2422,6 +2425,9 @@ is found, not repeated (§38's rule, applied).
   unexpected operations, a count moved to match output, the lock, a lock handed to the same change's
   new head); lost answers for comment, status, lock and merge; the rework limit.
 * `p281/trial_controls.py`: **430/430** with the package declared in `config/packages.yaml`.
+* After the move to its own repository (installed at `5f93cf93`): controls 87/87, trial_controls
+  430/430, a fixture run through the runner (`devflow-repo-1`, PASS → waiting for the merge owner),
+  and `packages.sh verify` clean after it — no principal changed (`principals.py apply --dry-run`).
 * Through `run_workflow.py` and Conductor, on a shared fixture in the hand-in directory:
   `devflow-demo-2` PASS → waiting for the merge owner, lock taken; a person merges;
   `devflow-demo-3` verifies the merge commit and ends **done**, lock released, one state comment —

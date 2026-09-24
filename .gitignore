@@ -31,3 +31,6 @@ handoff/*
 
 # fetched package, pinned in config/packages.lock and installed by scripts/packages.sh
 packages/trading/
+
+# fetched package, pinned in config/packages.lock and installed by scripts/packages.sh
+packages/devflow/
