@@ -13,13 +13,13 @@ the capability trials) or in **its own repository**, fetched and pinned:
 
 ```yaml
 packages:
-  trading:
-    from: https://github.com/astro3141/agent-stack-trading.git
+  my-lane:
+    from: https://github.com/<owner>/my-lane-package.git
     ref: main
 ```
 
 ```bash
-scripts/packages.sh install trading   # clones it, writes config/packages.lock, git-ignores it here
+scripts/packages.sh install my-lane   # clones it, writes config/packages.lock, excludes it here
 scripts/packages.sh verify            # is what is on disk still the commit the lock names
 scripts/up.sh                         # applies what it declares
 ```
