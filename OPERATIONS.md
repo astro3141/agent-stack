@@ -1514,5 +1514,34 @@ numbers written in, and its installer starts the stack before any override of ou
 cold start was run with the live instance stopped (`scripts/down.sh`, then `up.sh` afterwards — all
 checks passed again). On a real second machine the question does not arise.
 
-Not verified here: Linux or macOS. Every image this stack pulls is multi-arch and the scripts guard
-their one Windows-specific call, but "guards it" is not "was run there".
+### The same cold start, on Linux
+
+`.github/workflows/cold-start-linux.yml` runs exactly what a second machine runs — clone,
+`install.sh --check`, `install.sh` — on a GitHub runner that has none of this, and judges the
+result rather than the exit code. A runner has no provider logins and never will, so six checks
+are allowed to fail (the three `/route` logins, the observer's, and the two quota ones) and
+**nothing else may**; and six things must be present, from `"onboarded": true` to
+`runtime may not rewrite them 403`.
+
+It passed on the fourth attempt. The first three did not, and each one was a defect this machine
+could not have shown:
+
+| | what Linux found | why Windows never did |
+|---|---|---|
+| 1 | `up.sh` waited **8 seconds** for Preloop, then claimed it — "Connection refused" | a machine that has run Preloop before starts it in seconds; a fresh install runs migrations first. It now waits for the API to answer, up to 180s |
+| 2 | the container could not write `docker/preloop-owner.env` — "Permission denied" | a Windows bind mount ignores ownership; a Linux one is owned by whoever cloned the tree |
+| 3 | …and that failure landed **after** registration, leaving an account whose password nobody would ever know | it never failed there, so the order never mattered. The password is now written before the account is created and removed if creation fails |
+| 4 | `cfg.py generate` could not write `config/generated` → no MCP servers on the account → no tool served through Preloop | same ownership difference, one directory further in |
+
+The fix for 2 and 3 is a rule worth stating: **a container does not write secrets into this tree.**
+It writes them inside itself and `scripts/up.sh` puts them in place as the host user, at 0600, and
+they never pass through a terminal or a log. For 4, the two trees the containers genuinely write to
+(`config/generated`, `evidence`) are made writable at bring-up; neither holds a credential.
+
+What the passing run proves is not "it built": it is that a machine with none of this ends up
+**governed** — the account claimed, the policy applied, `novel-author` and `novel-reviewer` created
+from `config/principals.yaml` with the reviewer's deny rule, and the runtime refused the approval
+decision, the rights rewrite and the credential mint. Only the logins were missing, and those are a
+person's.
+
+Still not run anywhere: macOS, and any arm64 host (§25 above says what would have to change).
