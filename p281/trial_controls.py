@@ -1217,6 +1217,16 @@ def controls_review_findings():
     check("and its evidence is kept with it",
           "attach_evidence(payload, exp_id, rid) if decided" in rec, True)
 
+    # 5. the means a package needs to guard an effect of its own, and to have one at all
+    comp = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
+    gi = open("/work/docker/.gitignore", encoding="utf-8").read()
+    check("a package may have credentials of its own, not the trading package's file",
+          "path: package.env" in comp, True)
+    check("and they are never versioned", "package.env" in gi, True)
+    check("a resumed run keeps its workspace, so a marker there survives it",
+          "keeps its conductor run id" in open("/work/docs/packages.md", encoding="utf-8").read(),
+          True)
+
     # 4. what "produced" means when a step is run again in the same workspace
     at = open("/work/p281/steps/agent_task.py", encoding="utf-8").read()
     check("produced means this attempt wrote the file",

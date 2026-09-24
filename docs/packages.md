@@ -101,10 +101,19 @@ REPEATABLE = "no"        # it does the work again (a model call, for instance)
 ```
 
 A step with an effect **outside this stack** — opening a pull request, sending something, moving
-money — declares `guarded`, and its guard asks the *remote* whether the effect already happened. A
-local flag is not a guard: a resumed run may start from a workspace that is not the one that wrote
-it. Nothing in the platform deduplicates an external effect for you, and nothing can: what counts
-as the same effect is the workflow's to know.
+money — declares `guarded` and guards itself. Nothing in the platform deduplicates an external
+effect for you, and nothing can: what counts as the same effect is the workflow's to know. Two
+places to keep the answer, and they are not equivalent:
+
+* **the run's workspace** survives a resume. A resumed run keeps its conductor run id, so
+  `/ws/<run>` is the same directory the interrupted attempt wrote to (measured: one workspace id
+  across both halves of a resumed run's event log). A marker file there is enough to stop a step
+  from doing the same thing twice *within one run*.
+* **the remote** is the only answer for a *different* run — a re-run under a new id, a retry from
+  another machine, a person who ran it again. There the workspace is new and says nothing.
+
+So: a marker for the resume, and a question to the remote for everything else. A step that only
+writes the marker will open the pull request twice the day someone re-runs the cycle.
 
 **4. Evidence files use `items`.** `p281/steps/record.py` counts and stores exactly that key; a file
 with `rows` is stored and counted as **zero**, so the record reads as "nothing kept":
@@ -141,6 +150,22 @@ A fan-out member may ask to be run again when it does not produce:
 No retry by default; `["failed"]` when retries are asked for and `retry_when` is not given — a
 denial is an answer (a tool rule, or a person), and retrying an answer is something the workflow
 says out loud. Every attempt is in the receipt as `attempts` and `attempt_outcomes`.
+
+## Credentials of its own
+
+A package that talks to something other than a model provider needs two things, and both are the
+operator's to give — a capability the runtime does not need is one it does not get (OPERATIONS §36):
+
+```
+docker/package.env          KEY=value, git-ignored, read into the agent's environment
+docker/egress/allow         one regex per line: the hosts this package may reach
+```
+
+The stack does not hold them for you and does not ask for them: a composition without the file
+simply cannot run what needs it. Your step reads `os.environ`, and when the value is not there it
+**refuses with a hint that names the file** rather than failing halfway
+(`packages/trading/steps/live_packet.py` is the worked example). Nothing else is opened: the proxy
+refuses every host that is not in `allow`, including the one your step forgot to declare.
 
 ## Identities
 

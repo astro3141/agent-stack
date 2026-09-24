@@ -10,3 +10,6 @@ preloop-owner.env
 
 # market-data credentials for a workflow that fetches its own data — never versioned
 market.env
+
+# a package's own credentials — operator supplied, never versioned
+package.env

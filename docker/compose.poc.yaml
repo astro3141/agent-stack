@@ -104,6 +104,12 @@ services:
       # composition without them simply cannot run that workflow's live mode (OPERATIONS §36).
       - path: market.env
         required: false
+      # Any other package's own credentials. `market.env` is the trading package's file and was
+      # named after it; a second package needing a credential of its own should not have to be
+      # added to this compose file or borrow that name. Same rule: git-ignored, optional, and a
+      # composition without it simply cannot run what needs it (docs/packages.md).
+      - path: package.env
+        required: false
     environment:
       POC_DIR: /work
       POC_PY: /opt/venv/bin/python
