@@ -99,6 +99,11 @@ services:
     env_file:
       - path: principals.env
         required: false
+      # Market-data credentials for a workflow that fetches its own data (KIS, DART). Not this
+      # stack's: they belong to the workflow that asked for them, they are git-ignored, and a
+      # composition without them simply cannot run that workflow's live mode (OPERATIONS §36).
+      - path: market.env
+        required: false
     environment:
       POC_DIR: /work
       POC_PY: /opt/venv/bin/python

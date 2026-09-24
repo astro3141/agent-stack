@@ -9,3 +9,9 @@
 ^accounts\.x\.ai$
 ^api\.x\.ai$
 ^cli-chat-proxy\.grok\.com$
+# Market data for the trading package's live mode. Added deliberately (OPERATIONS §36): the
+# port was built so the packet is frozen OUTSIDE this runtime, and fetching it here puts a
+# brokerage credential inside the governed agent. Two hosts, both read-only APIs.
+^openapi\.koreainvestment\.com$
+^openapivts\.koreainvestment\.com$
+^opendart\.fss\.or\.kr$

@@ -2173,3 +2173,83 @@ The pattern worth naming, since it is the third time: **a fix that adds somethin
 predecessor behind.** Onboarding a second vendor left two hook files (§32); claiming a fresh control
 plane leaves a stale identity; every apply of a policy that recreates a server leaves the old id in
 a cache (§28). The stack is good at adding and had no habit of asking what the previous one was for.
+
+## 36. A cold start beside a running one, and a live cycle on real prices
+
+### The cold start needed nobody to move aside
+
+§25's cold start was run with the live instance stopped, because Preloop's own ports were written
+into its compose. With §31's port patch that constraint is gone, and it was tested rather than
+assumed: a clone with its own `config/instance.env` (`agst3`, ports 8890/8891/5110, Preloop
+8030/8031/3030, its own install directory and project) installed **while the live instance kept
+running**, and came up with every boundary intact:
+
+```
+ok  Preloop MCP 401 · fsmcp tools work through Preloop yes
+ok  runtime may not decide approvals 403 · rewrite them 403 · mint credentials 403
+FAIL  claude / codex / grok logins — a fresh instance has none, and the refusals now say why:
+      claude: unknown: Claude OAuth credentials not found. Run `claude` to authenticate.
+      codex:  unknown: nothing has observed this account yet — the quota observer has no login
+```
+
+Then `down.sh --volumes`, and the host was as it was.
+
+### Live, and what it cost to be honest about it
+
+The port was built so the harness freezes a ResearchPacket **outside** this runtime and hands the
+file in; on a machine with no harness there is nothing to hand in. Asked for it directly, the
+decision was taken to fetch here — which means a brokerage credential inside the governed runtime,
+so it is written down rather than absorbed.
+
+**What was opened, and what was not.** Two KIS hosts and DART are named in `docker/egress/allow`;
+KIS serves its API on **9443** and nothing on 443, so that port is named in the proxy's
+`ConnectPort` (and 29443 for the paper endpoint). A port opened is not a host opened — measured:
+
+```
+openapi.koreainvestment.com:9443   200
+opendart.fss.or.kr                 302
+github.com:9443                    000     ← the allowlist is by host, and it still holds
+```
+
+Credentials live in `docker/market.env`: git-ignored, `required: false`, and a composition without
+it simply cannot run this workflow's live mode. They belong to the workflow that asked for them.
+
+**The fetch is a step of the trading package, not of the platform** — `live_packet.py`. It freezes
+a packet into the hand-in directory and stops, so `packet_bridge.py` still fetches nothing and the
+live path keeps the shape it was designed with. The packet carries what KIS actually answered — a
+quote and 89 days of closes per symbol, from which the 20/60-day returns, the 20-day volatility and
+the volume trend are computed — and it **says what it is not**: `universe_version: "live-fetch"`,
+no feature or evidence builder versions, no point-in-time reconstruction, and a benchmark labelled
+*"equal-weighted mean of this universe (the index endpoint answered 403)"* rather than pretending
+to be KOSPI200.
+
+**The run**, on this afternoon's prices:
+
+```
+livewin02  trading-port  done_cycle   PORT_CYCLE: 5/5 lanes valid (live)
+           7 model calls (claude), 19 permission asks — all decided by rules, none refused
+           584k tokens, 241s in calls, recorded
+
+  B  000660 5.00%, 005930 5.00%, 373220 5.00%          (deterministic, 0 calls)
+  E  000660 5%, 005930 5%, 373220 3%, 068270 2%, 207940 2%
+  F  005930 5.00%, 068270 3.00%
+  G  005930 5.00%, 000660 5.00%, 068270 3.00%
+  H  005930 4.00%, 000660 3.00%, 373220 2.00%
+```
+
+Three things the live path taught, all recorded in the step:
+
+1. **The vendor refuses a second token.** KIS issues one and answers 403 to the next request within
+   the minute; a step that asks for a fresh token every run fails on its second run. The token is
+   cached in the agent's home, never in this tree.
+2. **A shape is a contract.** The first packet used the field names that read well
+   (`universe`, `price`); the bridge reads the harness's (`symbols`, `close`, `returns.20d`). It
+   failed at `KeyError: 'symbols'` — the right failure, and the reason the fetch writes the
+   harness's shape rather than its own.
+3. **A comment can stop a proxy.** `ConnectPort 29443   # …` on one line took tinyproxy down, and
+   with it every provider call, until the comment moved to its own line. The bring-up caught it
+   immediately; nothing else would have.
+
+And one more, from the run ids: `live01` was refused as *already used* — because it belonged to the
+**other machine's** run, arrived here through git. Two machines sharing a tree share a namespace,
+and the guard held across it.

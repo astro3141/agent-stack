@@ -7,3 +7,6 @@ operator.env
 
 # the account Preloop itself was claimed with — written by scripts/up.sh, never versioned
 preloop-owner.env
+
+# market-data credentials for a workflow that fetches its own data — never versioned
+market.env

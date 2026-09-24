@@ -1305,6 +1305,33 @@ def controls_packages():
     check("and a reading with no numbers stays undated",
           "if wins else None" in co_src, True)
 
+    # the market path a workflow asked for: hosts and ports are named, and nothing else opened
+    allow = open("/work/docker/egress/allow", encoding="utf-8").read()
+    tp = open("/work/docker/egress/tinyproxy.conf", encoding="utf-8").read()
+    compose_src = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
+    gi = open("/work/docker/.gitignore", encoding="utf-8").read()
+    check("the market hosts are named, not a wildcard",
+          all(h in allow for h in ("koreainvestment", "opendart")) and "*" not in allow, True)
+    check("and the ports they serve on are named too",
+          "ConnectPort 9443" in tp and "ConnectPort 29443" in tp, True)
+    check("a port opened is not a host opened",
+          "FilterDefaultDeny Yes" in tp, True)
+    check("tinyproxy takes no comment on a value's line",
+          all(not l.startswith("ConnectPort") or "#" not in l for l in tp.splitlines()), True)
+    check("market credentials are optional and never versioned",
+          "path: market.env" in compose_src and "required: false" in compose_src
+          and "market.env" in gi, True)
+    lp = open("/work/packages/trading/steps/live_packet.py", encoding="utf-8").read()
+    check("the fetch is a step of the workflow that wanted it, not of the platform",
+          _os.path.exists("/work/packages/trading/steps/live_packet.py")
+          and not _os.path.exists("/work/p281/steps/live_packet.py"), True)
+    check("it freezes a file and stops, so the bridge still fetches nothing",
+          "/work/handoff" in lp and "packet_bridge" not in lp.split('"""')[2], True)
+    check("and the packet says what it is not",
+          '"universe_version": "live-fetch"' in lp and "not_included" in lp, True)
+    check("the token is kept, because the vendor refuses a second one",
+          "TOKEN_CACHE" in lp and "~/.kis-token.json" in lp, True)
+
     # a step's imports work wherever the step lives
     compose = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
     check("the step library is importable from a package's steps",
