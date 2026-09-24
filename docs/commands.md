@@ -4,13 +4,13 @@ Two rules for reading this list:
 
 - **`scripts/*` run on the host.** They act on the instance this workspace belongs to — the one
   named in `config/instance.env` if there is one, otherwise the live one.
-- **`p281/*.py` run inside a container**, and *which* container is part of the rule: anything that
+- **`stack/*.py` run inside a container**, and *which* container is part of the rule: anything that
   writes to Preloop runs in **admin**, because the guard refuses those writes from the agent's
   network (OPERATIONS §21).
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/<script>.py …    # reads, runs, MCP
-docker exec agentstack-admin /opt/venv/bin/python /work/p281/<script>.py …    # writes to Preloop
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/<script>.py …    # reads, runs, MCP
+docker exec agentstack-admin /opt/venv/bin/python /work/stack/<script>.py …    # writes to Preloop
 ```
 
 ## The stack

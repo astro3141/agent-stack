@@ -16,7 +16,7 @@ evidence/incident-20260920/
 # #281 run evidence (raw ACP events, permission requests)
 evidence/p281/
 
-# derived from config/*.yaml by p281/cfg.py
+# derived from config/*.yaml by stack/cfg.py
 config/generated/
 docker/.env
 

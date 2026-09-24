@@ -44,7 +44,7 @@ echo "workspace: ${POC_HOST_DIR:-$HERE (compose defaults / docker/.env)}"
 if [ "$NOW" = 0 ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
   RUNNING="$(docker exec "$STACK-agent" /opt/venv/bin/python -c '
 import json, subprocess
-out = subprocess.run(["/opt/venv/bin/python", "/work/p281/run_workflow.py", "list"],
+out = subprocess.run(["/opt/venv/bin/python", "/work/stack/run_workflow.py", "list"],
                      capture_output=True, text=True).stdout
 print(" ".join(r["ui_id"] for r in json.loads(out or "[]") if r.get("state") == "running"))
 ' 2>/dev/null | tr -d '\r')"
@@ -52,7 +52,7 @@ print(" ".join(r["ui_id"] for r in json.loads(out or "[]") if r.get("state") == 
     echo "== runs in flight: $RUNNING"
     for ui in $RUNNING; do
       echo "   stopping $ui (graceful: it keeps its checkpoint)"
-      docker exec "$STACK-agent" /opt/venv/bin/python /work/p281/run_workflow.py stop "$ui" >/dev/null 2>&1 \
+      docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/run_workflow.py stop "$ui" >/dev/null 2>&1 \
         || echo "   WARN  $ui did not accept the stop" >&2
     done
     # give the runs their own cancel path; a run that ignores it is reported, not waited on forever

@@ -1,10 +1,10 @@
 # #281 — provider chosen by the router from quota observations (Phase 5).
 #
 # The workflow names no vendor. `provider` is passed through to the routing/execution layer
-# (p281/run-agent.mjs), which holds every vendor difference. Preloop governs the file write
+# (stack/run-agent.mjs), which holds every vendor difference. Preloop governs the file write
 # (MCP rules) and MLflow records the outcome through one shared step.
 #
-#   conductor run p281/workflows/auto.yaml
+#   run_workflow.py start <id> auto <profile>
 workflow:
   name: p281-route-auto
   description: Provider chosen by the router from quota observations; same Gate and record
@@ -32,7 +32,7 @@ agents:
     type: script
     description: Collect quota observations and choose a provider (fail closed on HOLD)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/route.py", "{{ workflow.input.profile }}"]
+    args: ["/work/stack/steps/route.py", "{{ workflow.input.profile }}"]
     output:
       decision: {type: string}
       provider: {type: string}
@@ -97,7 +97,7 @@ agents:
     type: script
     description: Record the routed execution in MLflow (shared, vendor-neutral)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py"]
+    args: ["/work/stack/steps/record.py"]
     stdin: "{{ {'execute': execute.output, 'check': check.output, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
@@ -114,7 +114,7 @@ agents:
     type: script
     description: Record the HOLD decision in MLflow — not starting is a result too
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py"]
+    args: ["/work/stack/steps/record.py"]
     stdin: "{{ {'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}

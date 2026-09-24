@@ -15,7 +15,7 @@ deterministically.
 REPEATABLE = "guarded"   # stage resets the round; freeze returns the same draft for the same bytes; triage counts a repair per draft, not per run of the step
 import glob, hashlib, json, os, shutil, sys
 
-sys.path.insert(0, "/work/p281")
+sys.path.insert(0, "/work/stack")
 import settings
 
 RT = settings.runtime()

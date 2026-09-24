@@ -89,11 +89,11 @@ because a button for that is a second place for the truth to live.
 
 - **A run's record**: an MLflow run per workflow run, a child per model call, the evidence index of
   the judgement, and the artifacts' hashes.
-- **A run's trajectory** (`p281/trajectory.py`): what a run did, assembled from records that
+- **A run's trajectory** (`stack/trajectory.py`): what a run did, assembled from records that
   already exist — steps, calls by provider and principal, permission asks split into *decided by a
   rule* and *asked a person*, retries, loop rounds against the bound, cost, and four assertions
   that are true or false.
-- **A set of runs** (`p281/suite.py`): one run per case from a `cases.jsonl`, read back as
+- **A set of runs** (`stack/suite.py`): one run per case from a `cases.jsonl`, read back as
   execution fact.
 
 There is no accuracy and no score anywhere in that. Whether a judgement was right needs labelled
@@ -117,13 +117,13 @@ governed the same way on every machine. Read a package before installing it, as 
 dependency.
 
 Install one by putting it there and running `scripts/up.sh`: the runner and the panel both learn it
-from the loader (`p281/packages.py`), and `principals.py apply` creates the identities it declares
+from the loader (`stack/packages.py`), and `principals.py apply` creates the identities it declares
 with the rights it declares. Nothing in the platform is edited, which is the point — a workflow
 that cannot be given to someone is not a workflow, it is a modification.
 
 **Every** workflow is a package, including the ones this stack was written with: `packages/auto`,
 `packages/research-r`, `packages/novel`, `packages/trading` (which carries three, because they
-share a deterministic step), and `packages/hello-lane` as the smallest example. `p281/steps/` holds
+share a deterministic step), and `packages/hello-lane` as the smallest example. `stack/steps/` holds
 only what any workflow may call — route, roles, agent_task, tasks, task_chain, fanout, record — and
 that list is the platform's surface.
 
@@ -138,8 +138,8 @@ A composition is which parts are running: `full`, `no-record` (no MLflow), `runt
 | | |
 |---|---|
 | [CONTRACT.md](../CONTRACT.md) | the boundary, with the tests that settle arguments |
-| [OPERATIONS.md](../OPERATIONS.md) | every operational fact, as a measurement — §10 tool rights, §17 repeats, §19 trajectory, §20–21 the guard, §22 claiming Preloop, §23 stop and resume, §25 a second machine |
-| [COVERAGE.md](../COVERAGE.md) | this stack against the workflow design procedure: covered, partial, missing |
+| [OPERATIONS.md](record/OPERATIONS.md) | every operational fact, as a measurement — §10 tool rights, §17 repeats, §19 trajectory, §20–21 the guard, §22 claiming Preloop, §23 stop and resume, §25 a second machine |
+| [COVERAGE.md](record/COVERAGE.md) | this stack against the workflow design procedure: covered, partial, missing |
 | [docs/install.md](install.md) | from a clone to a running stack |
 | [docs/commands.md](commands.md) | every command, in one table |
 | [docs/runbook.md](runbook.md) | what to do when something is wrong |

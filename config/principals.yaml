@@ -6,7 +6,7 @@
 # workflows referring to identities that did not exist, and the rights a review is supposed to run
 # under were something somebody did once rather than something the stack declares.
 #
-# `p281/principals.py apply` makes Preloop match this file: it creates what is missing, replaces
+# `stack/principals.py apply` makes Preloop match this file: it creates what is missing, replaces
 # the rules of what is not, and leaves alone what already agrees. It runs on the admin side, from
 # scripts/up.sh, because changing tool rights is a write the guard refuses from the governed
 # network (OPERATIONS.md §21). Credentials are not in here and never will be: `apply` mints one

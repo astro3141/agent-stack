@@ -80,14 +80,14 @@ def accounts(profile):
     obs_dir = f"/tmp/ops-obs-{secrets.token_hex(4)}"
     routes = json.dumps(routing["model_route"])
     logins = json.dumps(routing.get("login") or {})
-    ev = jexec(["sh", "-c", 'P281_MODEL_ROUTES="$1" P281_LOGINS="$5" "$2" /work/p281/collect_obs.py "$3" >/dev/null 2>&1; '
-                'printf %s "$4" > "$3/policy.json"; "$2" /work/p281/router.py "$3/policy.json" "$3"; rm -rf "$3"',
+    ev = jexec(["sh", "-c", 'AGENTSTACK_MODEL_ROUTES="$1" AGENTSTACK_LOGINS="$5" "$2" /work/stack/collect_obs.py "$3" >/dev/null 2>&1; '
+                'printf %s "$4" > "$3/policy.json"; "$2" /work/stack/router.py "$3/policy.json" "$3"; rm -rf "$3"',
                 "sh", routes, PY, obs_dir, json.dumps(routing), logins], timeout=180)
     evaluated = {e["provider"]: e for e in (ev.get("evaluated") or [])}
     rows = []
     for name in routing["candidates"]:
         login = routing["login"].get(name, name)
-        st = jexec([PY, "/work/p281/login_helper.py", "status", name, login])
+        st = jexec([PY, "/work/stack/login_helper.py", "status", name, login])
         e = evaluated.get(name, {})
         rows.append({
             "provider": name, "login": login, "route": routing["model_route"].get(name),
@@ -129,10 +129,10 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/health":
             return self._send(200, {"ok": True, "agent": AGENT})
         if p == "/api/config/status":
-            return self._send(200, jexec([PY, "/work/p281/cfg.py", "status"]))
+            return self._send(200, jexec([PY, "/work/stack/cfg.py", "status"]))
         if p == "/api/workflows":
             # with what each one says about itself, so the screen offers what exists
-            return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "workflows", "--detail"]))
+            return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "workflows", "--detail"]))
         if p == "/api/profiles":
             rc, out, _ = dexec(["sh", "-c", "ls /work/config/generated/profiles/"])
             names = [x[:-5] for x in out.split() if x.endswith(".json")]
@@ -149,22 +149,22 @@ class H(BaseHTTPRequestHandler):
             prov, login = m.group(1), (q.get("login") or [m.group(1)])[0]
             if prov not in PROVIDERS or not NAME.fullmatch(login):
                 return self._send(400, {"error": "invalid provider or login"})
-            return self._send(200, jexec([PY, "/work/p281/login_helper.py", "status", prov, login]))
+            return self._send(200, jexec([PY, "/work/stack/login_helper.py", "status", prov, login]))
         if p == "/api/runs":
-            return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "list"]))
+            return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "list"]))
         if p == "/api/approvals":          # what is waiting for a person right now
-            return self._send(200, jlocal(["/work/p281/approvals.py"]))
+            return self._send(200, jlocal(["/work/stack/approvals.py"]))
         if p == "/api/overview":
             # One read for the panel: what the stack can do now, how the unattended cycles have
             # been going, what the last check found, and where the other solutions' own consoles
             # are. Nothing here is recomputed — it is what the stack already records.
-            health = jexec([PY, "/work/p281/ops_health.py", "--json", "--last", "50"])
+            health = jexec([PY, "/work/stack/ops_health.py", "--json", "--last", "50"])
             rc, out, _ = dexec(["cat", "/work/evidence/checks/last.json"])
             try:
                 last = json.loads(out) if rc == 0 else {}
             except ValueError:
                 last = {}
-            elsewhere = jexec([PY, "/work/p281/elsewhere.py", "--json"])
+            elsewhere = jexec([PY, "/work/stack/elsewhere.py", "--json"])
             rc2, hs, _ = dexec(["cat", "/work/evidence/ops/host-state.json"])
             try:
                 host_state = json.loads(hs) if rc2 == 0 else None
@@ -200,7 +200,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"at": None, "ok": None, "error": "unreadable check result"})
         m = re.fullmatch(r"/api/runs/([a-z0-9-]{6,40})", p)
         if m:
-            return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "show", m.group(1)]))
+            return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "show", m.group(1)]))
         return self._send(404, {"error": "no such route"})
 
     def do_POST(self):
@@ -210,7 +210,7 @@ class H(BaseHTTPRequestHandler):
             # provider logins, which only the agent has; applying writes to Preloop, which only
             # the admin side may do (OPERATIONS §21).
             what = p.rsplit("/", 1)[1]
-            return self._send(200, jexec([PY, "/work/p281/cfg.py", what], timeout=300,
+            return self._send(200, jexec([PY, "/work/stack/cfg.py", what], timeout=300,
                                          container=ADMIN if what == "apply" else None))
         m = re.fullmatch(r"/api/accounts/([a-z]+)/(login|code|cancel)", p)
         if m:
@@ -219,13 +219,13 @@ class H(BaseHTTPRequestHandler):
             if prov not in PROVIDERS or not isinstance(login, str) or not NAME.fullmatch(login):
                 return self._send(400, {"error": "invalid provider or login"})
             if act == "login":
-                return self._send(200, jexec([PY, "/work/p281/login_helper.py", "start", prov, login], timeout=60))
+                return self._send(200, jexec([PY, "/work/stack/login_helper.py", "start", prov, login], timeout=60))
             if act == "cancel":
-                return self._send(200, jexec([PY, "/work/p281/login_helper.py", "cancel", prov, login]))
+                return self._send(200, jexec([PY, "/work/stack/login_helper.py", "cancel", prov, login]))
             code = b.get("code")
             if not isinstance(code, str) or not code.strip() or len(code) > 2000:
                 return self._send(400, {"error": "missing code"})
-            return self._send(200, jexec([PY, "/work/p281/login_helper.py", "code", prov, login], stdin=code))
+            return self._send(200, jexec([PY, "/work/stack/login_helper.py", "code", prov, login], stdin=code))
         if p == "/api/replay":
             # Not a control over the stack: it chooses which recorded run the read-only dashboard
             # shows. The name is written for the replay container to pick up; nothing is executed.
@@ -244,13 +244,13 @@ class H(BaseHTTPRequestHandler):
         if m:
             # Stopping a run that is going is a person's call — the same kind of decision as an
             # approval, and the only other one this panel makes. Conductor does the stopping.
-            return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "stop", m.group(1)]))
+            return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "stop", m.group(1)]))
         m = re.fullmatch(r"/api/runs/([a-z0-9-]{6,40})/resume", p)
         if m:
             # The other half of stopping. Whether an interrupted run is worth continuing is the
             # same kind of judgement as stopping it was, so it is offered in the same place.
             # Detached, like a start: resuming re-enters the step that did not finish and runs on.
-            rc, out, err = dexec([PY, "/work/p281/run_workflow.py", "resume", m.group(1)], detach=True)
+            rc, out, err = dexec([PY, "/work/stack/run_workflow.py", "resume", m.group(1)], detach=True)
             if rc != 0:
                 return self._send(502, {"error": (err or out or "could not resume").strip()[-300:]})
             return self._send(200, {"ui": m.group(1), "resuming": True})
@@ -267,13 +267,13 @@ class H(BaseHTTPRequestHandler):
             comment = b.get("comment") or ""
             if not isinstance(comment, str) or len(comment) > 500:
                 return self._send(400, {"error": "comment must be a string of at most 500 chars"})
-            out = jlocal(["/work/p281/approvals.py", "decide", m.group(1), d, comment])
+            out = jlocal(["/work/stack/approvals.py", "decide", m.group(1), d, comment])
             return self._send(200 if out.get("ok") else 502, out)
         if p == "/api/runs":
             wf, prof, inputs = b.get("workflow"), b.get("profile") or "research-default", b.get("inputs") or {}
             # what may be started is the runner's answer, not a second list kept here: a package
             # installed under packages/ is startable from the panel the moment it is there
-            allowed = jexec([PY, "/work/p281/run_workflow.py", "workflows"])
+            allowed = jexec([PY, "/work/stack/run_workflow.py", "workflows"])
             if not isinstance(allowed, dict) or "error" in allowed:
                 return self._send(502, {"error": "could not read which workflows may be started"})
             if wf not in allowed or not NAME.fullmatch(prof) or not isinstance(inputs, dict):
@@ -281,14 +281,14 @@ class H(BaseHTTPRequestHandler):
             # The run is started detached, so what the stack cannot do has to be found out before
             # that: a refusal after detaching would look like a run that never reported anything.
             unrecorded = b.get("allow_unrecorded") is True
-            gate = jexec([PY, "/work/p281/capabilities.py", "--missing"]
+            gate = jexec([PY, "/work/stack/capabilities.py", "--missing"]
                          + (["--allow-unrecorded"] if unrecorded else []))
             if gate.get("missing"):
                 return self._send(409, {"error": "the stack cannot run this now: "
                                                  + ", ".join(gate["missing"]), **gate})
             ui = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
             pairs = [f"{k}={v}" for k, v in inputs.items() if isinstance(v, (str, int))]
-            rc, out, err = dexec([PY, "/work/p281/run_workflow.py", "start", ui, wf, prof] + pairs
+            rc, out, err = dexec([PY, "/work/stack/run_workflow.py", "start", ui, wf, prof] + pairs
                                  + (["--allow-unrecorded"] if unrecorded else []), detach=True)
             return self._send(202 if rc == 0 else 500, {"ui_id": ui} if rc == 0 else {"error": err[-300:]})
         return self._send(404, {"error": "no such route"})

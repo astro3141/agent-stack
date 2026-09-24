@@ -8,7 +8,7 @@ OPERATIONS.md under the section named.
 Read [docs/concepts.md](concepts.md) once, to know why the pieces are arranged this way.
 [docs/commands.md](commands.md) is the reference you keep open beside this one.
 
-For the state the composition started from, see [RUNBOOK.md](../RUNBOOK.md) — that file is history,
+For the state the composition started from, see [RUNBOOK.md](record/RUNBOOK-278.md) — that file is history,
 this one is operation.
 
 ---
@@ -37,7 +37,7 @@ a button for it, that is the signal to write it down in `config/`, not in a scre
 
 ```bash
 scripts/up.sh --check                                    # about twenty questions, and the capabilities
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/ops_health.py
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/ops_health.py
 ```
 
 `up.sh --check` changes nothing. Read it in three parts: **isolation** (the agent has no route out
@@ -142,8 +142,8 @@ docker exec agentstack-agent sh -c 'ps -eo pid,etime,args | grep "[r]un_workflow
 **Do:** stop it the way a person would, so it keeps a checkpoint, then continue it when you want:
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py stop <id>
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py resume <id>
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py stop <id>
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py resume <id>
 ```
 
 or use **중지** / **재개** in the panel. Resume re-enters the step that did not finish; the steps
@@ -209,7 +209,7 @@ working, calling does not. Applying the policy and rescanning do **not** clear i
 **Do:**
 
 ```bash
-docker exec agentstack-agent python3 /work/p281/mcp_list.py claude --probe   # PROBE OK / PROBE FAIL
+docker exec agentstack-agent python3 /work/stack/mcp_list.py claude --probe   # PROBE OK / PROBE FAIL
 docker restart preloop-oss-api-1                                          # what actually clears it
 ```
 
@@ -221,7 +221,7 @@ only if a call still fails, restart Preloop's api (OPERATIONS §28).
 **Look:** `up.sh --check` → `fsmcp tools exposed via Preloop` fails, and:
 
 ```bash
-docker exec agentstack-agent python3 /work/p281/mcp_list.py claude
+docker exec agentstack-agent python3 /work/stack/mcp_list.py claude
 # → only ask_user, get_approval_status, permission_prompt, request_approval …
 ```
 
@@ -237,7 +237,7 @@ instances, and the check passes on the ones where the scan landed.
 **Do:**
 
 ```bash
-docker exec agentstack-admin /opt/venv/bin/python /work/p281/cfg.py rescan
+docker exec agentstack-admin /opt/venv/bin/python /work/stack/cfg.py rescan
 # {"ok": true, "policy": "policy/b-fsmcp.yaml", "scanned": ["…-toolsvc", "…-fsmcp"]}
 ```
 
@@ -247,8 +247,8 @@ account does not have. If you are doing it by hand and `rescan` says `not_regist
 case — apply first:
 
 ```bash
-docker exec agentstack-admin /opt/venv/bin/python /work/p281/cfg.py apply    # --force ignores our record
-docker exec agentstack-admin /opt/venv/bin/python /work/p281/cfg.py rescan
+docker exec agentstack-admin /opt/venv/bin/python /work/stack/cfg.py apply    # --force ignores our record
+docker exec agentstack-admin /opt/venv/bin/python /work/stack/cfg.py rescan
 ```
 
 `apply` no longer trusts its own record: it skips only when the account still has every server the
@@ -259,7 +259,7 @@ policy declares. On another machine the record said the work was done while the 
 **Look:** the panel's 승인 대기 card, or:
 
 ```bash
-docker exec agentstack-ops python3 /work/p281/approvals.py
+docker exec agentstack-ops python3 /work/stack/approvals.py
 ```
 
 **Do:** decide it in the panel. The agent may *read* what is waiting and cannot decide it — that is
@@ -300,8 +300,8 @@ stale is the **identity**: onboarding again leaves the previous managed agent in
 credential, and the previous hook file in the home.
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/ops_health.py   # risks name it
-docker exec agentstack-admin /opt/venv/bin/python /work/p281/principals.py list
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/ops_health.py   # risks name it
+docker exec agentstack-admin /opt/venv/bin/python /work/stack/principals.py list
 ```
 
 The adapter presents the **newest** matching hook, so runs use the current identity. Removing the

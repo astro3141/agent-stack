@@ -10,7 +10,7 @@
 #   * three different vendors inside one run, each on its own login
 #   * a deterministic step choosing PASS / REPAIR from files the models wrote
 #
-#   conductor run p281/workflows/novel-a.yaml -i profile=research-default
+#   run_workflow.py start <id> novel-a research-default
 workflow:
   name: p281-novel-a
   description: Role-split chapter with parallel reviews and bounded repair (capability trial)
@@ -46,7 +46,7 @@ agents:
     type: script
     description: Quota admission (the roles below are bound by design, not by the router)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/route.py", "{{ workflow.input.profile }}"]
+    args: ["/work/stack/steps/route.py", "{{ workflow.input.profile }}"]
     output:
       decision: {type: string}
       provider: {type: string}
@@ -62,7 +62,7 @@ agents:
     type: script
     description: Bind each role to its vendor, with that vendor's login and route
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/roles.py", "{{ route.output.profile }}", "{{ route.output.evidence_dir }}",
+    args: ["/work/stack/steps/roles.py", "{{ route.output.profile }}", "{{ route.output.evidence_dir }}",
            "architect=codex:novel-author", "author=claude:novel-author",
            "story=codex:novel-reviewer", "history=claude:novel-reviewer",
            "cold=grok:novel-reviewer"]
@@ -111,7 +111,7 @@ agents:
     type: script
     description: Chapter contract (no prose)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/agent_task.py", "{{ roles.output.architect_provider }}",
+    args: ["/work/stack/steps/agent_task.py", "{{ roles.output.architect_provider }}",
            "{{ roles.output.architect_route }}", "architect",
            "/work/packages/novel/prompts/novel-architect.md", "contract.json",
            "{{ route.output.profile }}", "{{ roles.output.architect_login }}",
@@ -131,7 +131,7 @@ agents:
     type: script
     description: Prose — only this role writes prose
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/agent_task.py", "{{ roles.output.author_provider }}",
+    args: ["/work/stack/steps/agent_task.py", "{{ roles.output.author_provider }}",
            "{{ roles.output.author_route }}", "author",
            "/work/packages/novel/prompts/novel-author.md", "draft.md",
            "{{ route.output.profile }}", "{{ roles.output.author_login }}",
@@ -170,7 +170,7 @@ agents:
     type: script
     description: Story, history and the Cold Reader, started together
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/tasks.py", "reviews_round.json", "{{ freeze.output.draft_sha256 }}",
+    args: ["/work/stack/steps/tasks.py", "reviews_round.json", "{{ freeze.output.draft_sha256 }}",
            "{{ route.output.profile }}",
            "story:{{ roles.output.story_provider }}:{{ roles.output.story_login }}:{{ roles.output.story_route }}:{% if workflow.input.review_mode == 'strict' %}/work/packages/novel/prompts/novel-review-story-strict.md{% elif workflow.input.review_mode == 'marker' %}/work/packages/novel/prompts/novel-review-story-marker.md{% else %}/work/packages/novel/prompts/novel-review-story.md{% endif %}:review_story.json:{{ roles.output.story_principal }}",
            "history:{{ roles.output.history_provider }}:{{ roles.output.history_login }}:{{ roles.output.history_route }}:/work/packages/novel/prompts/novel-review-history.md:review_history.json:{{ roles.output.history_principal }}",
@@ -219,7 +219,7 @@ agents:
     type: script
     description: Repair — the same Author, fixing exactly the findings
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/agent_task.py", "{{ roles.output.author_provider }}",
+    args: ["/work/stack/steps/agent_task.py", "{{ roles.output.author_provider }}",
            "{{ roles.output.author_route }}", "repair",
            "/work/packages/novel/prompts/novel-author.md", "draft.md",
            "{{ route.output.profile }}", "{{ roles.output.author_login }}",
@@ -235,7 +235,7 @@ agents:
     type: script
     description: Record the run (never fails the workflow)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py"]
+    args: ["/work/stack/steps/record.py"]
     stdin: "{{ {'execute': author.output, 'executions': [architect.output], 'receipts': [reviews.output.receipt], 'measurements': {'repairs': triage.output.repairs_done, 'chars': triage.output.chars, 'review_overlap': reviews.output.overlap}, 'evidence_file': triage.output.evidence_index, 'check': {'decision': triage.output.decision, 'reason': triage.output.reason, 'file_sha256': triage.output.draft_sha256}, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
@@ -254,7 +254,7 @@ agents:
     type: script
     description: Record a blocked run
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py"]
+    args: ["/work/stack/steps/record.py"]
     stdin: "{{ {'execute': (author.output if author is defined else architect.output), 'executions': ([architect.output] if author is defined else []), 'receipts': ([reviews.output.receipt] if reviews is defined else []), 'check': {'decision': 'BLOCK', 'reason': (triage.output.reason if triage is defined else ('author produced no draft' if author is defined else 'architect produced no contract')), 'file_sha256': (triage.output.draft_sha256 if triage is defined else '')}, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
@@ -269,7 +269,7 @@ agents:
     type: script
     description: Record a run the router held
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py"]
+    args: ["/work/stack/steps/record.py"]
     stdin: "{{ {'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}

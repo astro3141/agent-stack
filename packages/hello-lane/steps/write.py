@@ -7,7 +7,7 @@ REPEATABLE = "yes"
 import hashlib, json, os, sys
 
 RUN = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
-WS = f"{os.environ.get('P281_WORKSPACE_ROOT', '/ws')}/{RUN}"
+WS = f"{os.environ.get('AGENTSTACK_WORKSPACE_ROOT', '/ws')}/{RUN}"
 
 text = (sys.argv[1] if len(sys.argv) > 1 else "hello from a package")
 os.makedirs(WS, exist_ok=True)

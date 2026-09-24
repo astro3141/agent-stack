@@ -3,7 +3,7 @@
 #
 #   scripts/cycle.sh <workflow> [profile] [--allow-unrecorded] [--retain-days N] [--retain-keep M]
 #
-# The rules live in p281/cycle.py — one cycle at a time behind a lock this never breaks, a refusal
+# The rules live in stack/cycle.py — one cycle at a time behind a lock this never breaks, a refusal
 # when the stack is missing a capability the run needs, one line per cycle (and per skip, and per
 # refusal) in evidence/ops/cycles.jsonl, and retention only when asked for. This script is the way
 # a scheduler on the host reaches that implementation; it deliberately holds no rules of its own,
@@ -18,4 +18,4 @@ export MSYS_NO_PATHCONV=1
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
 STACK="${STACK:-agentstack}"
 
-exec docker exec "$STACK-agent" /opt/venv/bin/python /work/p281/cycle.py "$@" --by scheduler
+exec docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cycle.py "$@" --by scheduler

@@ -71,9 +71,9 @@ ok=0; failed=0; held=0
 for i in $(seq 1 "$CYCLES"); do
   ui="soak-$ID-$(printf %02d "$i")"
   t0=$(date +%s)
-  in_agent "cd /work && $PY p281/run_workflow.py start $ui $WORKFLOW $PROFILE" >/dev/null 2>&1
+  in_agent "cd /work && $PY stack/run_workflow.py start $ui $WORKFLOW $PROFILE" >/dev/null 2>&1
   t1=$(date +%s)
-  outcome="$(in_agent "$PY /work/p281/soak_outcome.py $ui")"
+  outcome="$(in_agent "$PY /work/stack/soak_outcome.py $ui")"
   [ -n "$outcome" ] || outcome='{"state":"unknown"}'
   case "$outcome" in
     *'"ended_at": "done_hold"'*) held=$((held+1));;

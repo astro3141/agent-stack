@@ -9,7 +9,7 @@ re-emits the normalized result as one flat JSON object for Conductor's output sc
 # "guarded" — it recognises the repeat; "no" — it does the work again.
 REPEATABLE = "no"   # a model call
 import json, os, subprocess, sys
-sys.path.insert(0, "/work/p281")
+sys.path.insert(0, "/work/stack")
 import settings
 
 provider, file_name, content = sys.argv[1:4]
@@ -33,7 +33,7 @@ req = {
 os.makedirs(evid, exist_ok=True)
 rp = os.path.join(evid, "request.json")
 json.dump(req, open(rp, "w"), indent=1)
-p = subprocess.run(["node", "/work/p281/run-agent.mjs", rp], capture_output=True, text=True,
+p = subprocess.run(["node", "/work/stack/run-agent.mjs", rp], capture_output=True, text=True,
                    env={**os.environ, "NODE_NO_WARNINGS": "1"})
 try:
     r = json.loads(p.stdout.strip().splitlines()[-1])

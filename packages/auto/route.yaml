@@ -1,11 +1,11 @@
 # #281 — one Conductor workflow, provider chosen by input only.
 #
 # The workflow names no vendor. `provider` is passed through to the routing/execution layer
-# (p281/run-agent.mjs), which holds every vendor difference. Preloop governs the file write
+# (stack/run-agent.mjs), which holds every vendor difference. Preloop governs the file write
 # (MCP rules) and MLflow records the outcome through one shared step.
 #
-#   conductor run p281/workflows/route.yaml -i provider=claude
-#   conductor run p281/workflows/route.yaml -i provider=codex
+#   run_workflow.py start <id> route <profile> provider=claude
+#   run_workflow.py start <id> route <profile> provider=codex
 workflow:
   name: p281-route
   description: Same request, same Gate, same record — provider selected by the routing layer
@@ -76,7 +76,7 @@ agents:
     type: script
     description: Record the routed execution in MLflow (shared, vendor-neutral)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py"]
+    args: ["/work/stack/steps/record.py"]
     stdin: "{{ {'execute': execute.output, 'check': check.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}

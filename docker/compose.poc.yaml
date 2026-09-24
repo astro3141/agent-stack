@@ -114,10 +114,10 @@ services:
       POC_DIR: /work
       POC_PY: /opt/venv/bin/python
       # The step library is importable from wherever a step lives. A package's steps sit under
-      # packages/<name>/steps/, not under p281/steps/, and they still need `settings` and the
+      # packages/<name>/steps/, not under stack/steps/, and they still need `settings` and the
       # platform steps they call — without this they fail with ModuleNotFoundError the moment they
       # are installed rather than copied in (OPERATIONS §27).
-      PYTHONPATH: /work/p281:/work/p281/steps
+      PYTHONPATH: /work/stack:/work/stack/steps
       PYTHONUTF8: "1"
       # Preloop control plane, reached over the governed network by service name.
       PRELOOP_URL: http://console
@@ -219,11 +219,11 @@ services:
       - quota-home:/home/agent
       - quota-obs:/obs
       - type: bind
-        source: ${POC_HOST_DIR:-..}/p281/observer_loop.sh
-        target: /opt/p281/observer_loop.sh
+        source: ${POC_HOST_DIR:-..}/stack/observer_loop.sh
+        target: /opt/stack/observer_loop.sh
         read_only: true
     # the observation loop is the container's process, so it comes back with every restart
-    command: ["sh", "/opt/p281/observer_loop.sh"]
+    command: ["sh", "/opt/stack/observer_loop.sh"]
 
   # #281 option B: the routing layer's egress — allowlisted provider hosts only.
   egress:
@@ -320,8 +320,8 @@ services:
       OPS_ADMIN_CONTAINER: ${STACK:-agentstack}-admin
       # Preloop, addressed on the admin side — past the guard, which is what makes a decision
       # possible from here and impossible from the agent
-      P281_PRELOOP_API: http://preloop-api:8000
-      P281_CREDENTIAL_HOME: /home/agent
+      AGENTSTACK_PRELOOP_API: http://preloop-api:8000
+      AGENTSTACK_CREDENTIAL_HOME: /home/agent
       # only so the panel can link to the consoles that own approvals and run comparison
       PRELOOP_CONSOLE_PORT: ${PRELOOP_CONSOLE_PORT:-3000}
       MLFLOW_PORT: ${MLFLOW_PORT:-5000}
@@ -349,7 +349,7 @@ services:
     # No published port: a person reaches this through the hub, which is the one address for
     # the panel. That also keeps the container holding the workspace mount off the browser's side.
     entrypoint: ["/home/agent/.local/share/uv/tools/conductor-cli/bin/python"]
-    command: ["/work/p281/tools/replay_serve.py", "${REPLAY_PORT:-8785}"]
+    command: ["/work/stack/tools/replay_serve.py", "${REPLAY_PORT:-8785}"]
 
   # UX track: the UI. Talks only to the ops API; holds no Docker access and no credentials.
   hub:

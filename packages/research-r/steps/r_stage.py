@@ -14,7 +14,7 @@ two, deterministically, and never edits content.
 REPEATABLE = "yes"   # prepares the research run's workspace from fixtures
 import hashlib, json, os, shutil, sys
 from pathlib import Path
-sys.path.insert(0, "/work/p281")
+sys.path.insert(0, "/work/stack")
 import settings
 
 run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")

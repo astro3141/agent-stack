@@ -132,7 +132,7 @@ if [ "$MODE" != "--check" ]; then
 ')"
   if [ "$users" = "0" ]; then
     echo "== Preloop has no user yet — claiming it"
-    preloop_exec api printenv PRELOOP_BOOTSTRAP_TOKEN       | docker exec -i "$STACK-admin" /opt/venv/bin/python /work/p281/bootstrap_preloop.py           --unclaimed --api http://preloop-api:8000       || { echo "  the instance could not be claimed — nothing below will be governed" >&2; exit 1; }
+    preloop_exec api printenv PRELOOP_BOOTSTRAP_TOKEN       | docker exec -i "$STACK-admin" /opt/venv/bin/python /work/stack/bootstrap_preloop.py           --unclaimed --api http://preloop-api:8000       || { echo "  the instance could not be claimed — nothing below will be governed" >&2; exit 1; }
     # The container wrote the owner's password inside itself, because this tree is a bind mount
     # owned by the host user and a container cannot write into it on Linux. Moving it here means
     # the file ends up with the host's ownership and mode, and the password never passes through
@@ -147,8 +147,8 @@ if [ "$MODE" != "--check" ]; then
     # servers, the tools and the approval workflow all come from policy/. Generating reads the
     # provider logins (agent); applying writes to Preloop (admin) — OPERATIONS.md §21.
     echo "== applying this stack's policy to the new instance"
-    docker exec "$STACK-agent" /opt/venv/bin/python /work/p281/cfg.py generate >/dev/null 2>&1 || true
-    docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/  /' || true
+    docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate >/dev/null 2>&1 || true
+    docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/  /' || true
   fi
 fi
 
@@ -173,7 +173,7 @@ fi
 # every bring-up is what keeps a second machine governed the same way as this one; it writes to
 # Preloop, so it runs on the admin side (OPERATIONS.md §21, §25).
 if docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
-  out="$(docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/principals.py apply 2>&1 | tail -1)"
+  out="$(docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/principals.py apply 2>&1 | tail -1)"
   case "$out" in
     *'"ok": true'*) echo "$out" | grep -q '"changes": \[\]' || echo "== principals: $out";;
     *) echo "  WARN  the declared principals could not be applied: $out" >&2;;
@@ -213,15 +213,15 @@ fi
 # elsewhere: the runtime saw Preloop's own four tools and none of the file tools. The truth is what
 # the runtime can see, so that is what is asked, and a scan is the way out.
 if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
-  probe() { docker exec "$STACK-agent" sh -c 'python3 /work/p281/mcp_list.py claude --probe 2>/dev/null' | grep -q "PROBE OK"; }
+  probe() { docker exec "$STACK-agent" sh -c 'python3 /work/stack/mcp_list.py claude --probe 2>/dev/null' | grep -q "PROBE OK"; }
   if ! probe; then
     echo "== the runtime cannot see the tool servers — applying the policy again, then scanning"
     # Apply first, and only then scan. A rescan alone fixes the case where the servers exist with
     # nothing on them; it cannot fix the one where the account has no servers at all, which is what
     # another machine hit — `GET /mcp-servers` answered `[]` while our record said the work was
     # done. `apply` now checks the account rather than the record, so it repairs both.
-    docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/   /' || true
-    docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py rescan | sed 's/^/   /' || true
+    docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/   /' || true
+    docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py rescan | sed 's/^/   /' || true
     sleep 3
     # A server that was recreated has a new id, and Preloop's api keeps the old one in its own
     # cache: the listing stays right and every call fails. Restarting that one container is what
@@ -263,7 +263,7 @@ check "provider host via proxy (TLS up)" yes "$(in_agent 'c=$(curl -s -o /dev/nu
 # Not "are the tools listed" but "does a call reach the server": a tool server deleted and
 # recreated keeps its listing while every call answers "MCP server <old id> not found"
 # (OPERATIONS §28). The probe calls a read-only tool.
-check "fsmcp tools work through Preloop"  yes "$(in_agent 'python3 /work/p281/mcp_list.py claude --probe | grep -q "PROBE OK" && echo yes || echo no')"
+check "fsmcp tools work through Preloop"  yes "$(in_agent 'python3 /work/stack/mcp_list.py claude --probe | grep -q "PROBE OK" && echo yes || echo no')"
 # The approval boundary is a route, so it is checked from the position it constrains: the agent
 # may read what is waiting and may not answer it (OPERATIONS.md §20).
 check "runtime may read approvals"       200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" "http://api:8000/api/v1/approval-requests?status=pending&limit=1"')"
@@ -285,7 +285,7 @@ echo "== quota observer"
 # ineligible for an *unknown* reason, and every run that needs it holds. Being at a limit or
 # having a stale observation is ordinary; not being able to tell is not, so only "unknown:" fails.
 check "every provider's state is knowable"  0 "$(in_agent '/opt/venv/bin/python -c "
-import sys; sys.path.insert(0, \"/work/p281\")
+import sys; sys.path.insert(0, \"/work/stack\")
 import ops_health
 bad = ops_health.unknowable()
 print(len(bad))
@@ -295,13 +295,13 @@ in_agent 'cat /tmp/unknowable 2>/dev/null' | head -4
 # observer's file stopped being the model when codex became readable with the login that
 # executes — the router said ROUTE while this said no (OPERATIONS §31).
 check "the router can choose a provider"  yes "$(in_agent '/opt/venv/bin/python -c "
-import sys; sys.path.insert(0, \"/work/p281\")
+import sys; sys.path.insert(0, \"/work/stack\")
 import capabilities
 print(\"yes\" if capabilities.probe()[\"admission\"][\"available\"] else \"no\")"')"
 # what only the host can see (backups, kept releases) — written down with the time it was looked at
 bash "$HERE/scripts/host-state.sh" >/dev/null 2>&1 || true
 echo "== capabilities in this composition"
-in_agent 'python3 /work/p281/capabilities.py' || true
+in_agent 'python3 /work/stack/capabilities.py' || true
 echo
 # Leave the result where the screen can read it: when the checks last ran and what failed.
 # A check that has not run for a long time is itself worth seeing.
@@ -309,7 +309,7 @@ mkdir -p "$HERE/evidence/checks"
 printf '{"at":"%s","stack":"%s","composition":"%s","ok":%s,"failed":[%s],"capabilities":%s}\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$STACK" "$COMPOSITION" \
   "$([ $fail = 0 ] && echo true || echo false)" "${FAILED%,}" \
-  "$(in_agent 'python3 /work/p281/capabilities.py --json' || echo '{}')" \
+  "$(in_agent 'python3 /work/stack/capabilities.py --json' || echo '{}')" \
   > "$HERE/evidence/checks/last.json"
 
 [ $fail = 0 ] && echo "ALL CHECKS PASSED" || { echo "SOME CHECKS FAILED"; exit 1; }

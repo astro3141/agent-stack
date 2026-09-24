@@ -163,14 +163,14 @@ reapply_policy() {
   # On the admin side: applying a policy is a write the guard refuses from the governed network,
   # which is the point of that guard (OPERATIONS.md §21).
   ADMIN="${ADMIN:-$STACK-admin}"
-  docker exec "$AGENT" "$PY_IN_AGENT" /work/p281/cfg.py generate >/dev/null || fail "cfg.py generate failed"
-  out="$(docker exec "$ADMIN" "$PY_IN_AGENT" /work/p281/cfg.py apply || true)"
+  docker exec "$AGENT" "$PY_IN_AGENT" /work/stack/cfg.py generate >/dev/null || fail "cfg.py generate failed"
+  out="$(docker exec "$ADMIN" "$PY_IN_AGENT" /work/stack/cfg.py apply || true)"
   echo "$out" | grep -o '"preloop-policy[^,]*' | sed 's/^/  /' || true
   if ! echo "$out" | grep -q '"ok": true'; then
     echo "  the policy could not be applied — the account may still enforce the previous one" >&2
     return 1
   fi
-  st="$(docker exec "$AGENT" "$PY_IN_AGENT" /work/p281/cfg.py status || true)"
+  st="$(docker exec "$AGENT" "$PY_IN_AGENT" /work/stack/cfg.py status || true)"
   say "state" "$(echo "$st" | grep -A1 '"preloop-policy' | sed -n 's/.*"state": "\([^"]*\)".*/\1/p' | head -1)"
   return 0
 }

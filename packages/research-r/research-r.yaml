@@ -6,7 +6,7 @@
 # (its own login, allowlist egress); the agent can write only through the Preloop MCP server.
 # The model proposes and reviews; it never verifies (option A).
 #
-#   conductor run p281/workflows/research-r.yaml
+#   run_workflow.py start <id> research-r <profile>
 workflow:
   name: p281-research-r
   description: Phase R (#280) with routed model steps; deterministic verification and Gate unchanged
@@ -26,7 +26,7 @@ agents:
     type: script
     description: Collect quota observations and choose a provider (fail closed on HOLD)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/route.py", "{{ workflow.input.profile }}"]
+    args: ["/work/stack/steps/route.py", "{{ workflow.input.profile }}"]
     output:
       decision: {type: string}
       provider: {type: string}
@@ -54,7 +54,7 @@ agents:
     type: script
     description: Routed model step — propose a candidate as term lists
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/agent_task.py", "{{ route.output.provider }}", "{{ route.output.model_route }}",
+    args: ["/work/stack/steps/agent_task.py", "{{ route.output.provider }}", "{{ route.output.model_route }}",
            "propose", "/work/packages/research-r/prompts/r-propose.md", "proposal.json",
            "{{ route.output.profile }}", "{{ route.output.login }}"]
     timeout: 700
@@ -133,7 +133,7 @@ agents:
     type: script
     description: Routed model step — review opinion, not evidence
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/agent_task.py", "{{ route.output.provider }}", "{{ route.output.model_route }}",
+    args: ["/work/stack/steps/agent_task.py", "{{ route.output.provider }}", "{{ route.output.model_route }}",
            "review", "/work/packages/research-r/prompts/r-review.md", "review.json",
            "{{ route.output.profile }}", "{{ route.output.login }}"]
     timeout: 700
@@ -181,7 +181,7 @@ agents:
     type: script
     description: Record the routed research run in MLflow (a record failure never changes the outcome)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py"]
+    args: ["/work/stack/steps/record.py"]
     stdin: "{{ {'execute': propose.output, 'check': {'decision': gate.output.decision, 'reason': gate.output.reason, 'file_sha256': normalize.output.candidate_sha256}, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
@@ -200,7 +200,7 @@ agents:
     type: script
     description: Record the HOLD decision in MLflow — not starting is a result too
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/record.py"]
+    args: ["/work/stack/steps/record.py"]
     stdin: "{{ {'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}

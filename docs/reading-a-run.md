@@ -7,8 +7,8 @@ paths.
 ## Start with the two that answer most questions
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/trajectory.py <id>
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py show <id>
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/trajectory.py <id>
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py show <id>
 ```
 
 `trajectory.py` assembles what the run did from every record below — steps, calls by provider and

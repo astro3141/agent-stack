@@ -21,10 +21,14 @@ directory, and the operations that let the result survive a restart, an update o
 | | |
 |---|---|
 | `docker/` | the composition: compose file, one Dockerfile per service, the egress allowlist, how Preloop joins these networks |
-| `p281/` | the routing layer (`run-agent.mjs`, `router.py`, `collect_obs.py`), the platform capabilities (`steps/tasks.py`, `steps/task_chain.py`, `steps/record.py`, `capabilities.py`), the workflows and their domain steps, and the controls |
+| `stack/` | the platform: the routing layer (`run-agent.mjs`, `router.py`, `collect_obs.py`), the capabilities a workflow calls (`steps/tasks.py`, `steps/task_chain.py`, `steps/record.py`, `capabilities.py`), and the controls |
 | `scripts/` | operations: `up.sh` / `down.sh`, `backup.sh` / `restore.sh`, `release.sh`, `cleanup.sh`, `soak.sh`, `cycle.sh` |
-| `policy/`, `gate/`, `config/` | the tool policies, the evidence gate, and the profiles everything is generated from |
+| `packages/` | the workflows, each one a directory this stack runs without being edited ([docs/packages.md](docs/packages.md)) |
+| `config/`, `policy/` | the profiles and tool policies everything else is generated from |
+| `ops/`, `hub/` | the operator panel and the small static host beside it |
 | `evidence/` | what runs actually produced — checks, UI runs, soak samples, operations records |
+| `docs/` | how to install, run, read and extend it; `docs/record/` is the measurement record |
+| `legacy/` | the #278 probe tree — `workflows/`, `gate/`, `fixture/` — kept because the findings quote it, run by nothing |
 
 ## Start here
 
@@ -43,15 +47,20 @@ directory, and the operations that let the result survive a restart, an update o
 - **[CONTRACT.md](CONTRACT.md)** — the line this codebase is organized around: *the platform
   provides capabilities; it does not decide behaviour.* Each capability with its guarantee, and
   what it leaves to the caller. Read this before adding anything.
-- **[COVERAGE.md](COVERAGE.md)** — this stack measured against the workflow design procedure it is
+- **[COVERAGE.md](docs/record/COVERAGE.md)** — this stack measured against the workflow design procedure it is
   meant to serve: what it covers, what is only partial, and what is missing (with issues).
-- **[OPERATIONS.md](OPERATIONS.md)** — what is actually running and what must survive it: backup
+- **[OPERATIONS.md](docs/record/OPERATIONS.md)** — what is actually running and what must survive it: backup
   and restore, update and rollback, cleanup, compositions, tool policy per principal, and long
   operation. Every section is a measurement, including the ones that went wrong.
-- **[RUNBOOK.md](RUNBOOK.md)** — the composition stack as first measured (#278), kept as the state
-  it started from. For operating the stack as it is now, use [docs/runbook.md](docs/runbook.md).
-- `p281/TRIAL-A-novel.md`, `p281/TRIAL-B-trading.md` — whether workflows of a given shape actually
-  run here, and what broke when they did.
+- **[FINDINGS-281.md](docs/record/FINDINGS-281.md)**, **[FINDINGS-278.md](docs/record/FINDINGS-278.md)** —
+  the findings logs, in the order they were found.
+- **[RUNBOOK-278.md](docs/record/RUNBOOK-278.md)** — the composition stack as first measured, kept as the
+  state it started from. For operating the stack as it is now, use [docs/runbook.md](docs/runbook.md).
+- **[TRIAL-A-novel.md](docs/record/TRIAL-A-novel.md)**, **[TRIAL-B-trading.md](docs/record/TRIAL-B-trading.md)** —
+  whether workflows of a given shape actually run here, and what broke when they did.
+
+Everything under `docs/record/` is a record: it is not maintained to stay true of the current code,
+it is kept true of the day it was written.
 
 ## Installing it
 
@@ -96,7 +105,7 @@ Choices worth making before installing, none of which the script decides for you
 scripts/up.sh                        # everything, then check it
 scripts/up.sh --composition no-record   # without MLflow, and be told what that costs
 scripts/cycle.sh trading-b           # one unattended cycle, for a scheduler to call
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/ops_health.py
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/ops_health.py
 ```
 
 `scripts/up.sh --check` answers about twenty questions about isolation, services, logins and quota

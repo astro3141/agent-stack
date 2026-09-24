@@ -24,8 +24,8 @@ what the account enforces runs on the admin side. If a command answers 403 in th
 not a problem to route around: it is the boundary, and the same command belongs in `admin`.
 
 ```bash
-docker exec <stack>-agent /opt/venv/bin/python /work/p281/<script>.py …   # runs, reads, MCP
-docker exec <stack>-admin /opt/venv/bin/python /work/p281/<script>.py …   # writes to Preloop
+docker exec <stack>-agent /opt/venv/bin/python /work/stack/<script>.py …   # runs, reads, MCP
+docker exec <stack>-admin /opt/venv/bin/python /work/stack/<script>.py …   # writes to Preloop
 ```
 
 [commands.md](commands.md) lists every command with the side it belongs on.

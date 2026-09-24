@@ -94,12 +94,12 @@ packages declare is carried by neither, and `packages.py` and any refused run na
 you can rename one. Check yours against what is already installed:
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py workflows
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py workflows
 ```
 
 ## Which container runs what
 
-Every step runs in the **agent**, with `/work` mounted and `PYTHONPATH=/work/p281:/work/p281/steps`,
+Every step runs in the **agent**, with `/work` mounted and `PYTHONPATH=/work/stack:/work/stack/steps`,
 so `import settings` works from wherever the step lives. See [containers.md](containers.md) for the
 rest — in particular, anything that writes to Preloop belongs on the admin side, and a package's
 steps never need to.
@@ -148,7 +148,7 @@ places to keep the answer, and they are not equivalent:
 So: a marker for the resume, and a question to the remote for everything else. A step that only
 writes the marker will open the pull request twice the day someone re-runs the cycle.
 
-**4. Evidence files use `items`.** `p281/steps/record.py` counts and stores exactly that key; a file
+**4. Evidence files use `items`.** `stack/steps/record.py` counts and stores exactly that key; a file
 with `rows` is stored and counted as **zero**, so the record reads as "nothing kept":
 
 ```json
@@ -212,12 +212,12 @@ package before installing it, as you would a dependency.
 ## Before you call it done
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/packages.py          # is it usable
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py workflows --detail
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/packages.py          # is it usable
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py workflows --detail
 scripts/up.sh                                                                  # principals applied
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py \
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py \
   start <id> <workflow> research-default --detach
-docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py tail <id> --follow
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py tail <id> --follow
 ```
 
 Then read it back the way everyone else will: [reading-a-run.md](reading-a-run.md).
