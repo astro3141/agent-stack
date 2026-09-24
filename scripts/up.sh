@@ -161,6 +161,13 @@ check() {  # name, expected, actual
 }
 in_agent() { docker exec "$STACK-agent" sh -c "$1" 2>/dev/null; }
 
+# A fetched package is pinned: installing one gives its principals rights, so what is on disk has
+# to be the commit the lock names. Reported here rather than enforced — a package edited on purpose
+# during development is a normal state, and being told is the point (OPERATIONS §37).
+if [ -f "$HERE/config/packages.lock" ]; then
+  bash "$HERE/scripts/packages.sh" verify >/dev/null 2>&1     || echo "  WARN  a fetched package is not what config/packages.lock names — scripts/packages.sh list" >&2
+fi
+
 # The identities a workflow's steps run as, and the rights each carries, are declared in
 # config/principals.yaml — not remembered from whoever created them by hand. Applying that on
 # every bring-up is what keeps a second machine governed the same way as this one; it writes to

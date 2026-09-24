@@ -23,6 +23,7 @@ docker exec cadp278-admin /opt/venv/bin/python /work/p281/<script>.py …    # w
 | `scripts/backup.sh [--out DIR] [--key FILE]` | one consistent, encrypted archive of everything that cannot be regenerated |
 | `scripts/restore.sh …` | bring a backup up as a *separate* instance, and verify it against the live one |
 | `scripts/release.sh record\|list\|update --to REV\|rollback --to TAG` | keep what is running, move to something else, go back |
+| `scripts/packages.sh list\|install\|verify [name]` | the workflow packages: what is declared, fetch what is not local, and check it is still the pinned commit |
 | `scripts/cleanup.sh` | remove what is safe to remove, and say what it did not touch |
 | `scripts/host-state.sh` | what the host looks like: containers, images, volumes, disk |
 | `scripts/soak.sh <cycles> <workflow> [profile]` | run the same workflow many times and sample what grows |

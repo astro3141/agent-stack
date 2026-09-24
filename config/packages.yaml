@@ -1,0 +1,34 @@
+# Which workflow packages this instance runs, and where each one comes from.
+#
+# Installing a package is a decision to trust it: scripts/up.sh applies its principals.yaml, which
+# creates identities and mints their credentials (OPERATIONS §27). So a package is pinned like a
+# dependency — named source, named ref — and config/packages.lock records the commit that was
+# actually installed. `scripts/packages.sh verify` answers whether what is on disk is still that.
+#
+#   from: local     it lives in this repository, under packages/<name>; this repo's history is its
+#                   history. The trials and the example stay here.
+#   from: <git url> it lives in its own repository and is fetched into packages/<name>, which is
+#                   then git-ignored here. Domain content — a trading strategy, a client's
+#                   workflow — belongs in its own repository, not in the platform's.
+#
+# The fetch happens on the **host**, never in a container: a git credential inside the governed
+# runtime would be a new thing for the agent to reach, and there is no reason for it.
+packages:
+  hello-lane:
+    from: local
+    note: the example that shows the contract
+  auto:
+    from: local
+    note: capability trial — a file task through the routing layer
+  research-r:
+    from: local
+    note: capability trial — #280's Phase R with routed model steps
+  novel:
+    from: local
+    note: capability trial — role-split chapter with a bounded repair loop
+  trading:
+    from: https://github.com/astro3141/agent-stack-trading.git
+    ref: main
+    note: >
+      the trading workflows and their deterministic core — 36 of this repository's files until it
+      moved out. A platform repository should say which workflows it runs, not carry their content.

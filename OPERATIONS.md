@@ -2253,3 +2253,47 @@ Three things the live path taught, all recorded in the step:
 And one more, from the run ids: `live01` was refused as *already used* — because it belonged to the
 **other machine's** run, arrived here through git. Two machines sharing a tree share a namespace,
 and the guard held across it.
+
+## 37. Where a package comes from
+
+Sixty-two of this repository's 163 files were packages, and thirty-six of those were one trading
+package. A platform repository growing with domain content is the same mistake as a platform
+knowing what a lane is, one level up — so a package is now **declared and pinned**, not carried.
+
+```yaml
+# config/packages.yaml
+packages:
+  hello-lane: {from: local}          # the example, and the capability trials, stay here
+  trading:
+    from: https://github.com/astro3141/agent-stack-trading.git
+    ref: main
+```
+
+```
+# config/packages.lock
+trading 943eda2053ddaa786991ed852790c4b7fb5d5792 main https://github.com/…/agent-stack-trading.git
+```
+
+`scripts/packages.sh` has three verbs — `list`, `install`, `verify` — and `packages/<name>/` for a
+fetched package is git-ignored here, because it is another repository's content.
+
+**Why pinned rather than followed.** Installing a package is a decision to trust it: `up.sh`
+applies its `principals.yaml`, creating identities and minting their credentials (§27). A dependency
+that can change under you between two machines is not a decision that was made once. `verify` asks
+whether what is on disk is still the commit the lock names, and a bring-up says so when it is not —
+reported, not enforced, because a package edited during development is an ordinary state and being
+told is the point.
+
+**Why the host fetches.** Cloning from inside a container would put a git credential where the
+governed runtime can reach it, for no reason: a package is a directory and the host can put it
+there. This is the same line as §36's market credentials — a capability the agent does not need is
+one it does not get.
+
+**Measured after the split**: `packages.sh list` shows four local and `trading` at `943eda20`;
+`verify` agrees with the lock; the panel and the runner offer all eight workflows, six of them from
+the fetched package's three files of graphs; `trading-b` ran from it (2 model calls, 3 evidence
+items, recorded) and the package's own controls pass 20/20 from their new home.
+
+What was **not** done: a registry. Naming a git URL and a commit is what dbt, Helm and Krew do
+before anyone builds an index, and an index is worth its cost when there are more packages than a
+person can name — which is not yet true here.

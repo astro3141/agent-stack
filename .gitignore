@@ -28,3 +28,6 @@ evidence/ops/host-state.json
 # hand-in data belongs to the machine it was handed to, not to the repository
 handoff/*
 !handoff/README.md
+
+# fetched package, pinned in config/packages.lock and installed by scripts/packages.sh
+packages/trading/

@@ -6,6 +6,28 @@ is the **contract** its steps have to keep — the things that were previously d
 reading the platform's source, and that cost another operator a broken baseline and a record that
 read as empty.
 
+## Where it lives
+
+A package either lives in this repository (`from: local` in `config/packages.yaml` — the example and
+the capability trials) or in **its own repository**, fetched and pinned:
+
+```yaml
+packages:
+  trading:
+    from: https://github.com/astro3141/agent-stack-trading.git
+    ref: main
+```
+
+```bash
+scripts/packages.sh install trading   # clones it, writes config/packages.lock, git-ignores it here
+scripts/packages.sh verify            # is what is on disk still the commit the lock names
+scripts/up.sh                         # applies what it declares
+```
+
+Domain content belongs in its own repository: a platform repository should say which workflows it
+runs, not carry them. The fetch happens on the host, so no git credential is ever inside the
+governed runtime.
+
 ## The layout
 
 ```

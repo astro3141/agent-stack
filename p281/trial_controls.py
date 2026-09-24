@@ -1143,6 +1143,34 @@ def controls_approval_boundary():
           "This probe runs wherever it is run from, which is the point" in ops, True)
 
 
+def controls_package_sources():
+    print("")
+    print("where a package comes from — declared, pinned, and fetched by the host")
+    import os as _o, yaml as _y
+    decl = _y.safe_load(open("/work/config/packages.yaml", encoding="utf-8"))["packages"]
+    sh = open("/work/scripts/packages.sh", encoding="utf-8").read()
+    gi = open("/work/.gitignore", encoding="utf-8").read()
+    up_sh = open("/work/scripts/up.sh", encoding="utf-8").read()
+
+    check("every installed package is declared",
+          sorted(set(_o.listdir("/work/packages")) - set(decl)), [])
+    check("and every declaration is installed",
+          sorted(n for n in decl if not _o.path.isdir(f"/work/packages/{n}")), [])
+    fetched = [n for n, spec in decl.items() if (spec or {}).get("from", "local") != "local"]
+    check("a fetched package is pinned by commit",
+          all(any(l.startswith(n + " ") for l in
+                  open("/work/config/packages.lock", encoding="utf-8"))
+              for n in fetched), True)
+    check("and is not this repository's content",
+          all(f"packages/{n}/" in gi for n in fetched), True)
+    check("the fetch happens on the host, not in a container",
+          "git clone" in sh and "docker exec" not in sh.split("case \"$CMD\"")[1], True)
+    check("a bring-up says when what is on disk is not what the lock names",
+          "packages.sh\" verify" in up_sh or "packages.sh verify" in up_sh, True)
+    check("the reason a package is pinned is stated where it is declared",
+          "decision to trust it" in open("/work/config/packages.yaml", encoding="utf-8").read(), True)
+
+
 def controls_retry():
     print("")
     print("a member may ask to be run again — and a denial is an answer, not a failure")
@@ -1775,6 +1803,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_package_sources()
     controls_retry()
     controls_packages()
     controls_docs()
