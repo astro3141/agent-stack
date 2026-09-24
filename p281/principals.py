@@ -176,24 +176,26 @@ def cmd_apply(dry_run=False):
             env_lines.append(f"{env_name(name)}={c['token']}")
             changes.append({"principal": name, "did": "credential minted",
                             "sha12": hashlib.sha256(c["token"].encode()).hexdigest()[:12]})
+    out_file = ""
     if env_lines:
-        path = "/work/docker/principals.env"
-        head = "" if os.path.exists(path) else (
-            "# Credentials of the role principals. Written by principals.py apply, "
-            "never versioned." + chr(10))
-        with open(path, "a", encoding="utf-8", newline=chr(10)) as f:
-            f.write(head + chr(10).join(env_lines) + chr(10))
+        # Written here, inside this container, and not into the tree: the repository is a bind
+        # mount owned by the host user, and a container writing into it fails on Linux with
+        # "Permission denied" (measured on a runner). scripts/up.sh appends this to
+        # docker/principals.env as the host user, and removes it.
+        out_file = "/tmp/principals-new.env"
+        with open(out_file, "w", encoding="utf-8", newline=chr(10)) as f:
+            f.write(chr(10).join(env_lines) + chr(10))
         try:
-            os.chmod(path, 0o600)
+            os.chmod(out_file, 0o600)
         except OSError:
-            # a bind mount from a Windows host refuses the mode (measured: "Operation not
-            # permitted"); the file's protection is that host's, and losing a credential that
-            # Preloop has already issued over a failed chmod is the worse outcome
+            # losing a credential Preloop has already issued over a failed chmod is the worse
+            # outcome; the file's protection is the host's once it is moved
             pass
     print(json.dumps({"ok": True, "declared": len(want), "changes": changes,
-                      "restart_needed": bool(env_lines),
-                      "note": ("new credentials are in docker/principals.env — scripts/up.sh again "
-                               "so the agent reads them") if env_lines else ""}, ensure_ascii=False))
+                      "restart_needed": bool(env_lines), "credentials_at": out_file,
+                      "note": ("new credentials are waiting in the admin container — scripts/up.sh "
+                               "puts them in docker/principals.env") if env_lines else ""},
+                     ensure_ascii=False))
     return 0
 
 

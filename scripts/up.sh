@@ -122,6 +122,16 @@ if [ "$MODE" != "--check" ]; then
   if [ "$users" = "0" ]; then
     echo "== Preloop has no user yet — claiming it"
     preloop_exec api printenv PRELOOP_BOOTSTRAP_TOKEN       | docker exec -i "$STACK-admin" /opt/venv/bin/python /work/p281/bootstrap_preloop.py           --unclaimed --api http://preloop-api:8000       || { echo "  the instance could not be claimed — nothing below will be governed" >&2; exit 1; }
+    # The container wrote the owner's password inside itself, because this tree is a bind mount
+    # owned by the host user and a container cannot write into it on Linux. Moving it here means
+    # the file ends up with the host's ownership and mode, and the password never passes through
+    # a terminal or a log.
+    if docker exec "$STACK-admin" test -f /tmp/preloop-owner.env 2>/dev/null; then
+      docker exec "$STACK-admin" cat /tmp/preloop-owner.env >> "$HERE/docker/preloop-owner.env"
+      chmod 600 "$HERE/docker/preloop-owner.env" 2>/dev/null || true
+      docker exec "$STACK-admin" rm -f /tmp/preloop-owner.env
+      echo "   the console account is in docker/preloop-owner.env"
+    fi
     # A claimed instance still enforces nothing until this stack's policy is on it: the MCP
     # servers, the tools and the approval workflow all come from policy/. Generating reads the
     # provider logins (agent); applying writes to Preloop (admin) — OPERATIONS.md §21.
@@ -156,6 +166,16 @@ if docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
   # measured on the cold start, where the first bring-up ended with the credentials unread.
   case "$out" in
     *'"restart_needed": true'*)
+      # The same reason as the owner's password above: the container minted them and cannot write
+      # into this tree, so the host puts them in place and the agent is restarted to read them.
+      if docker exec "$STACK-admin" test -f /tmp/principals-new.env 2>/dev/null; then
+        [ -f "$HERE/docker/principals.env" ] || \
+          printf '# Credentials of the role principals. Written by scripts/up.sh, never versioned.\n' \
+            > "$HERE/docker/principals.env"
+        docker exec "$STACK-admin" cat /tmp/principals-new.env >> "$HERE/docker/principals.env"
+        chmod 600 "$HERE/docker/principals.env" 2>/dev/null || true
+        docker exec "$STACK-admin" rm -f /tmp/principals-new.env
+      fi
       echo "   new credentials — restarting the agent so it reads them"
       (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --force-recreate agent >/dev/null 2>&1) \
         || echo "  WARN  the agent did not restart; run scripts/up.sh again" >&2;;

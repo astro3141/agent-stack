@@ -48,12 +48,43 @@ def call(api, path, body=None, token=None, method=None):
             return e.code, {"detail": body[:300]}
 
 
+def write_secrets(path, username, email, password):
+    """The password a person needs for the console, written where the caller said.
+
+    The default is a path inside this container, not the repository: the tree is a bind mount
+    owned by the host user, and a container writing into it fails on Linux with "Permission
+    denied" (measured). `scripts/up.sh` takes the file from here and puts it beside the other
+    operator secrets, as the host user, with the host's own permissions.
+    """
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# Preloop's own account, created by scripts/up.sh on a fresh instance.\n")
+        f.write("# The console is the one place a person still signs in (OPERATIONS.md §22).\n")
+        f.write(f"PRELOOP_OWNER_USERNAME={username}\n")
+        f.write(f"PRELOOP_OWNER_EMAIL={email}\n")
+        f.write(f"PRELOOP_OWNER_PASSWORD={password}\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass          # a bind mount from a Windows host refuses the mode; see principals.py
+
+
 def claim(api, username, email, bootstrap_token, secrets_file):
     """Create the first user and return the API key the CLI will use."""
     password = secrets.token_urlsafe(24)
+    # Written before the account exists, not after. The first version wrote it last, and on the
+    # Linux runner the write failed *after* registration had succeeded: an account existed whose
+    # password nobody would ever know. A file for an account that was never created is harmless
+    # and is removed below; the other way round is not recoverable.
+    write_secrets(secrets_file, username, email, password)
     code, r = call(api, "/api/v1/auth/register",
                    {"username": username, "email": email, "password": password,
                     "bootstrap_token": bootstrap_token})
+    if code >= 400:
+        try:
+            os.unlink(secrets_file)
+        except OSError:
+            pass
     if code == 400 and "already" in json.dumps(r).lower():
         return None, {"ok": True, "already": True, "detail": "a user with that name or email exists"}
     if code >= 400:
@@ -70,19 +101,6 @@ def claim(api, username, email, bootstrap_token, secrets_file):
         return None, {"ok": False, "stage": "credential", "status": code,
                       "detail": key.get("detail") or sorted(key)}
 
-    # The password exists so a person can reach the console; it is written where the other
-    # operator-supplied secrets live and is not printed, logged or committed.
-    os.makedirs(os.path.dirname(secrets_file) or ".", exist_ok=True)
-    with open(secrets_file, "w", encoding="utf-8", newline="\n") as f:
-        f.write("# Preloop's own account, created by scripts/up.sh on a fresh instance.\n")
-        f.write("# The console is the one place a person still signs in (OPERATIONS.md §22).\n")
-        f.write(f"PRELOOP_OWNER_USERNAME={username}\n")
-        f.write(f"PRELOOP_OWNER_EMAIL={email}\n")
-        f.write(f"PRELOOP_OWNER_PASSWORD={password}\n")
-    try:
-        os.chmod(secrets_file, 0o600)
-    except OSError:
-        pass          # a bind mount from a Windows host refuses the mode; see principals.py
     return api_key, None
 
 
@@ -127,7 +145,8 @@ def main(argv):
     # shaped like an address and rejects the reserved suffixes (`localhost`, `.local`, `.invalid`
     # were all refused; `.internal` is accepted), so the default is one that resolves nowhere.
     email = opt("--email", os.environ.get("PRELOOP_OWNER_EMAIL", "owner@agent-stack.internal"))
-    secrets_file = opt("--secrets-file", "/work/docker/preloop-owner.env")
+    # inside this container by default; the caller moves it (see write_secrets)
+    secrets_file = opt("--secrets-file", "/tmp/preloop-owner.env")
     bootstrap_token = sys.stdin.read().strip()
     if not bootstrap_token:
         print(json.dumps({"ok": False, "error": "no bootstrap token on stdin — PRELOOP_BOOTSTRAP_TOKEN "
