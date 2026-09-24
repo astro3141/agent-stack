@@ -37,3 +37,8 @@ config/packages.local.lock
 
 # This machine's instance name, ports and paths (scripts/restore.sh writes it)
 config/instance.env
+
+# Which project a package runs against — a repository, a branch, a policy path. Instance
+# configuration, like config/instance.env: the package's own repository holds the rules, and this
+# repository holds neither (docs/packages.md, OPERATIONS §39).
+config/*/projects/

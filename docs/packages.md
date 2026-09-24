@@ -52,8 +52,8 @@ rewriting every commit.
 
 **Instance registration is not package content either.** A file that says *which* project a package
 runs against — `config/<package>/projects/<name>.yaml`, naming a repository and a branch — is this
-instance's configuration, like `config/instance.env`. Git-ignore it here and keep a fixture or an
-example in its place; the package's own repository holds the rules, this one holds neither.
+instance's configuration, like `config/instance.env`. `config/*/projects/` is git-ignored here for
+that reason: the package's own repository holds the rules, this one holds neither.
 
 The fetch happens on the host, so no git credential is ever inside the governed runtime.
 

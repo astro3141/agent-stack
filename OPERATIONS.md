@@ -2400,6 +2400,32 @@ the platform's, the decision is the workflow's.
 
 **Measured**: 425/425 controls, fifteen of them new and pinning exactly the four behaviours above.
 
+## 39. A development workflow, and where the parts of one live
+
+A development workflow — propose, review, adjudicate, integrate — was written as a package and run
+against a real project: reviews from a policy the project itself declares, a plan the run reads at a
+canonical commit, an integration step that asks a code host what it already did. It ran here, and
+what it taught is where each part of such a thing belongs.
+
+**The workflow is not this repository's.** It carries review lenses, a classification hook and a
+policy snapshot — domain content by every line of §37's test — so it lives in its own repository and
+is declared through this instance's overlay (`config/packages.local.yaml`). What the platform gave
+it was already there: a package layout, principals it declares, an egress allowlist the operator
+adds a host to, and `docker/package.env` for a credential of its own.
+
+**Which project it runs against is configuration, not content.** A file naming a repository, its
+canonical branch and where its policy lives says nothing about the platform and everything about
+this machine. `config/*/projects/` is git-ignored for exactly that reason. The first version of this
+did the opposite — the registration was committed here, with the project's repository name, its
+branch layout and a snapshot of its policy — and an audit asking whether this repository could be
+published is what caught it (§37, docs/packages.md).
+
+**What stays here is the record**: that the shape runs on this stack, and that nothing in the
+platform had to change to run it. A workflow that opens a pull request is the platform's clearest
+case of an effect outside itself — and the platform still does not deduplicate it (§38). The package
+declares what a repeat does and asks the host what it already did; that is the workflow's, and it is
+the right place for it.
+
 ## 40. A directory was not a decision, and an identity outlives the decision
 
 Two halves of the same sentence — *installing a package is a decision to trust it* (§27) — were
