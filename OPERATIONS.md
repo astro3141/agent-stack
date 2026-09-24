@@ -1331,7 +1331,24 @@ that would call a finished run a failure; the outcome is in the log, where every
 it from.
 
 **In the panel**: a run that stopped before it finished, and has a checkpoint, offers **재개** next
-to **중지**. Whether an interrupted run is worth continuing is the same kind of judgement as
+to **중지**.
+
+**Taking the whole stack down is the same question one level up.** `scripts/down.sh` used to go
+straight to `compose down`, which pulls the container out from under whatever was running: the step
+in flight is lost, and there is no checkpoint to continue from. It now stops the runs first, the
+way a person would, and only then the containers. Measured, with a run in flight:
+
+```
+== runs in flight: safestop01
+   stopping safestop01 (graceful: it keeps its checkpoint)
+== stopping
+   …
+checkpoints/novel-a-20260924-051144-56e8abc3.json
+after scripts/up.sh:   state finished, resumable True
+```
+
+The wait for the runs to end is bounded (about a minute) and what is still running is reported
+rather than waited on forever. `--now` skips the whole step for when that is what you want. Whether an interrupted run is worth continuing is the same kind of judgement as
 stopping it was, so it is offered in the same place; the run resumes detached, as a start does.
 
 ## 24. Running a set of cases

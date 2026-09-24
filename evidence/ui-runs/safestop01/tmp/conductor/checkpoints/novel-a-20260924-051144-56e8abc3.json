@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "workflow_path": "/work/p281/workflows/novel-a.yaml",
+  "workflow_hash": "sha256:858653d44609d6dd3fae6c072cf06b7ccd76dd9c0274949a33f34ab7161861b3",
+  "created_at": "2026-09-24T05:11:44.512260+00:00",
+  "trigger": "failure",
+  "failure": {
+    "error_type": "ExecutionError",
+    "message": "Workflow stopped by user via dashboard",
+    "agent": "author",
+    "iteration": 4
+  },
+  "inputs": {
+    "profile": "research-default",
+    "max_repairs": "1",
+    "review_mode": "default",
+    "cold_login": ""
+  },
+  "current_agent": "author",
+  "context": {
+    "workflow_inputs": {
+      "profile": "research-default",
+      "max_repairs": "1",
+      "review_mode": "default",
+      "cold_login": ""
+    },
+    "agent_outputs": {
+      "route": {
+        "stdout": "{\"decision\": \"ROUTE\", \"provider\": \"claude\", \"reason\": \"claude: within limits\", \"model_route\": \"direct\", \"login\": \"claude\", \"profile\": \"research-default\", \"evaluated\": \"[{\\\"provider\\\": \\\"claude\\\", \\\"source\\\": \\\"codexbar:oauth\\\", \\\"observed_at\\\": \\\"2026-09-24T05:10:59Z\\\", \\\"identity_basis\\\": \\\"same-credential\\\", \\\"age_s\\\": 1, \\\"session_used\\\": 35, \\\"weekly_used\\\": 21, \\\"eligible\\\": true, \\\"why\\\": \\\"within limits\\\"}, {\\\"provider\\\": \\\"codex\\\", \\\"source\\\": \\\"codexbar:oauth\\\", \\\"observed_at\\\": \\\"2026-09-24T05:08:17Z\\\", \\\"identity_basis\\\": \\\"email\\\", \\\"age_s\\\": 163, \\\"session_used\\\": \\\"not reported\\\", \\\"weekly_used\\\": 53, \\\"eligible\\\": true, \\\"why\\\": \\\"within limits\\\"}, {\\\"provider\\\": \\\"grok\\\", \\\"source\\\": \\\"codexbar:grok-cli-proxy\\\", \\\"observed_at\\\": \\\"2026-09-24T05:10:59Z\\\", \\\"identity_basis\\\": \\\"same-credential\\\", \\\"age_s\\\": 1, \\\"session_used\\\": \\\"not reported\\\", \\\"weekly_used\\\": 5, \\\"eligible\\\": true, \\\"why\\\": \\\"within limits\\\"}]\", \"evidence_dir\": \"/work/evidence/p281/route-daf5430d\"}\n",
+        "stderr": "",
+        "exit_code": 0,
+        "decision": "ROUTE",
+        "provider": "claude",
+        "reason": "claude: within limits",
+        "model_route": "direct",
+        "login": "claude",
+        "profile": "research-default",
+        "evaluated": "[{\"provider\": \"claude\", \"source\": \"codexbar:oauth\", \"observed_at\": \"2026-09-24T05:10:59Z\", \"identity_basis\": \"same-credential\", \"age_s\": 1, \"session_used\": 35, \"weekly_used\": 21, \"eligible\": true, \"why\": \"within limits\"}, {\"provider\": \"codex\", \"source\": \"codexbar:oauth\", \"observed_at\": \"2026-09-24T05:08:17Z\", \"identity_basis\": \"email\", \"age_s\": 163, \"session_used\": \"not reported\", \"weekly_used\": 53, \"eligible\": true, \"why\": \"within limits\"}, {\"provider\": \"grok\", \"source\": \"codexbar:grok-cli-proxy\", \"observed_at\": \"2026-09-24T05:10:59Z\", \"identity_basis\": \"same-credential\", \"age_s\": 1, \"session_used\": \"not reported\", \"weekly_used\": 5, \"eligible\": true, \"why\": \"within limits\"}]",
+        "evidence_dir": "/work/evidence/p281/route-daf5430d"
+      },
+      "roles": {
+        "stdout": "{\"profile\": \"research-default\", \"architect_provider\": \"codex\", \"architect_login\": \"codex\", \"architect_route\": \"direct\", \"architect_principal\": \"novel-author\", \"author_provider\": \"claude\", \"author_login\": \"claude\", \"author_route\": \"direct\", \"author_principal\": \"novel-author\", \"story_provider\": \"codex\", \"story_login\": \"codex\", \"story_route\": \"direct\", \"story_principal\": \"novel-reviewer\", \"history_provider\": \"claude\", \"history_login\": \"claude\", \"history_route\": \"direct\", \"history_principal\": \"novel-reviewer\", \"cold_provider\": \"grok\", \"cold_login\": \"grok\", \"cold_route\": \"direct\", \"cold_principal\": \"novel-reviewer\", \"missing\": \"\", \"ineligible\": \"\", \"ok\": \"yes\"}\n",
+        "stderr": "",
+        "exit_code": 0,
+        "profile": "research-default",
+        "architect_provider": "codex",
+        "architect_login": "codex",
+        "architect_route": "direct",
+        "architect_principal": "novel-author",
+        "author_provider": "claude",
+        "author_login": "claude",
+        "author_route": "direct",
+        "author_principal": "novel-author",
+        "story_provider": "codex",
+        "story_login": "codex",
+        "story_route": "direct",
+        "story_principal": "novel-reviewer",
+        "history_provider": "claude",
+        "history_login": "claude",
+        "history_route": "direct",
+        "history_principal": "novel-reviewer",
+        "cold_provider": "grok",
+        "cold_login": "grok",
+        "cold_route": "direct",
+        "cold_principal": "novel-reviewer",
+        "missing": "",
+        "ineligible": "",
+        "ok": "yes"
+      },
+      "stage": {
+        "stdout": "{\"status\": \"OK\", \"workspace\": \"/ws/daf5430d\", \"staged\": \"entry.md,contract_request.md\"}\n",
+        "stderr": "",
+        "exit_code": 0,
+        "status": "OK",
+        "workspace": "/ws/daf5430d",
+        "staged": "entry.md,contract_request.md"
+      },
+      "architect": {
+        "stdout": "{\"status\": \"COMPLETED\", \"provider\": \"codex\", \"principal\": \"novel-author\", \"model_route\": \"direct\", \"run_id\": \"daf5430d-architect-codex\", \"workspace\": \"/ws/daf5430d\", \"produced_path\": \"/ws/daf5430d/contract.json\", \"produced\": true, \"model_session_reported\": \"gpt-6-astra\", \"model_adapter_reported\": \"gpt-6-astra\", \"model_served\": \"unknown\", \"approvals_requested\": 0, \"mcp_rule_denials\": 0, \"retryable_elsewhere\": false, \"evidence_dir\": \"/work/evidence/p281/daf5430d-architect-codex\", \"profile\": \"research-default\", \"attempts\": 1, \"ledger_error\": \"\", \"measurements\": {\"total_tokens\": 16285, \"wall_ms\": 30031}}\n",
+        "stderr": "",
+        "exit_code": 0,
+        "status": "COMPLETED",
+        "provider": "codex",
+        "principal": "novel-author",
+        "model_route": "direct",
+        "run_id": "daf5430d-architect-codex",
+        "workspace": "/ws/daf5430d",
+        "produced_path": "/ws/daf5430d/contract.json",
+        "produced": true,
+        "model_session_reported": "gpt-6-astra",
+        "model_adapter_reported": "gpt-6-astra",
+        "model_served": "unknown",
+        "approvals_requested": 0,
+        "mcp_rule_denials": 0,
+        "retryable_elsewhere": false,
+        "evidence_dir": "/work/evidence/p281/daf5430d-architect-codex",
+        "profile": "research-default",
+        "attempts": 1,
+        "ledger_error": "",
+        "measurements": {
+          "total_tokens": 16285,
+          "wall_ms": 30031
+        }
+      }
+    },
+    "current_iteration": 4,
+    "execution_history": [
+      "route",
+      "roles",
+      "stage",
+      "architect"
+    ],
+    "user_guidance": []
+  },
+  "limits": {
+    "current_iteration": 4,
+    "max_iterations": 30,
+    "execution_history": [
+      "route",
+      "roles",
+      "stage",
+      "architect"
+    ]
+  },
+  "copilot_session_ids": {},
+  "copilot_session_cwds": {},
+  "system": {
+    "pid": 369,
+    "platform": "linux",
+    "python_version": "3.13.15",
+    "conductor_version": "0.1.37",
+    "cwd": "/work",
+    "started_at": "2026-09-24T05:10:57.741958+00:00",
+    "run_id": "daf5430d",
+    "log_file": "/work/evidence/ui-runs/safestop01/tmp/conductor/conductor-p281-novel-a-20260924-051057-daf5430d.events.jsonl",
+    "bg_mode": false,
+    "dashboard_port": 34833,
+    "dashboard_url": "http://127.0.0.1:34833"
+  },
+  "instructions_preamble": null,
+  "run_id": "daf5430d",
+  "event_log_path": "/work/evidence/ui-runs/safestop01/tmp/conductor/conductor-p281-novel-a-20260924-051057-daf5430d.events.jsonl"
+}

@@ -1309,6 +1309,18 @@ def controls_resume():
     check("the bring-up builds the images whose source is this tree",
           "up -d --build" in up, True)
 
+    # Taking the stack down is the other half of stopping a run: the containers must not be
+    # pulled out from under one (measured — a run in flight, down.sh, and the checkpoint was there).
+    down = open("/work/scripts/down.sh", encoding="utf-8").read()
+    check("a run in flight is stopped before the containers are",
+          down.index("run_workflow.py stop") < down.index('COMPOSE_PROFILES="record,ui" docker compose'),
+          True)
+    check("and stopped the way a person would, so it keeps its checkpoint",
+          "graceful: it keeps its checkpoint" in down, True)
+    check("the wait for it is bounded and reported, not endless",
+          "still running; taking the stack down anyway" in down, True)
+    check("and --now is there for when that is not wanted", "--now) NOW=1" in down, True)
+
 
 def controls_suite():
     print("")
