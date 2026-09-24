@@ -6,8 +6,13 @@
 # `default` is listed explicitly because naming any network replaces a service's implicit one.
 # The PoC networks are created by compose.poc.yaml, so the PoC stack comes up first.
 #
+# Published ports are NOT here. They belong to Preloop's own compose file, which scripts/install.sh
+# makes instance-aware once (the numbers become ${PRELOOP_*_PORT} with Preloop's own as defaults).
+# Publishing them here as well bound each port twice — the two lists merge rather than replace, and
+# the second bind fails (measured on a host running another Preloop). One owner, and it is theirs.
+#
 # The keys below are fixed (compose does not substitute variables in a service's network keys);
-# the network each one resolves to, and the published ports, follow STACK. The defaults are the
+# the network each one resolves to follows STACK. The defaults are the
 # live instance, so a restored copy runs beside it under another name and other ports
 # (scripts/restore.sh) — which is how a restore is verified without touching the instance in use.
 services:
@@ -22,8 +27,6 @@ services:
         aliases: [preloop-api, api]
       poc-toolnet:
         aliases: [api]
-    ports:
-      - "${PRELOOP_API_PORT:-8000}:8000"
   console:
     networks:
       default: {}
@@ -31,8 +34,6 @@ services:
         # both names on the admin side: `preloop-console` is what the guard forwards to, and
         # `console` is what the operator's own toolchain already calls it (OPERATIONS §21)
         aliases: [preloop-console, console]
-    ports:
-      - "${PRELOOP_CONSOLE_PORT:-3000}:80"
   gateway:
     networks:
       default: {}
@@ -40,8 +41,6 @@ services:
         # both names on the admin side: `preloop-gateway` is what the guard forwards to, and
         # `gateway` is what the operator's own toolchain already calls it (OPERATIONS §21)
         aliases: [preloop-gateway, gateway]
-    ports:
-      - "${PRELOOP_GATEWAY_PORT:-8001}:8000"
 
 networks:
   poc-admin:

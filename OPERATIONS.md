@@ -1514,19 +1514,34 @@ installer starts the stack before anything of ours applies. That made a second i
 uninstallable on a machine running a first — which is exactly the situation on a host that already
 runs another Preloop for something else.
 
-`scripts/install.sh` now writes `docker-compose.override.yaml` into the Preloop install directory
-*before* calling their installer. Compose reads that file from the project directory by itself, and
-`!override` replaces the base list instead of adding to it (2.24+), so the installer publishes this
-instance's ports. Measured on the live install directory, base + override + `preloop.cadp.yaml`
-resolve to **one** mapping per service:
+**The first fix was wrong, and an arm64 Mac found it.** `install.sh` wrote a
+`docker-compose.override.yaml` into the Preloop install directory, on the belief that compose reads
+it from the project directory. It does — **only when compose resolves the files itself**. Every call
+here names them with `-f`: their installer's, `up.sh`'s, `down.sh`'s. So the override was never read
+once, and the check that "proved" it passed because the test had passed the file with `-f` and
+because the live instance's ports were the defaults anyway. On a host already running another
+Preloop, the api container simply could not bind 8000.
+
+Two corrections, both measured on the live install directory:
+
+1. **Preloop's own file is made instance-aware, once.** `install.sh` rewrites its three published
+   ports to `${PRELOOP_API_PORT:-8000}` and friends — the same numbers by default, this instance's
+   when `config/instance.env` says otherwise. It keeps a `.before-agent-stack` copy, is idempotent,
+   and runs on every install because their installer re-downloads that file.
+2. **`preloop.cadp.yaml` no longer publishes anything.** It did, and with the base file also
+   publishing, the two lists **merged instead of replacing**: the same port bound twice, and the
+   second bind failed. One owner for a published port, and it is Preloop's own file.
 
 ```
-api      published "8020"        (with PRELOOP_API_PORT=8020)
-gateway  published "8021"
-console  published "3020"
+PRELOOP_API_PORT=8020 …  →  published "8020", "8021", "3020"   (three lines, one per service)
+defaults              →  the live instance comes back on 8000 / 8001 / 3000, all checks passing
 ```
 
-and with the defaults the live instance comes up unchanged — 8000 / 8001 / 3000, all checks passing.
+Their installer still ends by starting Preloop on whatever the file says at that moment, which on a
+busy host cannot bind. That is no longer treated as a failed install: the files are there, the
+ports are this instance's from then on, and `up.sh` starts it. Nothing of the other instance is
+touched either way.
+
 The rule that remains is the one that matters: a second instance gets its own Preloop **directory,
 project and database**. Pointing it at a running instance's Preloop would apply this stack's policy
 and principals to that account.

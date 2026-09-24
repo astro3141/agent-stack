@@ -83,12 +83,13 @@ tree fails on Linux, and the failure once left an account whose password nobody 
 Give it its own `config/instance.env` (name, ports, Preloop project and directory) and it runs
 beside the first — separate containers, volumes and networks.
 
-Set every port, including Preloop's. `install.sh` writes `docker-compose.override.yaml` into the
-Preloop install directory **before** running Preloop's installer, because Preloop's own compose has
-8000 / 8001 / 3000 written into it and its installer starts the stack before anything of ours
-applies. `!override` replaces that list rather than adding to it, so the installer, `up.sh` and
-`down.sh` all use this instance's numbers and a second instance can be installed while a first one
-is running.
+Set every port, including Preloop's. Preloop's own compose has 8000 / 8001 / 3000 written into it,
+so `install.sh` rewrites those three lines to `${PRELOOP_API_PORT:-8000}` and friends — the same
+numbers by default, this instance's when `config/instance.env` says so. (An
+`docker-compose.override.yaml` does *not* work for this: compose reads that file only when it
+resolves the files itself, and every call here names them with `-f`.) Their installer may fail to
+start Preloop on a busy machine; that is not a failed install, and `up.sh` starts it on the right
+ports afterwards.
 
 A minimal second instance, beside a running first:
 

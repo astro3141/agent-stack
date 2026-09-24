@@ -82,33 +82,37 @@ free_gb="$(docker run --rm alpine:3.20 df -P /var 2>/dev/null | awk 'NR==2 {prin
 if [ -n "$free_gb" ] && [ "$free_gb" -ge 20 ]; then need "disk for images" "${free_gb}GB free"
 else need "disk for images" "" "the images come to about 11GB (measured), plus volumes and build cache"; fi
 
-# Preloop's own compose writes 8000 / 8001 / 3000 into the file, and its installer starts the stack
-# before anything of ours applies — so a second instance on this machine could not be installed
-# while the first was running. Compose reads docker-compose.override.yaml from the project
-# directory automatically, and `!override` (2.24+) *replaces* the base list instead of adding to it,
-# so putting this there first makes the installer publish this instance's ports. scripts/up.sh
-# publishes the same numbers, and the two agree.
-write_ports_override() {
-  f="$PRELOOP_DIR/docker-compose.override.yaml"
-  if [ -f "$f" ]; then
-    grep -q 'written by agent-stack' "$f" \
-      || echo "  note  $f is not ours; its ports are whatever it says"
-    return
+# Preloop's compose writes 8000 / 8001 / 3000 into the file, so on a machine already running an
+# instance the ports have to come from somewhere else. A `docker-compose.override.yaml` does NOT
+# do it: compose reads that file only when it resolves the files itself, and every call here —
+# theirs and ours — names them with `-f`. That was measured the wrong way round once and believed;
+# an arm64 host with a Preloop already on 8000 is where it showed (OPERATIONS §25).
+#
+# So the file itself is made instance-aware, once, in place: the three published ports become
+# variables with Preloop's own numbers as the defaults. Idempotent, and it survives their upgrade
+# only until the installer re-downloads the file — which is why it runs on every install.
+patch_preloop_ports() {
+  f="$PRELOOP_DIR/docker-compose.yaml"
+  [ -f "$f" ] || return 0
+  # a stale override of ours would be a second owner of the same ports
+  o="$PRELOOP_DIR/docker-compose.override.yaml"
+  [ -f "$o" ] && grep -q 'written by agent-stack' "$o" && rm -f "$o"
+  if grep -q 'PRELOOP_API_PORT' "$f"; then
+    printf '  ok    %-28s %s\n' "ports are this instance's" "already patched"
+    return 0
   fi
-  mkdir -p "$PRELOOP_DIR" || return
-  cat > "$f" <<EOF
-# The published ports of this instance — written by agent-stack (scripts/install.sh).
-# \`!override\` replaces Preloop's own list rather than adding to it, which is what lets a second
-# instance be installed while a first one is running.
-services:
-  api:
-    ports: !override ["${PRELOOP_API_PORT:-8000}:8000"]
-  gateway:
-    ports: !override ["${PRELOOP_GATEWAY_PORT:-8001}:8000"]
-  console:
-    ports: !override ["${PRELOOP_CONSOLE_PORT:-3000}:80"]
-EOF
-  echo "  ports  api ${PRELOOP_API_PORT:-8000}, gateway ${PRELOOP_GATEWAY_PORT:-8001}, console ${PRELOOP_CONSOLE_PORT:-3000}"
+  cp "$f" "$f.before-agent-stack"
+  sed -i.tmp \
+    -e 's|^\( *- \)"8000:8000"|\1"${PRELOOP_API_PORT:-8000}:8000"|' \
+    -e 's|^\( *- \)"8001:8000"|\1"${PRELOOP_GATEWAY_PORT:-8001}:8000"|' \
+    -e 's|^\( *- \)"3000:80"|\1"${PRELOOP_CONSOLE_PORT:-3000}:80"|' "$f"
+  rm -f "$f.tmp"
+  if grep -q 'PRELOOP_API_PORT' "$f"; then
+    printf '  ok    %-28s %s\n' "ports are this instance's" \
+      "api ${PRELOOP_API_PORT:-8000}, gateway ${PRELOOP_GATEWAY_PORT:-8001}, console ${PRELOOP_CONSOLE_PORT:-3000}"
+  else
+    echo "  note  could not make $f use this instance's ports — it publishes whatever it says" >&2
+  fi
 }
 
 echo "== Preloop OSS"
@@ -116,22 +120,29 @@ if [ -f "$PRELOOP_DIR/docker-compose.yaml" ]; then
   printf '  ok    %-28s %s\n' "installed" "$PRELOOP_DIR"
   [ -f "$PRELOOP_DIR/.env" ] || { printf '  MISS  %-28s %s\n' ".env" "$PRELOOP_DIR/.env is missing"; miss=1; }
   # an install that predates this file gets it too, so its ports stop depending on Preloop's own
-  [ "$CHECK_ONLY" = 1 ] || write_ports_override
+  [ "$CHECK_ONLY" = 1 ] || patch_preloop_ports
 elif [ "$NO_PRELOOP" = 1 ]; then
   printf '  MISS  %-28s %s\n' "installed" "--no-preloop was given but $PRELOOP_DIR has no compose file"; miss=1
 elif [ "$CHECK_ONLY" = 1 ]; then
   printf '  --    %-28s %s\n' "installed" "not there; install.sh would run Preloop's own installer"
 else
   echo "  not there — running Preloop's own installer into $PRELOOP_DIR"
-  write_ports_override            # before it starts anything, or it takes 8000 / 8001 / 3000
   # INSTALL_DIR is theirs and defaults to ~/.preloop-oss: without passing it, --preloop-dir would
   # be honoured by the check above and ignored by the install, which on a machine that already has
   # an instance would write over it. PRELOOP_SKIP_ADMIN because claiming the instance is this
   # stack's own step (OPERATIONS §22) and it must not be done twice; PRELOOP_SKIP_SMTP because
   # this stack sends no mail.
-  INSTALL_DIR="$PRELOOP_DIR" PRELOOP_SKIP_ADMIN=1 PRELOOP_SKIP_SMTP=1     sh -c 'curl -fsSL https://preloop.ai/install/oss | sh'     || { echo "  the Preloop installer failed" >&2; exit 1; }
+  INSTALL_DIR="$PRELOOP_DIR" PRELOOP_SKIP_ADMIN=1 PRELOOP_SKIP_SMTP=1     sh -c 'curl -fsSL https://preloop.ai/install/oss | sh'     || installer_rc=1
   [ -f "$PRELOOP_DIR/docker-compose.yaml" ] || {
     echo "  the installer did not leave a compose file in $PRELOOP_DIR — see README" >&2; exit 1; }
+  # Their installer ends by starting the stack on its own numbers, which on a machine that already
+  # runs a Preloop cannot bind. That is not a failed install: the files are there, and the ports
+  # are this instance's from here on. Nothing of the other instance is touched either way.
+  if [ "${installer_rc:-0}" != 0 ]; then
+    echo "  the installer could not start Preloop itself (its own ports); continuing on this"
+    echo "  instance's ports"
+  fi
+  patch_preloop_ports
 fi
 
 if [ "$miss" = 1 ]; then
