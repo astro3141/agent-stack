@@ -27,7 +27,10 @@ than failing five minutes into a build.
 
 1. checks the host, as above;
 2. runs **Preloop's own installer** into `~/.preloop-oss` when that directory is not there
-   (`--preloop-dir` puts it elsewhere; the directory is also read from `config/instance.env`);
+   (`--preloop-dir` puts it elsewhere; the directory is also read from `config/instance.env`),
+   pinned to the version this stack is measured against — `PRELOOP_VERSION=0.15.0` by default,
+   overridable, because their installer otherwise takes whatever is current and a second machine
+   would quietly be running a different subject;
 3. hands over to `scripts/up.sh`.
 
 ## What `up.sh` does every time

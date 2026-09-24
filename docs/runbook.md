@@ -152,6 +152,35 @@ docker exec cadp278-agent sh -c 'curl -s -o /dev/null -w %{http_code} -X POST \
 # 403 = the guard is in the path.  404 = it is not.
 ```
 
+## The runtime sees only Preloop's own tools
+
+**Look:** `up.sh --check` → `fsmcp tools exposed via Preloop` fails, and:
+
+```bash
+docker exec cadp278-agent python3 /work/p281/mcp_list.py claude
+# → only ask_user, get_approval_status, permission_prompt, request_approval …
+```
+
+**What it means.** Preloop does not expose a tool server's tools until it has **scanned** it. A scan
+that ran before that server was listening registers the server with nothing on it, and `cfg.py
+apply` then records the policy as applied — so no later bring-up puts it right. Seen on a fresh
+install on another machine, where the account had the policy and the runtime had four tools.
+
+Note what this is *not*: it is not about principals. `mcp_list.py claude` uses the **runtime's own**
+MCP credential from `~/.claude.json`; there is no principal called `claude` on any of these
+instances, and the check passes on the ones where the scan landed.
+
+**Do:**
+
+```bash
+docker exec cadp278-admin /opt/venv/bin/python /work/p281/cfg.py rescan
+# {"ok": true, "policy": "policy/b-fsmcp.yaml", "scanned": ["…-toolsvc", "…-fsmcp"]}
+```
+
+`scripts/up.sh` now does this by itself: if the runtime cannot see the tools, it scans again before
+the checks. If `rescan` reports `not_registered`, the policy never reached the account — run
+`cfg.py apply` on the admin side first.
+
 ## Something is waiting for an approval
 
 **Look:** the panel's 승인 대기 card, or:

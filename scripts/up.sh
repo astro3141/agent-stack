@@ -193,6 +193,19 @@ if docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
   esac
 fi
 
+# Preloop exposes a tool server's tools only after it has scanned it, and a scan that ran before
+# that server was listening leaves a server registered with nothing on it — which `cfg.py apply`
+# then records as applied, so no later bring-up puts it right. Measured on a fresh install
+# elsewhere: the runtime saw Preloop's own four tools and none of the file tools. The truth is what
+# the runtime can see, so that is what is asked, and a scan is the way out.
+if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
+  if ! docker exec "$STACK-agent" sh -c 'python3 /work/p281/mcp_list.py claude 2>/dev/null'        | grep -q write_file; then
+    echo "== the tool servers are registered but not exposed — scanning them again"
+    docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py rescan | sed 's/^/   /' || true
+    sleep 3
+  fi
+fi
+
 # The guard's rules are a bind-mounted file, and compose does not restart a container because a
 # file under it changed — a rule edited without this reload is a rule that is not enforced.
 if docker ps --format '{{.Names}}' | grep -qx "$STACK-apiguard"; then

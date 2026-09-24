@@ -1581,3 +1581,43 @@ x86_64 — Node and CodexBar — pick their build from `TARGETARCH` (both publis
 `musl-aarch64`), and `install.sh` reports an arm64 host as *parameterized and never built here*
 rather than refusing it. The amd64 image was rebuilt and all checks passed after the change; the
 arm64 one has not been built. Still not run anywhere: macOS, and any arm64 host.
+
+## 26. A tool server Preloop has registered and not scanned
+
+On the arm64 machine's clean install, everything came up and the runtime could see **four** tools —
+Preloop's own — and none of the file tools it is supposed to reach through it. The account had the
+policy (`already applied`), the tool server was up and listening, and every later bring-up agreed
+that nothing needed doing.
+
+**The cause is one line of Preloop's behaviour plus one of ours.** Preloop does not expose a tool
+server's tools until it has **scanned** it; `cfg.py apply` scans as its second stage and then
+records `scan: done`. A scan that runs before that server is listening registers a server with
+nothing on it — and the record says the work is finished, so nothing scans again. On a machine that
+has run before, everything is warm and this never happens.
+
+**What it is not.** The first diagnosis was that the probe assumes a principal named `claude` which
+that instance did not declare. `p281/mcp_list.py claude` takes the **runtime's own** MCP credential
+out of `~/.claude.json`; the argument is which agent's config to read, not a principal. No instance
+here has a principal called `claude`, and the check passes on the ones where the scan landed —
+verified by asking this instance for both: its principals are `novel-author` and `novel-reviewer`,
+and the runtime sees twenty tools including `write_file`.
+
+**The way out, and who takes it.** `cfg.py rescan` scans every server the active policy names,
+whatever the recorded state says. `scripts/up.sh` asks the question the way the check does — *can
+the runtime see the tools* — and rescans before the checks when it cannot:
+
+```
+== the tool servers are registered but not exposed — scanning them again
+   {"ok": true, "policy": "policy/b-fsmcp.yaml", "scanned": ["…-toolsvc", "…-fsmcp"]}
+```
+
+Asking Preloop instead would not have worked: `GET /mcp-servers/{id}/tools` answers **0 tools** for
+both servers on this instance, where the runtime sees twenty. What the runtime can see is the only
+answer that means anything.
+
+**And a difference that made the machines incomparable.** That install took Preloop **0.16.0**,
+because their installer takes whatever is current. Everything measured here — the governance
+endpoints, the scan, what a credential resolves to — was measured against **0.15.0**.
+`scripts/install.sh` now pins `PRELOOP_VERSION=0.15.0` by default and says so on the line where it
+installs; an operator who wants a newer one passes it deliberately and knows they are ahead of the
+measurements.

@@ -1173,6 +1173,19 @@ def controls_docs():
     check("including the two that are accountability rather than action",
           "who holds the backup key" in rb and "allowed to answer an approval" in rb, True)
 
+    # A tool server that Preloop has registered but not scanned exposes nothing, and the state
+    # said "applied" — so the way out has to exist and the bring-up has to take it.
+    up_sh = open("/work/scripts/up.sh", encoding="utf-8").read()
+    cfg = open("/work/p281/cfg.py", encoding="utf-8").read()
+    check("there is a way to scan the tool servers again", "def cmd_rescan(" in cfg, True)
+    check("and the bring-up takes it when the runtime cannot see the tools",
+          "mcp_list.py claude" in up_sh and "cfg.py rescan" in up_sh, True)
+    check("the runbook says what that symptom is, and what it is not",
+          "there is no principal called `claude`" in rb, True)
+    check("the Preloop version is pinned to the measured one",
+          'PRELOOP_VERSION="${PRELOOP_VERSION:-0.15.0}"'
+          in open("/work/scripts/install.sh", encoding="utf-8").read(), True)
+
     # The standing rules are stated where an operator will read them
     for rule in ("preloop agents onboard", "~/.claude", "0600", "in the panel, as a person"):
         check(f"the runbook states the rule about {rule}", rule in rb, True)

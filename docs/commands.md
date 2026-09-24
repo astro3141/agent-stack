@@ -51,6 +51,7 @@ docker exec cadp278-admin /opt/venv/bin/python /work/p281/<script>.py …    # w
 | `approvals.py` / `approvals.py decide <id> approve\|decline [comment]` | panel container; the agent may read but not decide |
 | `cfg.py status` / `generate` | agent — reads the provider logins |
 | `cfg.py apply` | **admin** — writes the policy to Preloop |
+| `cfg.py rescan` | **admin** — scan the policy's MCP servers again, when their tools are not exposed |
 | `bootstrap_preloop.py --unclaimed …` | **admin** — claim a fresh instance (`up.sh` calls it) |
 
 ## State and health

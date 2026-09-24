@@ -303,6 +303,39 @@ def cmd_apply(dry_run=False):
 
 
 # ---------------------------------------------------------------------------- status
+def cmd_rescan():
+    """Scan every MCP server the active policy names, whatever the recorded state says.
+
+    Preloop does not expose a server's tools until it has scanned it, and a scan that ran before
+    that server was listening registers a server with nothing on it. `apply` then records the
+    policy as applied and never scans again, so the runtime sees only Preloop's own tools and no
+    later bring-up puts it right. This is the way out, and `scripts/up.sh` calls it when the
+    runtime cannot see the tools it should.
+    """
+    st = load_state()
+    env = load_yaml(CFG / "environment.yaml")
+    pol = (st.get("preloop_active") or {}).get("policy")
+    if not pol:
+        print(json.dumps({"ok": False, "error": "no policy is recorded as active — run cfg.py apply"}))
+        return 1
+    token = preloop_token()
+    servers = {s["name"]: s["id"] for s in preloop_call(env, "GET", "/api/v1/mcp-servers", token)}
+    done, missing = [], []
+    for srv in (load_yaml(ROOT / pol).get("mcp_servers") or []):
+        name = srv.get("name")
+        if name in servers:
+            preloop_call(env, "POST", f"/api/v1/mcp-servers/{servers[name]}/scan", token)
+            done.append(name)
+        else:
+            missing.append(name)
+    if done:
+        st.setdefault("preloop_active", {}).update({"scan": "done", "scanned_at": now()})
+        save_state(st)
+    print(json.dumps({"ok": not missing, "policy": pol, "scanned": done,
+                      "not_registered": missing}, ensure_ascii=False))
+    return 0 if not missing else 1
+
+
 def cmd_status():
     """Per target: saved (source present and valid), applied, apply_failed, changed_since_apply.
 
@@ -352,4 +385,5 @@ if __name__ == "__main__":
     sys.exit({"validate": lambda: 0 if cmd_validate()["ok"] else 1,
               "generate": cmd_generate,
               "apply": lambda: cmd_apply("--dry-run" in sys.argv),
+              "rescan": cmd_rescan,
               "status": cmd_status}[cmd]())

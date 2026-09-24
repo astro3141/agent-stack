@@ -6,6 +6,7 @@
 #   --check         say what is missing and change nothing
 #   --preloop-dir   where Preloop OSS lives (default ~/.preloop-oss)
 #   --no-preloop    assume Preloop is already installed there
+#   PRELOOP_VERSION which Preloop OSS to install (default 0.15.0, the measured one)
 #
 # What it does, in order:
 #   1. checks the host has what this stack needs, with versions, and stops on the first thing
@@ -33,6 +34,7 @@ if [ -f "$HERE/config/instance.env" ]; then
   done < "$HERE/config/instance.env"
 fi
 PRELOOP_DIR="${PRELOOP_DIR:-$HOME/.preloop-oss}"
+PRELOOP_VERSION="${PRELOOP_VERSION:-0.15.0}"      # what this stack has been measured against
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) CHECK_ONLY=1;;
@@ -132,7 +134,15 @@ else
   # an instance would write over it. PRELOOP_SKIP_ADMIN because claiming the instance is this
   # stack's own step (OPERATIONS §22) and it must not be done twice; PRELOOP_SKIP_SMTP because
   # this stack sends no mail.
-  INSTALL_DIR="$PRELOOP_DIR" PRELOOP_SKIP_ADMIN=1 PRELOOP_SKIP_SMTP=1     sh -c 'curl -fsSL https://preloop.ai/install/oss | sh'     || installer_rc=1
+  # Their installer takes whatever is current unless told otherwise. Everything this stack measures
+  # — the governance endpoints, the MCP scan, what a credential resolves to — was measured against
+  # 0.15.0, and a second machine that quietly got 0.16.0 is a different subject. Pin by default,
+  # override deliberately: PRELOOP_VERSION=0.16.0 scripts/install.sh
+  echo "  version $PRELOOP_VERSION (PRELOOP_VERSION overrides; this stack is measured against 0.15.0)"
+  INSTALL_DIR="$PRELOOP_DIR" PRELOOP_VERSION="$PRELOOP_VERSION" \
+    PRELOOP_SKIP_ADMIN=1 PRELOOP_SKIP_SMTP=1 \
+    sh -c 'curl -fsSL https://preloop.ai/install/oss | sh' \
+    || installer_rc=1
   [ -f "$PRELOOP_DIR/docker-compose.yaml" ] || {
     echo "  the installer did not leave a compose file in $PRELOOP_DIR — see README" >&2; exit 1; }
   # Their installer ends by starting the stack on its own numbers, which on a machine that already
