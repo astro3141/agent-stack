@@ -15,4 +15,20 @@ def call(m, p, i, sid=None):
     return r.headers.get("mcp-session-id"), json.loads(b.split("data: ", 1)[1] if "data: " in b else b)
 sid, _ = call("initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "p281", "version": "0"}}, 1)
 _, d = call("tools/list", {}, 2, sid)
-print(who, sorted(t["name"] for t in d["result"]["tools"]))
+names = sorted(t["name"] for t in d["result"]["tools"])
+
+# `--probe` calls one harmless tool instead of listing. Listing is not proof: a tool server that
+# was deleted and recreated keeps its tools in the listing while every call answers "MCP server
+# <old id> not found", because Preloop resolves tool -> server from a cache in its api process
+# (measured; OPERATIONS §28). A read with no side effect is enough to tell the two apart.
+if "--probe" in sys.argv:
+    if "list_allowed_directories" not in names:
+        print("PROBE FAIL: the file tools are not even listed"); raise SystemExit(1)
+    _, r = call("tools/call", {"name": "list_allowed_directories", "arguments": {}}, 3, sid)
+    text = json.dumps(r, ensure_ascii=False)
+    if "not found" in text or "error" in (r or {}):
+        print("PROBE FAIL: " + text[:200]); raise SystemExit(1)
+    print("PROBE OK")
+    raise SystemExit(0)
+
+print(who, names)

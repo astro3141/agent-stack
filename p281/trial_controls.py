@@ -1272,6 +1272,17 @@ def controls_docs():
     # said "applied" — so the way out has to exist and the bring-up has to take it.
     up_sh = open("/work/scripts/up.sh", encoding="utf-8").read()
     cfg = open("/work/p281/cfg.py", encoding="utf-8").read()
+    # Listing is not proof: a recreated server keeps its listing while every call fails.
+    ml = open("/work/p281/mcp_list.py", encoding="utf-8").read()
+    check("a tool can be probed by calling it, not by listing it",
+          "--probe" in ml and '"tools/call"' in ml, True)
+    check("the probe calls something with no side effect",
+          "list_allowed_directories" in ml and "write_file" not in ml.split("--probe")[1], True)
+    check("the bring-up checks the call",
+          'check "fsmcp tools work through Preloop"' in up_sh, True)
+    check("and clears the api's cache only when the call is what failed",
+          "restarting Preloop's api" in up_sh
+          and up_sh.index("cfg.py rescan") < up_sh.index("restarting Preloop's api"), True)
     check("there is a way to scan the tool servers again", "def cmd_rescan(" in cfg, True)
     # A recorded success is not evidence about someone else's system. Reproduced by deleting both
     # MCP servers while the state still said `scan: done`: the runtime fell to four native tools,

@@ -199,7 +199,8 @@ fi
 # elsewhere: the runtime saw Preloop's own four tools and none of the file tools. The truth is what
 # the runtime can see, so that is what is asked, and a scan is the way out.
 if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
-  if ! docker exec "$STACK-agent" sh -c 'python3 /work/p281/mcp_list.py claude 2>/dev/null'        | grep -q write_file; then
+  probe() { docker exec "$STACK-agent" sh -c 'python3 /work/p281/mcp_list.py claude --probe 2>/dev/null' | grep -q "PROBE OK"; }
+  if ! probe; then
     echo "== the runtime cannot see the tool servers — applying the policy again, then scanning"
     # Apply first, and only then scan. A rescan alone fixes the case where the servers exist with
     # nothing on them; it cannot fix the one where the account has no servers at all, which is what
@@ -208,6 +209,14 @@ if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STAC
     docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/   /' || true
     docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py rescan | sed 's/^/   /' || true
     sleep 3
+    # A server that was recreated has a new id, and Preloop's api keeps the old one in its own
+    # cache: the listing stays right and every call fails. Restarting that one container is what
+    # clears it (measured), and it is only done when a call has actually failed.
+    if ! probe; then
+      echo "   the tools are listed but a call does not reach them — restarting Preloop's api"
+      docker restart "$PRELOOP_PROJECT-api-1" >/dev/null 2>&1 || true
+      for _ in $(seq 1 30); do probe && break; sleep 3; done
+    fi
   fi
 fi
 
@@ -237,7 +246,10 @@ case ",$COMPOSE_PROFILES," in *,ui,*)
   *) printf '  --    %-44s %s
 ' "ops API / hub UI" "not in the $COMPOSITION composition";; esac
 check "provider host via proxy (TLS up)" yes "$(in_agent 'c=$(curl -s -o /dev/null -w %{http_code} --max-time 10 -x http://egress:8888 https://api.anthropic.com); [ "$c" != 000 ] && echo yes || echo no')"
-check "fsmcp tools exposed via Preloop"  yes "$(in_agent 'python3 /work/p281/mcp_list.py claude | grep -q write_file && echo yes || echo no')"
+# Not "are the tools listed" but "does a call reach the server": a tool server deleted and
+# recreated keeps its listing while every call answers "MCP server <old id> not found"
+# (OPERATIONS §28). The probe calls a read-only tool.
+check "fsmcp tools work through Preloop"  yes "$(in_agent 'python3 /work/p281/mcp_list.py claude --probe | grep -q "PROBE OK" && echo yes || echo no')"
 # The approval boundary is a route, so it is checked from the position it constrains: the agent
 # may read what is waiting and may not answer it (OPERATIONS.md §20).
 check "runtime may read approvals"       200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat /home/agent/.preloop/agents/*/permission_hook.json | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" "http://api:8000/api/v1/approval-requests?status=pending&limit=1"')"

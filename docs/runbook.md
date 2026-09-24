@@ -152,6 +152,30 @@ docker exec cadp278-agent sh -c 'curl -s -o /dev/null -w %{http_code} -X POST \
 # 403 = the guard is in the path.  404 = it is not.
 ```
 
+## The tools are listed but every call fails
+
+**Look:** a run's steps fail with nothing written, and the evidence shows
+
+```
+preloop__write_file … → Error: MCP server <some id> not found
+```
+
+while `mcp_list.py claude` still prints twenty tools.
+
+**What it means.** That tool server was replaced and has a new id; Preloop resolves a tool to its
+server from a cache in its api process, and the cache still holds the old one. Listing keeps
+working, calling does not. Applying the policy and rescanning do **not** clear it.
+
+**Do:**
+
+```bash
+docker exec cadp278-agent python3 /work/p281/mcp_list.py claude --probe   # PROBE OK / PROBE FAIL
+docker restart preloop-oss-api-1                                          # what actually clears it
+```
+
+`scripts/up.sh` probes on every bring-up and does this by itself, in that order — apply, scan, and
+only if a call still fails, restart Preloop's api (OPERATIONS §28).
+
 ## The runtime sees only Preloop's own tools
 
 **Look:** `up.sh --check` → `fsmcp tools exposed via Preloop` fails, and:

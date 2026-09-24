@@ -1748,3 +1748,53 @@ Two things the move exposed:
 steps address themselves by absolute path (`/work/packages/<name>/steps/…`) rather than a variable.
 None of those stop a workflow from being installed and run; all three are worth doing when a second
 package asks for them.
+
+## 28. A tool that is listed and cannot be called
+
+The ported trading package was run in pilot mode as its first end-to-end proof. It reached its
+terminal step, and four of its five lanes produced nothing:
+
+```
+E: FAILED at E1     G: FAILED at G1     F: FAILED at F1     H: FAILED at H1
+report: B VALID, E/G/F/H MISSING — "planned but produced nothing"
+```
+
+The evidence said why, and it was not the package:
+
+```
+preloop__write_file {"path": "/ws/af95bad4/lane_E.json", …}
+  → Error: MCP server c3148d0b-4548-44a6-b817-f5c0ccfad473 not found
+```
+
+That id is the tool server **as it was before §26's reproduction**, where both MCP servers were
+deleted and the policy recreated them — with new ids. Preloop resolves a tool to its server from a
+cache in its api process, and that cache still held the old id. Everything that *lists* kept
+working: `tools/list` returned twenty tools, `mcp_list.py` printed them, and `up.sh` reported
+`fsmcp tools exposed via Preloop  yes`. Every *call* failed.
+
+Neither `cfg.py apply --force` nor `cfg.py rescan` cleared it. **Restarting `preloop-api` did**,
+immediately and completely.
+
+Two changes, because one of them is the lesson:
+
+1. **The check now calls a tool instead of listing one.** `mcp_list.py claude --probe` calls
+   `list_allowed_directories` — a read with no side effect — and the bring-up asks *"do the tools
+   work through Preloop"*, not *"are they listed"*. A check that passes while nothing works is
+   worse than no check.
+2. **The heal escalates only on that evidence.** If the probe fails, the policy is applied and the
+   servers scanned; if the probe still fails, and only then, Preloop's api container is restarted
+   and the probe repeated.
+
+With the call path working, the same package ran again and finished as a workflow should:
+
+```
+tport02  trading-port  done_cycle     7 model calls {claude 3, codex 3, grok 1}
+         8 permission asks, all decided by rules, none refused, 295k tokens
+  lane_B  3 targets  gross 0.150  0 calls      lane_E  3 targets  gross 0.120  1 call
+  lane_G  5 targets  gross 0.200  1 call       lane_H  3 targets  gross 0.110  2 calls
+  lane_F  0 targets — INVALID, "no targets"    (3 calls: analyst → risk → PM)
+```
+
+Lane F came back invalid, and that is the boundary doing its job: the desk lane produced no
+targets, the stack validated every lane identically and reported it. Whether an empty desk is a
+reasonable answer is the workflow's question, not this stack's.
