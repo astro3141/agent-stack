@@ -21,7 +21,7 @@ import settings
 RT = settings.runtime()
 RUN = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 WS = f"{RT['paths']['workspace_root']}/{RUN}"
-FIXTURES = "/work/p281/fixtures/novel"
+FIXTURES = "/work/packages/novel/fixtures"
 
 
 def out(**kw):

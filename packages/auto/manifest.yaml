@@ -1,0 +1,10 @@
+name: auto
+version: 0.1.0
+description: A file task through the routing layer — the smallest end-to-end shape
+workflows:
+  # `auto` lets the router choose the provider; `route` is the same shape with the provider named
+  # by input, which is how the routing layer was first measured. They share the two steps.
+  auto: auto.yaml
+  route: route.yaml
+requires:
+  capabilities: [tool_rights, egress, record, admission]

@@ -131,7 +131,8 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/config/status":
             return self._send(200, jexec([PY, "/work/p281/cfg.py", "status"]))
         if p == "/api/workflows":
-            return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "workflows"]))
+            # with what each one says about itself, so the screen offers what exists
+            return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "workflows", "--detail"]))
         if p == "/api/profiles":
             rc, out, _ = dexec(["sh", "-c", "ls /work/config/generated/profiles/"])
             names = [x[:-5] for x in out.split() if x.endswith(".json")]

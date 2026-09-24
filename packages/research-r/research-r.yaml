@@ -45,7 +45,7 @@ agents:
     type: script
     description: Reference fixture into the agents' workspace
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/r_stage.py", "in"]
+    args: ["/work/packages/research-r/steps/r_stage.py", "in"]
     routes:
       - to: propose
 
@@ -55,7 +55,7 @@ agents:
     description: Routed model step — propose a candidate as term lists
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/agent_task.py", "{{ route.output.provider }}", "{{ route.output.model_route }}",
-           "propose", "/work/p281/prompts/r-propose.md", "proposal.json",
+           "propose", "/work/packages/research-r/prompts/r-propose.md", "proposal.json",
            "{{ route.output.profile }}", "{{ route.output.login }}"]
     timeout: 700
     output: &agent_out
@@ -124,7 +124,7 @@ agents:
     type: script
     description: Candidate and both verifications into the agents' workspace, for the reviewer
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/r_stage.py", "review"]
+    args: ["/work/packages/research-r/steps/r_stage.py", "review"]
     routes:
       - to: review
 
@@ -134,7 +134,7 @@ agents:
     description: Routed model step — review opinion, not evidence
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/agent_task.py", "{{ route.output.provider }}", "{{ route.output.model_route }}",
-           "review", "/work/p281/prompts/r-review.md", "review.json",
+           "review", "/work/packages/research-r/prompts/r-review.md", "review.json",
            "{{ route.output.profile }}", "{{ route.output.login }}"]
     timeout: 700
     output: *agent_out
@@ -145,7 +145,7 @@ agents:
     type: script
     description: review.json into the run directory; input-verify re-hashes and binds it
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/r_stage.py", "back"]
+    args: ["/work/packages/research-r/steps/r_stage.py", "back"]
     routes:
       - to: input_verify
 

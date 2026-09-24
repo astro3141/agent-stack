@@ -116,8 +116,11 @@ from the loader (`p281/packages.py`), and `principals.py apply` creates the iden
 with the rights it declares. Nothing in the platform is edited, which is the point — a workflow
 that cannot be given to someone is not a workflow, it is a modification.
 
-The five built-in workflows (`novel-a`, `trading-b`, …) predate this and still live in `p281/`;
-they are capability trials, not the shape to copy. `packages/hello-lane` is the shape to copy.
+**Every** workflow is a package, including the ones this stack was written with: `packages/auto`,
+`packages/research-r`, `packages/novel`, `packages/trading` (which carries three, because they
+share a deterministic step), and `packages/hello-lane` as the smallest example. `p281/steps/` holds
+only what any workflow may call — route, roles, agent_task, tasks, task_chain, fanout, record — and
+that list is the platform's surface.
 
 ## Compositions
 

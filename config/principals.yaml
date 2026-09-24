@@ -1,7 +1,7 @@
 # The identities a workflow's steps run as, and what each one may do.
 #
 # Why this file exists: a workflow names its principals (`story=codex:novel-reviewer` in
-# p281/workflows/novel-a.yaml), but until now nothing in this tree said what those principals
+# packages/novel/novel-a.yaml), but until now nothing in this tree said what those principals
 # *were*. They lived only in Preloop's database, put there by hand — so a fresh machine had
 # workflows referring to identities that did not exist, and the rights a review is supposed to run
 # under were something somebody did once rather than something the stack declares.

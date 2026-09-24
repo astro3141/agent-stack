@@ -1,0 +1,8 @@
+name: research-r
+version: 0.1.0
+description: Phase R (#280) with routed model steps; deterministic verification and Gate unchanged
+entry: research-r.yaml
+requires:
+  capabilities: [tool_rights, egress, record, admission]
+  # the deterministic research artefacts live outside this stack, mounted at /research
+  host_paths: [/research]

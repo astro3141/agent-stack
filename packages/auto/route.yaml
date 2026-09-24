@@ -31,7 +31,7 @@ agents:
     type: script
     description: Run the task through the routing/execution layer (acpx + Preloop)
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/execute.py", "{{ workflow.input.provider }}",
+    args: ["/work/packages/auto/steps/execute.py", "{{ workflow.input.provider }}",
            "{{ workflow.input.file_name }}", "{{ workflow.input.content }}"]
     timeout: 600
     output:
@@ -61,7 +61,7 @@ agents:
     type: script
     description: Deterministic outcome check — the file, not the agent's account of it
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/check.py", "{{ execute.output.target_path }}",
+    args: ["/work/packages/auto/steps/check.py", "{{ execute.output.target_path }}",
            "{{ workflow.input.content }}", "{{ execute.output.status }}"]
     output:
       decision: {type: string}

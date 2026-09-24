@@ -1856,3 +1856,58 @@ stands between a signed-in codex and a usable one.
 The panel gap is narrower but real: the observer's login still exists only as a command
 (`docker exec -it $STACK-quota codex login`). It is no longer on the path of a first install, which
 is what made it worth fixing rather than only writing down.
+
+## 30. Every workflow is a package, including the ones this stack was built with
+
+The panel's 워크플로 실행 tab offered two workflows out of seven, and no package at all. The reason
+was the same one §27 found in the runner and the ops API, one place further out: the screen kept
+its **own** list — `<option>` elements written by hand, and an `INPUTS` map beside them.
+
+So the screen asks now. `run_workflow.py workflows --detail` reads each workflow file and returns
+what it says about itself — its description and the inputs it declares, minus `profile`, which the
+panel chooses once for any of them — and the tab builds the select and the input fields from that.
+A workflow that exists is offered; one that does not, is not.
+
+Then the deeper half of the same question: **why were five workflows still built in?** They were
+the ones this stack was written with, and they sat in `p281/` where a package's contents may not
+reach. They are now packages too:
+
+```
+packages/auto/        auto, route        steps/check.py, steps/execute.py
+packages/research-r/  research-r         steps/r_stage.py, prompts/r-*.md
+packages/novel/       novel-a            steps/novel_stage.py, prompts/novel-*.md, fixtures/
+packages/trading/     trading-b,         steps/trade_stage.py, steps/arch_port.py,
+                      trading-shapes,    steps/packet_bridge.py, steps/vendor/,
+                      trading-port       prompts/{trade,shape,port}-*.md, fixtures/
+packages/hello-lane/  hello-lane         the example
+```
+
+`BUILT_IN` is now empty, and `p281/steps/` holds only what every workflow may call: `route.py`,
+`roles.py`, `agent_task.py`, `tasks.py`, `task_chain.py`, `fanout.py`, `record.py`. That list is
+the platform's surface, and it is now visible as one.
+
+**A package may carry more than one workflow**, which the trading ones forced rather than suggested:
+`trading-b`, `trading-shapes` and `trading-port` share one deterministic step (`trade_stage.py`).
+Three packages would have meant three copies of it or a dependency between packages — the very
+thing §27 recorded as the port's one unresolved edge. One package with three workflows resolves it,
+and the manifest says so (`workflows: {name: file}`).
+
+**Measured after the move**, on this machine:
+
+```
+packages.py            auto(auto, route) · hello-lane · novel(novel-a) · research-r · trading(3)
+workflows --detail     seven, each with the inputs its own file declares
+panel /api/workflows   the same seven, and the tab now offers them
+auto        pkgauto01    route → execute → check → record → done_pass    1 call, recorded
+trading-b   pkgtrade01   route → roles → packet → baseline → lanes → evaluate → …  2 calls, 3 evidence items
+controls    361/361 · the trading package's own 18/18 · up.sh --check all passed
+```
+
+**Two things the move exposed**, both now fixed:
+
+1. The controls scanned `p281/steps/` for *"every step says what a repeat of it does"*. Moved into
+   packages, the ported trading steps turned out never to have declared it — the convention had
+   been enforced by a glob rather than by the rule. The scan now covers every package's steps, and
+   `arch_port.py` and `packet_bridge.py` declare what a repeat of them does.
+2. The trading package's own controls still called `trade_stage.py` at the platform's address. It
+   is the package's own step now, and they call it there.

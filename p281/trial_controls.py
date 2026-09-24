@@ -74,7 +74,7 @@ def triage_case(label, *, receipt_draft="d02", produced=True, story=None, histor
     root = tempfile.mkdtemp(prefix="p281-triage-")
     ws = os.path.join(root, "run")
     os.makedirs(ws)
-    ns = load("/work/p281/steps/novel_stage.py", "novel_stage_ctl", ws)
+    ns = load("/work/packages/novel/steps/novel_stage.py", "novel_stage_ctl", ws)
 
     open(f"{ws}/draft.md", "w").write("first draft\n")
     ns.cmd_freeze()                                       # d01
@@ -137,7 +137,7 @@ def controls_lanes():
     root = tempfile.mkdtemp(prefix="p281-lanes-")
     ws = os.path.join(root, "run")
     os.makedirs(ws)
-    ts = load("/work/p281/steps/trade_stage.py", "trade_stage_ctl", ws)
+    ts = load("/work/packages/trading/steps/trade_stage.py", "trade_stage_ctl", ws)
     _, packet, body, _ = ts.build_packet()
     open(f"{ws}/packet.json", "w", encoding="utf-8").write(body)
     syms = [s["symbol"] for s in packet["universe"]][:3]
@@ -215,7 +215,7 @@ def controls_roles():
 # ---------------------------------------------------------------- record + screen
 def controls_record_and_screen():
     print("record / screen — a blocked run is recorded as one, and every record reaches the screen")
-    y = open("/work/p281/workflows/novel-a.yaml", encoding="utf-8").read()
+    y = open("/work/packages/novel/novel-a.yaml", encoding="utf-8").read()
     block = y.split("- name: record_block", 1)[1].split("- name: record_hold", 1)[0]
     check("record_block sends an execute record", "'execute'" in block, True)
     check("record_block sends the triage reason", "triage.output.reason" in block, True)
@@ -296,15 +296,15 @@ def controls_reviews_step():
     print("reviews step — the real step, the real fanout, no model call")
     ok = json.dumps({"reviewer": "x", "usable": True, "verdict": "PASS",
                      "findings": [{"kind": "NONE", "severity": "MINOR", "what": "fine"}]})
-    specs = ["story:claude:claude:direct:/work/p281/prompts/novel-review-story.md:review_story.json",
-             "history:codex:codex:direct:/work/p281/prompts/novel-review-history.md:review_history.json",
-             "cold:grok:grok:direct:/work/p281/prompts/novel-cold.md:review_cold.json"]
+    specs = ["story:claude:claude:direct:/work/packages/novel/prompts/novel-review-story.md:review_story.json",
+             "history:codex:codex:direct:/work/packages/novel/prompts/novel-review-history.md:review_history.json",
+             "cold:grok:grok:direct:/work/packages/novel/prompts/novel-cold.md:review_cold.json"]
 
     for label, fail, want_triage in (("every reviewer produced", "", "PASS"),
                                      ("a required reviewer failed", "history", "BLOCK")):
         root = tempfile.mkdtemp(prefix="p281-step-")
         ws = real_ws()
-        ns = load("/work/p281/steps/novel_stage.py", f"ns_{fail or 'all'}", ws)
+        ns = load("/work/packages/novel/steps/novel_stage.py", f"ns_{fail or 'all'}", ws)
         open(f"{ws}/draft.md", "w").write("a draft\n")
         ns.cmd_freeze()
         meta = json.load(open(f"{ws}/draft_meta.json"))
@@ -344,15 +344,15 @@ def controls_lanes_step():
     print("lanes step — the real step, the real fanout, no model call")
     root = tempfile.mkdtemp(prefix="p281-lanestep-")
     ws = real_ws()
-    ts = load("/work/p281/steps/trade_stage.py", "ts_step", ws)
+    ts = load("/work/packages/trading/steps/trade_stage.py", "ts_step", ws)
     _, packet, body, _ = ts.build_packet()
     open(f"{ws}/packet.json", "w", encoding="utf-8").write(body)
     syms = [s["symbol"] for s in packet["universe"]][:2]
     doc = json.dumps({"lane": "ai", "model_calls": 1, "refs": [],
                       "targets": [{"symbol": s, "weight": 0.2} for s in syms]})
     ts.cmd_baseline("base")                      # the workflow's own step, no model call
-    specs = ["ai:codex:codex:direct:/work/p281/prompts/trade-lane.md:lane_ai.json",
-             "ai2:claude:claude:direct:/work/p281/prompts/trade-lane2.md:lane_ai2.json"]
+    specs = ["ai:codex:codex:direct:/work/packages/trading/prompts/trade-lane.md:lane_ai.json",
+             "ai2:claude:claude:direct:/work/packages/trading/prompts/trade-lane2.md:lane_ai2.json"]
     res = run_step("/work/p281/steps/tasks.py", "tl_step",
                    ["lanes_round.json", "packet-sha", "research-default", *specs],
                    ws, doc, fail="ai2")
@@ -482,14 +482,14 @@ def controls_boundary():
     found = sorted({w for w in DOMAIN_WORDS if w in body})
     check("no domain vocabulary in the capability's code", found, [])
     for name, path, want in (
-            ("what is required", "/work/p281/steps/novel_stage.py", "required"),
-            ("what a valid proposal is", "/work/p281/steps/trade_stage.py", "INVALID"),
-            ("the deterministic baseline", "/work/p281/steps/trade_stage.py", "momentum20")):
+            ("what is required", "/work/packages/novel/steps/novel_stage.py", "required"),
+            ("what a valid proposal is", "/work/packages/trading/steps/trade_stage.py", "INVALID"),
+            ("the deterministic baseline", "/work/packages/trading/steps/trade_stage.py", "momentum20")):
         check(f"the workflow still owns: {name}", want in open(path, encoding="utf-8").read(), True)
     check("nothing imports the removed fan-out wrappers",
           any(os.path.exists(p) for p in ("/work/p281/steps/novel_reviews.py",
                                           "/work/p281/steps/trade_lanes.py")), False)
-    y = open("/work/p281/workflows/novel-a.yaml", encoding="utf-8").read()
+    y = open("/work/packages/novel/novel-a.yaml", encoding="utf-8").read()
     check("the reviews step names the capability", "steps/tasks.py" in y, True)
     check("the triage step is told what is required", '"story,history"' in y, True)
 
@@ -499,7 +499,7 @@ def controls_chains():
     print("chains — a lane may be a sequence of steps, and stays one lane's business")
     root = tempfile.mkdtemp(prefix="p281-chain-")
     ws = real_ws()
-    ts = load("/work/p281/steps/trade_stage.py", "ts_chain", ws)
+    ts = load("/work/packages/trading/steps/trade_stage.py", "ts_chain", ws)
     _, packet, body, _ = ts.build_packet()
     open(f"{ws}/packet.json", "w", encoding="utf-8").write(body)
     syms = [x["symbol"] for x in packet["universe"]][:2]
@@ -569,7 +569,7 @@ def controls_chains():
     shutil.rmtree(ws, ignore_errors=True)
     ws = real_ws()
     open(f"{ws}/packet.json", "w", encoding="utf-8").write(body)
-    ts2 = load("/work/p281/steps/trade_stage.py", "ts_missing", ws)
+    ts2 = load("/work/packages/trading/steps/trade_stage.py", "ts_missing", ws)
     json.dump({"members": [{"label": "GONE", "steps": []}, {"label": "solo", "steps": []}]},
               open(f"{ws}/lanes_plan.json", "w"))
     json.dump({"lane": "solo", "model_calls": 1, "refs": [],
@@ -711,7 +711,7 @@ def controls_evidence():
     print("evidence — a judgement says what it rests on")
     import io, contextlib, importlib.util as il
     ws = real_ws()
-    ns = load("/work/p281/steps/novel_stage.py", "ns_ev", ws)
+    ns = load("/work/packages/novel/steps/novel_stage.py", "ns_ev", ws)
     open(f"{ws}/draft.md", "w").write("a draft to judge\n")
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
@@ -787,18 +787,25 @@ def controls_repeat():
     print("repeat — the same step run twice does not invent work")
     import glob as _glob, importlib.util as il, io, contextlib
     # 1) every step declares it
-    missing = [os.path.basename(f) for f in sorted(_glob.glob("/work/p281/steps/*.py"))
+    # Every step, wherever it lives: the platform's and every package's. `vendor/` is not a step
+    # (it is a library a package calls), so it is left out by path.
+    step_files = sorted(f for f in (_glob.glob("/work/p281/steps/*.py")
+                                    + _glob.glob("/work/packages/*/steps/*.py"))
+                        if "/vendor/" not in f and not f.endswith("__init__.py"))
+    missing = [os.path.basename(f) for f in step_files
                if "REPEATABLE" not in open(f, encoding="utf-8").read()]
     check("every step says what a repeat of it does", missing, [])
-    vals = {os.path.basename(f): re.search(r'REPEATABLE = "(\w+)"',
-                                           open(f, encoding="utf-8").read()).group(1)
-            for f in sorted(_glob.glob("/work/p281/steps/*.py"))}
+    vals = {}
+    for f in step_files:
+        m = re.search(r'REPEATABLE = "(\w+)"', open(f, encoding="utf-8").read())
+        if m:
+            vals[os.path.basename(f)] = m.group(1)
     check("a model call is never claimed repeatable",
           [k for k in ("agent_task.py", "execute.py", "tasks.py", "task_chain.py")
            if vals.get(k) != "no"], [])
 
     ws = real_ws()
-    ns = load("/work/p281/steps/novel_stage.py", "ns_rep", ws)
+    ns = load("/work/packages/novel/steps/novel_stage.py", "ns_rep", ws)
     open(f"{ws}/draft.md", "w").write("one and only draft\n")
 
     def freeze():
@@ -904,7 +911,7 @@ def controls_step_rights():
     check("the adapter fails closed without the credential",
           "is not set" in ad and "PRELOOP_MCP_" in ad, True)
 
-    y = open("/work/p281/workflows/novel-a.yaml", encoding="utf-8").read()
+    y = open("/work/packages/novel/novel-a.yaml", encoding="utf-8").read()
     check("the author and the reviewers are different principals",
           ("author=claude:novel-author" in y and "story=codex:novel-reviewer" in y), True)
     for role in ("architect", "author", "story", "history", "cold"):
@@ -989,7 +996,9 @@ def controls_panel():
 
     # a router that holds before the roles step must not break the workflow's own hold message
     for name in ("novel-a", "trading-b", "trading-shapes"):
-        y = open(f"/work/p281/workflows/{name}.yaml", encoding="utf-8").read()
+        import glob as _g2
+        path = next(f for f in _g2.glob("/work/packages/*/*.yaml") if f.endswith("/" + name + ".yaml"))
+        y = open(path, encoding="utf-8").read()
         hold = [l for l in y.splitlines() if "HOLD:" in l]
         check(f"{name}: the hold message survives an early hold",
               all(("roles" not in l) or ("roles is defined" in l) for l in hold), True)
@@ -1174,7 +1183,7 @@ def controls_packages():
               "manifest says" in got["wrong-name"], True)
         check("a missing entry is named", "is not there" in got["no-entry"], True)
         check("an entry that points outside the package is refused",
-              got["escape"], "entry points outside the package")
+              "points outside the package" in got["escape"], True)
 
     # two packages may not disagree about an identity in silence
     with tempfile.TemporaryDirectory() as tmp:
@@ -1197,11 +1206,12 @@ def controls_packages():
 
     # the ported trading workflow, as a package: its own files address the package, and the
     # platform steps it calls are named rather than assumed
-    tp = here.get("trading-port") or {}
-    check("the ported trading workflow is installed as a package", tp.get("usable"), True)
+    tp = here.get("trading") or {}
+    check("the ported trading workflow is carried by the trading package",
+          sorted((tp.get("entries") or {})), ["trading-b", "trading-port", "trading-shapes"])
     if tp.get("usable"):
         import glob as _g
-        own = [f for f in _g.glob("/work/packages/trading-port/**/*", recursive=True)
+        own = [f for f in _g.glob("/work/packages/trading/**/*", recursive=True)
                if f.endswith((".py", ".yaml", ".md"))]
         text = "".join(open(f, encoding="utf-8", errors="replace").read() for f in own)
         check("its prompts and fixtures are its own",
@@ -1209,9 +1219,10 @@ def controls_packages():
         check("its own steps are addressed inside the package",
               "/work/p281/steps/arch_port.py" not in text
               and "/work/p281/steps/packet_bridge.py" not in text, True)
-        check("and the platform steps it depends on are declared",
-              sorted((tp.get("requires") or {}).get("platform_steps") or []),
-              ["record.py", "roles.py", "route.py", "tasks.py", "trade_stage.py"])
+        # the dependency that used to reach into the platform now lives in the same package
+        check("the deterministic core it shares lives with it",
+              os.path.exists("/work/packages/trading/steps/trade_stage.py")
+              and "/work/p281/steps/trade_stage.py" not in text, True)
 
     # a step's imports work wherever the step lives
     compose = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
@@ -1365,7 +1376,7 @@ def controls_template():
     # second machine with no rights of their own — which is the gap this file closes.
     import glob as _glob, re as _re
     named = set()
-    for f in _glob.glob("/work/p281/workflows/*.yaml"):
+    for f in _glob.glob("/work/packages/*/*.yaml"):
         named |= set(_re.findall(r'=[a-z0-9-]+:([a-z0-9-]+)', open(f, encoding="utf-8").read()))
     check("the principals the workflows name are declared", sorted(named - set(decl)), [])
     check("and the scan found the ones this stack uses",

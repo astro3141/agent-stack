@@ -99,7 +99,7 @@ agents:
     type: script
     description: Put the fixture entry state in the run's workspace
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/novel_stage.py", "stage"]
+    args: ["/work/packages/novel/steps/novel_stage.py", "stage"]
     output:
       status: {type: string}
       workspace: {type: string}
@@ -113,7 +113,7 @@ agents:
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/agent_task.py", "{{ roles.output.architect_provider }}",
            "{{ roles.output.architect_route }}", "architect",
-           "/work/p281/prompts/novel-architect.md", "contract.json",
+           "/work/packages/novel/prompts/novel-architect.md", "contract.json",
            "{{ route.output.profile }}", "{{ roles.output.architect_login }}",
            "{{ roles.output.architect_principal }}"]
     timeout: 600
@@ -133,7 +133,7 @@ agents:
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/agent_task.py", "{{ roles.output.author_provider }}",
            "{{ roles.output.author_route }}", "author",
-           "/work/p281/prompts/novel-author.md", "draft.md",
+           "/work/packages/novel/prompts/novel-author.md", "draft.md",
            "{{ route.output.profile }}", "{{ roles.output.author_login }}",
            "{{ roles.output.author_principal }}"]
     timeout: 900
@@ -151,7 +151,7 @@ agents:
     type: script
     description: Fix the draft (id + sha256) so every reviewer judges the same artifact
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/novel_stage.py", "freeze"]
+    args: ["/work/packages/novel/steps/novel_stage.py", "freeze"]
     output:
       status: {type: string}
       draft_id: {type: string}
@@ -172,9 +172,9 @@ agents:
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/tasks.py", "reviews_round.json", "{{ freeze.output.draft_sha256 }}",
            "{{ route.output.profile }}",
-           "story:{{ roles.output.story_provider }}:{{ roles.output.story_login }}:{{ roles.output.story_route }}:{% if workflow.input.review_mode == 'strict' %}/work/p281/prompts/novel-review-story-strict.md{% elif workflow.input.review_mode == 'marker' %}/work/p281/prompts/novel-review-story-marker.md{% else %}/work/p281/prompts/novel-review-story.md{% endif %}:review_story.json:{{ roles.output.story_principal }}",
-           "history:{{ roles.output.history_provider }}:{{ roles.output.history_login }}:{{ roles.output.history_route }}:/work/p281/prompts/novel-review-history.md:review_history.json:{{ roles.output.history_principal }}",
-           "cold:{{ roles.output.cold_provider }}:{{ workflow.input.cold_login or roles.output.cold_login }}:{{ roles.output.cold_route }}:/work/p281/prompts/novel-cold.md:review_cold.json:{{ roles.output.cold_principal }}"]
+           "story:{{ roles.output.story_provider }}:{{ roles.output.story_login }}:{{ roles.output.story_route }}:{% if workflow.input.review_mode == 'strict' %}/work/packages/novel/prompts/novel-review-story-strict.md{% elif workflow.input.review_mode == 'marker' %}/work/packages/novel/prompts/novel-review-story-marker.md{% else %}/work/packages/novel/prompts/novel-review-story.md{% endif %}:review_story.json:{{ roles.output.story_principal }}",
+           "history:{{ roles.output.history_provider }}:{{ roles.output.history_login }}:{{ roles.output.history_route }}:/work/packages/novel/prompts/novel-review-history.md:review_history.json:{{ roles.output.history_principal }}",
+           "cold:{{ roles.output.cold_provider }}:{{ workflow.input.cold_login or roles.output.cold_login }}:{{ roles.output.cold_route }}:/work/packages/novel/prompts/novel-cold.md:review_cold.json:{{ roles.output.cold_principal }}"]
     timeout: 900
     output:
       status: {type: string}
@@ -194,7 +194,7 @@ agents:
     type: script
     description: Deterministic routing decision from what the reviewers wrote
     command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/p281/steps/novel_stage.py", "triage", "{{ workflow.input.max_repairs }}",
+    args: ["/work/packages/novel/steps/novel_stage.py", "triage", "{{ workflow.input.max_repairs }}",
            "story,history"]
     output:
       evidence_index: {type: string}
@@ -221,7 +221,7 @@ agents:
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/p281/steps/agent_task.py", "{{ roles.output.author_provider }}",
            "{{ roles.output.author_route }}", "repair",
-           "/work/p281/prompts/novel-author.md", "draft.md",
+           "/work/packages/novel/prompts/novel-author.md", "draft.md",
            "{{ route.output.profile }}", "{{ roles.output.author_login }}",
            "{{ roles.output.author_principal }}"]
     timeout: 900

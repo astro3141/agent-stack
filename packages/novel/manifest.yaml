@@ -1,0 +1,8 @@
+name: novel
+version: 0.1.0
+description: Role-split chapter with parallel reviews and a bounded repair loop
+workflows:
+  novel-a: novel-a.yaml
+requires:
+  capabilities: [tool_rights, egress, record, admission]
+  principals: [novel-author, novel-reviewer]

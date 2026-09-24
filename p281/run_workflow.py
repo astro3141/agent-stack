@@ -39,10 +39,11 @@ import capabilities
 # The workflows this stack was built with, and then whatever is installed as a package. A package
 # is a directory under packages/ (p281/packages.py); installing one must not mean editing this
 # file, or a workflow could never be given to anyone (CONTRACT.md, OPERATIONS §27).
-BUILT_IN = {"auto": "p281/workflows/auto.yaml", "research-r": "p281/workflows/research-r.yaml",
-            "novel-a": "p281/workflows/novel-a.yaml",
-            "trading-b": "p281/workflows/trading-b.yaml",
-            "trading-shapes": "p281/workflows/trading-shapes.yaml"}
+# Nothing is built in any more: every workflow this stack runs is a package under packages/,
+# including the five it was built with (OPERATIONS §30). The name is kept so that a stack which
+# has to carry one again has the place to put it, and so that a package cannot silently take over
+# a name the platform itself answers to.
+BUILT_IN = {}
 
 
 def known():
@@ -52,6 +53,34 @@ def known():
         return {**packages.workflows(), **BUILT_IN}
     except Exception:
         return dict(BUILT_IN)
+
+
+def described():
+    """Each workflow with what it says about itself: its description and the inputs it declares.
+
+    Read from the workflow file, so the screen offers what exists rather than a list someone kept
+    up to date by hand — which is how the panel came to offer two of seven (OPERATIONS §30).
+    `profile` is left out: the panel chooses that once, for any workflow.
+    """
+    import yaml
+    out = {}
+    for name, rel in sorted(known().items()):
+        row = {"path": rel, "description": "", "inputs": []}
+        try:
+            d = yaml.safe_load(open(f"/work/{rel}", encoding="utf-8")) or {}
+            w = d.get("workflow") or {}
+            row["description"] = str(w.get("description") or "")
+            for key, spec in (w.get("input") or {}).items():
+                if key == "profile":
+                    continue
+                spec = spec or {}
+                row["inputs"].append({"name": key, "default": str(spec.get("default") or ""),
+                                      "description": str(spec.get("description") or ""),
+                                      "required": bool(spec.get("required"))})
+        except Exception as e:
+            row["error"] = f"{type(e).__name__}: {e}"
+        out[name] = row
+    return out
 
 
 WORKFLOWS = known()
@@ -384,4 +413,5 @@ if __name__ == "__main__":
               "stop": lambda: cmd_stop(sys.argv[2]),
               "show": lambda: cmd_show(sys.argv[2]), "list": cmd_list,
               # the one answer both this and the panel use, so neither keeps its own list
-              "workflows": lambda: (print(json.dumps(known(), ensure_ascii=False)), 0)[1]}[a]())
+              "workflows": lambda: (print(json.dumps(described() if "--detail" in sys.argv
+                                                     else known(), ensure_ascii=False)), 0)[1]}[a]())

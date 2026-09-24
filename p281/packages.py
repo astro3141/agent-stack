@@ -54,15 +54,30 @@ def _read(directory):
     if not NAME.fullmatch(name):
         out["why"] = "a package name is [a-z][a-z0-9-] of 2 to 40"
         return out
-    entry = str(m.get("entry") or "workflow.yaml")
-    entry_path = os.path.normpath(os.path.join(directory, entry))
-    if not entry_path.startswith(os.path.normpath(directory) + os.sep):
-        out["why"] = "entry points outside the package"
-        return out
-    if not os.path.isfile(entry_path):
-        out["why"] = f"entry {entry!r} is not there"
-        return out
-    out.update(usable=True, entry=entry_path, version=str(m.get("version") or ""),
+    # A package carries one workflow (`entry`) or several (`workflows: {name: file}`). Several is
+    # not a convenience: three trading workflows share one deterministic step, and splitting them
+    # into three packages would mean three copies of it or a dependency between packages
+    # (OPERATIONS §30).
+    declared_wf = m.get("workflows") or {}
+    if declared_wf:
+        entries = {str(k): str(v) for k, v in declared_wf.items()}
+    else:
+        entries = {name: str(m.get("entry") or "workflow.yaml")}
+    resolved = {}
+    for wf_name, rel in entries.items():
+        if not NAME.fullmatch(wf_name):
+            out["why"] = f"workflow name {wf_name!r} is [a-z][a-z0-9-] of 2 to 40"
+            return out
+        path = os.path.normpath(os.path.join(directory, rel))
+        if not path.startswith(os.path.normpath(directory) + os.sep):
+            out["why"] = f"{wf_name}: the file points outside the package"
+            return out
+        if not os.path.isfile(path):
+            out["why"] = f"{wf_name}: {rel!r} is not there"
+            return out
+        resolved[wf_name] = path
+    out.update(usable=True, entry=resolved.get(name) or sorted(resolved.values())[0],
+               entries=resolved, version=str(m.get("version") or ""),
                description=str(m.get("description") or ""),
                requires=(m.get("requires") or {}),
                principals_file=(os.path.join(directory, "principals.yaml")
@@ -83,9 +98,13 @@ def installed():
 
 
 def workflows():
-    """{name: path relative to /work} for every usable package — what a runner may start."""
-    return {n: os.path.relpath(p["entry"], "/work")
-            for n, p in installed().items() if p["usable"]}
+    """{workflow name: path relative to /work} — every workflow every usable package carries."""
+    out = {}
+    for p in installed().values():
+        if p["usable"]:
+            for wf_name, path in (p.get("entries") or {}).items():
+                out[wf_name] = os.path.relpath(path, "/work")
+    return out
 
 
 def principals():
@@ -117,7 +136,8 @@ def _print(rows):
         return
     for name, p in rows.items():
         if p["usable"]:
-            print(f"{name:<20} {p.get('version') or '-':<8} {os.path.relpath(p['entry'], '/work')}"
+            wfs = ", ".join(sorted(p.get("entries") or {}))
+            print(f"{name:<16} {p.get('version') or '-':<8} {wfs}"
                   + ("  + principals" if p["principals_file"] else ""))
         else:
             print(f"{name:<20} {'-':<8} UNUSABLE: {p['why']}")
