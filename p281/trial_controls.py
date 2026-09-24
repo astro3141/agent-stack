@@ -1217,6 +1217,27 @@ def controls_resume():
         check("and is no longer offered for continuing",
               bool(v["state"] != "running" and not v["completed_ok"]), False)
 
+    # What `--web` cost, and what pays for it: the dashboard outlives the workflow, so waiting for
+    # the process to exit waits forever (measured: five launchers asleep half an hour after their
+    # runs ended, and a suite whose third case never started).
+    check("a run comes back when the workflow ends, not when the process does",
+          "def run_conductor(" in src and "proc.terminate()" in src, True)
+    check("and a resume looks only past what was already in the log",
+          "from_byte" in src, True)
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        d = root / "u2" / "tmp" / "conductor"
+        d.mkdir(parents=True)
+        log = d / "conductor-p281-novel-a-20260101-000000-abcd1234.events.jsonl"
+        first = '{"type": "workflow_failed", "data": {}}'
+        log.write_text(first + chr(10))
+        rw.RUNS = root
+        check("the stop that a resume starts from is not read as its end",
+              rw.run_ended("u2", len(first) + 1), False)
+        check("and what the resume itself writes is", rw.run_ended("u2", 0), True)
+    check("our own tidy-up is not reported as the run failing",
+          "Reporting -15 as the exit" in src, True)
+
     check("the panel can continue what it stopped",
           '/api/runs/([a-z0-9-]{6,40})/resume' in ops_server, True)
     check("and does it detached, like a start",

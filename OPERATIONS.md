@@ -1316,6 +1316,20 @@ kill — something true in the tree and not true in what runs:
    resume route answered "no such route" from a container built two hours earlier. `up.sh` now
    runs `up -d --build`; with layers cached a bring-up costs about 25 seconds.
 
+**What `--web` cost, found by the first suite and not by reasoning.** Conductor keeps serving the
+dashboard after the workflow ends, so waiting for the process to exit waits forever: five launchers
+were still asleep half an hour after their runs had finished, and a suite's third case never
+started because the pool never got a worker back. The runs themselves were fine — the event log had
+their outcome and MLflow had their record — which is exactly why it went unnoticed: the reader
+looked at the log, not at the process.
+
+So a run is now waited for the way it is read: `run_conductor()` watches this run's **event log**
+for the workflow ending, then gives the dashboard five seconds and asks it to go (`terminate`, then
+`kill`). A resume looks only past what was already in the log, because the log it continues ends
+with the stop that interrupted it. The tidy-up's own signal is not reported as the run's exit —
+that would call a finished run a failure; the outcome is in the log, where every reader here takes
+it from.
+
 **In the panel**: a run that stopped before it finished, and has a checkpoint, offers **재개** next
 to **중지**. Whether an interrupted run is worth continuing is the same kind of judgement as
 stopping it was, so it is offered in the same place; the run resumes detached, as a start does.

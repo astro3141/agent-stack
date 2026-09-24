@@ -103,10 +103,61 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
         argv += ["-i", f"{k}={v}"]
     env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor")}
     with open(d / "run.log", "wb") as log:
-        rc = subprocess.run(argv, cwd="/work", stdout=log, stderr=subprocess.STDOUT, env=env).returncode
+        rc = run_conductor(ui, argv, env, log)
     meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})
     meta_path(ui).write_text(json.dumps(meta))
     return 0
+
+
+def run_conductor(ui, argv, env, log):
+    """Run Conductor and come back when the *workflow* has ended.
+
+    `--web` keeps serving the dashboard after the workflow finishes, so waiting for the process to
+    exit means waiting forever: measured, five launchers still sleeping half an hour after their
+    runs had ended, and a suite whose third case never started because the pool never freed a
+    worker. The event log is the record of the run (it is what `view` reads), so the end of the
+    workflow is read from there and the process is then asked to go, gently first.
+    """
+    # A resume writes into the log the stopped attempt already filled, and that log ends with the
+    # stop. Only what this process appends counts, so the end is looked for past what is there now.
+    p = events_for(ui)
+    from_byte = p.stat().st_size if p else 0
+    proc = subprocess.Popen(argv, cwd="/work", stdout=log, stderr=subprocess.STDOUT, env=env,
+                            start_new_session=True)
+    ended_at = None
+    while True:
+        rc = proc.poll()
+        if rc is not None:
+            return rc                      # it left on its own: nothing to tidy
+        if ended_at is None and run_ended(ui, from_byte):
+            ended_at = time.time()         # the workflow is over; the dashboard is not
+        elif ended_at and time.time() - ended_at > 5:
+            proc.terminate()
+            try:
+                proc.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=20)
+            # our own tidy-up, not the run's outcome: that is in the event log, which every
+            # reader here uses. Reporting -15 as the exit would call a finished run a failure.
+            return 0
+        time.sleep(2)
+
+
+def run_ended(ui, from_byte=0):
+    """Whether this run's event log records the workflow ending — past `from_byte`, either way."""
+    p = events_for(ui)
+    if not p:
+        return False
+    try:
+        with p.open() as f:
+            f.seek(from_byte)
+            for line in f:
+                if '"workflow_completed"' in line or '"workflow_failed"' in line:
+                    return True
+    except OSError:
+        pass
+    return False
 
 
 def cmd_resume(ui):
@@ -134,7 +185,7 @@ def cmd_resume(ui):
     argv = ["conductor", "--silent", "resume", "--from", str(cps[-1]), "--no-interactive"]
     env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor")}
     with open(d / "run.log", "ab") as log:
-        rc = subprocess.run(argv, cwd="/work", stdout=log, stderr=subprocess.STDOUT, env=env).returncode
+        rc = run_conductor(ui, argv, env, log)
     meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})
     meta_path(ui).write_text(json.dumps(meta))
     return 0
