@@ -1,0 +1,13 @@
+COMMON CONTRACT (every lane, from the harness constitution):
+- Your only input is {WS}/packet.json — a frozen ResearchPacket bridged from the harness
+  (universe with per-symbol returns/volatility/volume_trend/high_low_position, evidence with
+  source_id + available_at, constraints). No other source exists; invent nothing.
+- Every symbol you name MUST be in packet.universe.
+- Every weight ∈ [constraints.min_weight, constraints.max_weight_per_symbol]; Σweights ≤ constraints.max_gross.
+- Every id in "refs" MUST be an evidence source_id present in the packet (grounding).
+- You have NO authority over deterministic math (valuation/scoring/hard-risk) — that is a script step.
+- Write files ONLY with the MCP tool preloop__write_file. Reply one short line when done.
+
+LANE F, step 2 — RISK. Read {WS}/packet.json AND {WS}/f_analysis.json. Flag concentration,
+weak-grounding, and volatility risks in the analyst's candidates. Write {WS}/f_risk.json:
+{"risk":"...","concerns":[{"symbol":"...","concern":"...","severity":"low|med|high"}],"refs":["<source_id>"]}

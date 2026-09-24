@@ -102,6 +102,11 @@ services:
     environment:
       POC_DIR: /work
       POC_PY: /opt/venv/bin/python
+      # The step library is importable from wherever a step lives. A package's steps sit under
+      # packages/<name>/steps/, not under p281/steps/, and they still need `settings` and the
+      # platform steps they call — without this they fail with ModuleNotFoundError the moment they
+      # are installed rather than copied in (OPERATIONS §27).
+      PYTHONPATH: /work/p281:/work/p281/steps
       PYTHONUTF8: "1"
       # Preloop control plane, reached over the governed network by service name.
       PRELOOP_URL: http://console

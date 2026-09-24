@@ -1195,6 +1195,29 @@ def controls_packages():
         check("a principal two packages declare differently is a conflict, not a merge",
               [c.get("principal") for c in conflicts], ["shared"])
 
+    # the ported trading workflow, as a package: its own files address the package, and the
+    # platform steps it calls are named rather than assumed
+    tp = here.get("trading-port") or {}
+    check("the ported trading workflow is installed as a package", tp.get("usable"), True)
+    if tp.get("usable"):
+        import glob as _g
+        own = [f for f in _g.glob("/work/packages/trading-port/**/*", recursive=True)
+               if f.endswith((".py", ".yaml", ".md"))]
+        text = "".join(open(f, encoding="utf-8", errors="replace").read() for f in own)
+        check("its prompts and fixtures are its own",
+              "/work/p281/prompts" not in text and "/work/p281/fixtures" not in text, True)
+        check("its own steps are addressed inside the package",
+              "/work/p281/steps/arch_port.py" not in text
+              and "/work/p281/steps/packet_bridge.py" not in text, True)
+        check("and the platform steps it depends on are declared",
+              sorted((tp.get("requires") or {}).get("platform_steps") or []),
+              ["record.py", "roles.py", "route.py", "tasks.py", "trade_stage.py"])
+
+    # a step's imports work wherever the step lives
+    compose = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
+    check("the step library is importable from a package's steps",
+          "PYTHONPATH: /work/p281:/work/p281/steps" in compose, True)
+
     # and the three places that used to keep their own list
     check("the runner asks the loader", "import packages" in rw and "packages.workflows()" in rw, True)
     check("a package may not take a built-in's name",

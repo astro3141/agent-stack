@@ -1,0 +1,214 @@
+# Trading PORT — the paper-trading harness's arch cycle on this stack.
+#
+# NOT the shape trial (trading-shapes.yaml). Here the packet is the harness's real ResearchPacket
+# (bridged), the lanes carry the harness's own contracts, and the deterministic math is a script
+# step. One frozen packet decides B (deterministic replica) + E + G + F(desk) + H(forecast→score→
+# decide). Lane I is a separate-packet follow-on (PORT-trading.md).
+#
+#   pilot — committed harness-shaped fixture, invented numbers, reproducible, no market data:
+#             conductor run p281/workflows/trading-port.yaml -i profile=research-default -i mode=pilot
+#   live  — the harness freezes a real ResearchPacket OUTSIDE this runtime and hands the path in:
+#             ... -i mode=live -i packet_from=/work/handoff/acyc-YYYY-MM-DD.json
+#
+# This stack produces the VALIDATED lane decisions; the authoritative return/cost/ledger stay in
+# the harness. Do not run in the current environment (owner 2026-09-24): pilot + live only.
+workflow:
+  name: p281-trading-port
+  description: The harness arch cycle (B+E+G+F+H) decided together from one bridged packet
+  entry_point: route
+  input:
+    profile:
+      type: string
+      required: false
+      default: research-default
+      description: execution profile (config/profiles/<name>.yaml)
+    mode:
+      type: string
+      required: false
+      default: pilot
+      description: pilot (committed fixture) or live (harness packet via packet_from)
+    packet_from:
+      type: string
+      required: false
+      default: ""
+      description: live only — path to the harness-frozen ResearchPacket JSON
+  limits:
+    max_iterations: 30
+    timeout_seconds: 5400
+
+agents:
+  - name: route
+    type: script
+    description: Quota admission for the cycle
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/p281/steps/route.py", "{{ workflow.input.profile }}"]
+    output:
+      decision: {type: string}
+      provider: {type: string}
+      reason: {type: string}
+      profile: {type: string}
+      evidence_dir: {type: string}
+    routes:
+      - to: roles
+        when: "{{ route.output.decision == 'ROUTE' }}"
+      - to: record_hold
+
+  - name: roles
+    type: script
+    description: Bind the lanes to vendors the router admitted
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/p281/steps/roles.py", "{{ route.output.profile }}", "{{ route.output.evidence_dir }}",
+           "ai=codex", "ai2=claude", "ai3=grok"]
+    output:
+      ok: {type: string}
+      missing: {type: string}
+      ineligible: {type: string}
+      ai_provider: {type: string}
+      ai_login: {type: string}
+      ai_route: {type: string}
+      ai2_provider: {type: string}
+      ai2_login: {type: string}
+      ai2_route: {type: string}
+      ai3_provider: {type: string}
+      ai3_login: {type: string}
+      ai3_route: {type: string}
+    routes:
+      - to: packet
+        when: "{{ roles.output.ok == 'yes' }}"
+      - to: record_hold
+
+  - name: packet
+    type: script
+    description: Bridge the harness ResearchPacket into this cycle's frozen input (PIT preserved)
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/packages/trading-port/steps/packet_bridge.py", "{{ workflow.input.mode }}",
+           "--from", "{{ workflow.input.packet_from }}"]
+    output:
+      status: {type: string}
+      mode: {type: string}
+      workspace: {type: string}
+      packet_sha256: {type: string}
+      harness_packet_hash: {type: string}
+      symbols: {type: number}
+      evidence: {type: number}
+      as_of: {type: string}
+    routes:
+      - to: baseline
+        when: "{{ packet.output.status == 'OK' }}"
+      - to: record_hold
+
+  # Lane B: the deterministic replica. No model call, so it is this workflow's own step.
+  - name: baseline
+    type: script
+    description: Lane B — frozen momentum replica, 0 model calls
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/p281/steps/trade_stage.py", "baseline", "B"]
+    output:
+      status: {type: string}
+      lane: {type: string}
+      positions: {type: number}
+      model_calls: {type: number}
+    routes:
+      - to: plan
+
+  - name: plan
+    type: script
+    description: The arch lane plan — E/G one call, F a desk, H forecast→score→decide
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/packages/trading-port/steps/arch_port.py", "plan",
+           "E:{{ roles.output.ai3_provider }}:{{ roles.output.ai3_login }}:{{ roles.output.ai3_route }}",
+           "G:{{ roles.output.ai2_provider }}:{{ roles.output.ai2_login }}:{{ roles.output.ai2_route }}",
+           "F:{{ roles.output.ai_provider }}:{{ roles.output.ai_login }}:{{ roles.output.ai_route }}",
+           "H:{{ roles.output.ai2_provider }}:{{ roles.output.ai2_login }}:{{ roles.output.ai2_route }}"]
+    output:
+      status: {type: string}
+      plan: {type: string}
+      members: {type: number}
+      model_steps: {type: number}
+      script_steps: {type: number}
+    routes:
+      - to: lanes
+
+  - name: lanes
+    type: script
+    description: Four model lanes decided together from the frozen packet, each step kept
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/p281/steps/tasks.py", "lanes_round.json", "{{ packet.output.packet_sha256 }}",
+           "{{ route.output.profile }}", "--plan", "{{ plan.output.plan }}"]
+    timeout: 3600
+    output:
+      status: {type: string}
+      receipt: {type: string}
+      tasks: {type: number}
+      produced: {type: number}
+      model_calls: {type: number}
+      failed: {type: string}
+      wall_s: {type: number}
+      busy_s: {type: number}
+      overlap: {type: number}
+      detail: {type: string}
+    routes:
+      - to: evaluate
+
+  - name: evaluate
+    type: script
+    description: Validate every lane identically; diagnostic-score in pilot (harness scores live)
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/packages/trading-port/steps/arch_port.py", "evaluate"]
+    output:
+      status: {type: string}
+      lanes: {type: number}
+      valid: {type: number}
+      invalid: {type: number}
+      scored: {type: string}
+      best_lane: {type: string}
+      report: {type: string}
+    routes:
+      - to: record_cycle
+
+  - name: record_cycle
+    type: script
+    description: Record the cycle and every call each lane made
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/p281/steps/record.py"]
+    stdin: "{{ {'receipts': [lanes.output.receipt], 'measurements': {'valid_lanes': evaluate.output.valid, 'lane_wall_s': lanes.output.wall_s, 'lane_overlap': lanes.output.overlap, 'model_calls': lanes.output.model_calls}, 'evidence_file': evaluate.output.report, 'check': {'decision': 'PORT_CYCLE', 'reason': evaluate.output.valid|string + ' valid; harness_packet ' + packet.output.harness_packet_hash, 'file_sha256': packet.output.packet_sha256}, 'route': route.output} | tojson }}"
+    output:
+      mlflow_run_id: {type: string}
+      experiment_id: {type: string}
+      executions: {type: number}
+      children: {type: number}
+      record_error: {type: string}
+    routes:
+      - to: done_cycle
+        when: "{{ evaluate.output.valid > 0 }}"
+      - to: done_no_lane
+
+  - name: record_hold
+    type: script
+    description: Record a cycle the router or bridge held
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/p281/steps/record.py"]
+    stdin: "{{ {'route': route.output} | tojson }}"
+    output:
+      mlflow_run_id: {type: string}
+      experiment_id: {type: string}
+      executions: {type: number}
+      children: {type: number}
+      record_error: {type: string}
+    routes:
+      - to: done_hold
+
+  - name: done_cycle
+    type: terminate
+    status: success
+    reason: "PORT_CYCLE: {{ evaluate.output.valid }}/{{ evaluate.output.lanes }} lanes valid ({{ packet.output.mode }})"
+
+  - name: done_no_lane
+    type: terminate
+    status: success
+    reason: "PORT_CYCLE: no valid lane"
+
+  - name: done_hold
+    type: terminate
+    status: success
+    reason: "HOLD: {{ route.output.reason }}"

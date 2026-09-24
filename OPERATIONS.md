@@ -1708,6 +1708,41 @@ naming a different package, a missing entry, an entry pointing outside the packa
 that declare the same principal **differently** are a reported conflict rather than a silent merge
 — two workflows quietly sharing an identity is how rights nobody meant get discovered later.
 
+### The ported trading workflow, rearranged
+
+The paper-trading harness's arch cycle had already been ported onto this stack, on the branch
+`port/trading-harness`, in the old shape: its workflow under `p281/workflows/`, its steps beside the
+platform's in `p281/steps/`, its prompts and fixtures in `p281/prompts/` and `p281/fixtures/`. It is
+now `packages/trading-port/`, and the branch stays as the record of the port itself.
+
+```
+p281/workflows/trading-port.yaml          → packages/trading-port/workflow.yaml
+p281/steps/{arch_port,packet_bridge}.py   → packages/trading-port/steps/
+p281/steps/vendor/                        → packages/trading-port/steps/vendor/
+p281/prompts/port-*.md                    → packages/trading-port/prompts/
+p281/fixtures/trading/*.json              → packages/trading-port/fixtures/
+p281/port_controls.py                     → packages/trading-port/controls.py
+```
+
+Measured after the move, without any model call: the loader lists it, the runner and the panel
+offer it, its deterministic bridge runs from the committed fixture
+(`packet_sha256 26a3a92b…, 8 symbols`), its planner produces four lanes and **seven prompts that all
+resolve inside the package**, and its own controls pass 17/17 from their new home.
+
+Two things the move exposed:
+
+1. **A package's steps could not import the step library.** They sit under `packages/<name>/steps/`
+   and still need `settings` and the platform steps they call — `ModuleNotFoundError` the moment a
+   workflow is installed rather than copied into `p281/`. The agent now carries
+   `PYTHONPATH=/work/p281:/work/p281/steps`: *the step library is importable from wherever a step
+   lives* is a capability, not something each package should solve.
+2. **One dependency is not a capability.** `trade_stage.py` belongs to the built-in `trading-b`
+   workflow, and this package reuses its `validate` so every lane is checked the same way. So the
+   package is not self-contained: installing it on another machine also needs that built-in present.
+   It is named in the manifest (`requires.platform_steps`) and in the package's README rather than
+   left to be discovered — and it is the first thing a second package will force a decision about:
+   vendor it, or promote it.
+
 **What a package may not do yet**, and is honest to say: it cannot add to the account's tool policy
 (`policy/` is still the stack's), it cannot ship its own controls into `trial_controls.py`, and its
 steps address themselves by absolute path (`/work/packages/<name>/steps/…`) rather than a variable.
