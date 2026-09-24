@@ -239,7 +239,24 @@ def preloop_call(env, method, path, token):
     return json.load(urllib.request.urlopen(req, timeout=60))
 
 
-def cmd_apply(dry_run=False):
+def policy_servers_present(env, pol):
+    """Whether the account really has every MCP server this policy declares.
+
+    Asked of Preloop, not of our state file. Unreachable is not "absent": a question that could not
+    be asked must not make an apply skip *or* repeat, so an error answers True and the apply is
+    governed by the recorded state as before.
+    """
+    try:
+        want = {s.get("name") for s in (load_yaml(ROOT / pol).get("mcp_servers") or []) if s.get("name")}
+        if not want:
+            return True
+        have = {s["name"] for s in preloop_call(env, "GET", "/api/v1/mcp-servers", preloop_token())}
+        return want <= have
+    except Exception:
+        return True
+
+
+def cmd_apply(dry_run=False, force=False):
     if cmd_generate(quiet=True) != 0:
         print(json.dumps({"ok": False, "results": {}, "error": "generate failed — run validate"}))
         return 1
@@ -254,10 +271,15 @@ def cmd_apply(dry_run=False):
         # Preloop holds ONE policy per account. "Already applied" means: the policy active on the
         # account is this file at this content — not merely that this file was applied once.
         # (A → B → A must apply A again: B replaced it.)
-        # Skipped only when the last apply of this content finished both stages (policy + scan).
+        # Skipped only when the last apply of this content finished both stages (policy + scan)
+        # AND the account still has what the policy declares. Our own record is not evidence about
+        # someone else's system: on another machine the state said `scan: done` while
+        # `GET /mcp-servers` answered `[]`, so every apply skipped and the runtime never saw a tool.
+        # A recorded success that the account does not corroborate is not a reason to do nothing.
         active = st.get("preloop_active") or {}
-        if (active.get("policy") == pol and active.get("sha256") == src and active.get("scan") == "done"
-                and not t.get("apply_error")):
+        if (not force and active.get("policy") == pol and active.get("sha256") == src
+                and active.get("scan") == "done" and not t.get("apply_error")
+                and policy_servers_present(env, pol)):
             results[key] = "already applied"
             continue
         if dry_run:
@@ -384,6 +406,6 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
     sys.exit({"validate": lambda: 0 if cmd_validate()["ok"] else 1,
               "generate": cmd_generate,
-              "apply": lambda: cmd_apply("--dry-run" in sys.argv),
+              "apply": lambda: cmd_apply("--dry-run" in sys.argv, "--force" in sys.argv),
               "rescan": cmd_rescan,
               "status": cmd_status}[cmd]())

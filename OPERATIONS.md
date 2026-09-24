@@ -1621,3 +1621,43 @@ endpoints, the scan, what a credential resolves to — was measured against **0.
 `scripts/install.sh` now pins `PRELOOP_VERSION=0.15.0` by default and says so on the line where it
 installs; an operator who wants a newer one passes it deliberately and knows they are ahead of the
 measurements.
+
+### The layer under it: a record that outranked the account
+
+The rescan above fixed the case it was built for and not the one the other machine actually had.
+Running it there answered `not_registered: [toolsvc, fsmcp]` — and `GET /api/v1/mcp-servers`
+answered **`[]`**. The account had no MCP servers at all, while our state file said
+`scan: done`, so `cfg.py apply` skipped the CLI on every bring-up and a rescan had nothing to scan.
+A direct `preloop policy apply` created both servers in one go, which is the proof that the CLI was
+never the problem: **our own record was being treated as evidence about someone else's system.**
+
+Reproduced here on 0.15.0 by deleting both servers and leaving the record alone — the runtime fell
+from twenty tools to Preloop's own four, and every apply still said `already applied`. The fix:
+
+```python
+if (not force and … and active.get("scan") == "done" and policy_servers_present(env, pol)):
+    results[key] = "already applied"
+```
+
+`policy_servers_present` asks Preloop whether the account has every server the policy declares. An
+unreachable Preloop answers *True*: a question that could not be asked must not cause an apply to
+repeat any more than to skip. `--force` ignores the record entirely.
+
+And the heal in `scripts/up.sh` now **applies before it scans**, because a rescan cannot create a
+server. Measured, from the same reproduction:
+
+```
+== the runtime cannot see the tool servers — applying the policy again, then scanning
+   "preloop-policy:policy/b-fsmcp.yaml": "applied"
+   {"ok": true, "scanned": ["cadp278-toolsvc", "cadp278-fsmcp"], "not_registered": []}
+  ok    fsmcp tools exposed via Preloop              yes
+```
+
+Three diagnoses were offered for this symptom before the right one: a principal that does not
+exist, a profile mismatch, a scan that ran too early. The first two were disproved by asking this
+instance the same questions; the third was real but was the layer above. What settled it was the
+account's own answer — `[]` — rather than any reasoning about what should have been there.
+
+The version difference is still worth what it cost: that machine was running **0.16.0**, where
+`preloop policy list` answers 404, and everything here is measured against **0.15.0**.
+`scripts/install.sh` pins it.

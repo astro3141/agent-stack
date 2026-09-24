@@ -177,9 +177,18 @@ docker exec cadp278-admin /opt/venv/bin/python /work/p281/cfg.py rescan
 # {"ok": true, "policy": "policy/b-fsmcp.yaml", "scanned": ["…-toolsvc", "…-fsmcp"]}
 ```
 
-`scripts/up.sh` now does this by itself: if the runtime cannot see the tools, it scans again before
-the checks. If `rescan` reports `not_registered`, the policy never reached the account — run
-`cfg.py apply` on the admin side first.
+`scripts/up.sh` now does this by itself: when the runtime cannot see the tools it **applies the
+policy again and then scans**, in that order, because a rescan cannot create a server that the
+account does not have. If you are doing it by hand and `rescan` says `not_registered`, that is the
+case — apply first:
+
+```bash
+docker exec cadp278-admin /opt/venv/bin/python /work/p281/cfg.py apply    # --force ignores our record
+docker exec cadp278-admin /opt/venv/bin/python /work/p281/cfg.py rescan
+```
+
+`apply` no longer trusts its own record: it skips only when the account still has every server the
+policy declares. On another machine the record said the work was done while the account had none.
 
 ## Something is waiting for an approval
 

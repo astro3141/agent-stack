@@ -200,7 +200,12 @@ fi
 # the runtime can see, so that is what is asked, and a scan is the way out.
 if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
   if ! docker exec "$STACK-agent" sh -c 'python3 /work/p281/mcp_list.py claude 2>/dev/null'        | grep -q write_file; then
-    echo "== the tool servers are registered but not exposed — scanning them again"
+    echo "== the runtime cannot see the tool servers — applying the policy again, then scanning"
+    # Apply first, and only then scan. A rescan alone fixes the case where the servers exist with
+    # nothing on them; it cannot fix the one where the account has no servers at all, which is what
+    # another machine hit — `GET /mcp-servers` answered `[]` while our record said the work was
+    # done. `apply` now checks the account rather than the record, so it repairs both.
+    docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/   /' || true
     docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/cfg.py rescan | sed 's/^/   /' || true
     sleep 3
   fi

@@ -1178,6 +1178,15 @@ def controls_docs():
     up_sh = open("/work/scripts/up.sh", encoding="utf-8").read()
     cfg = open("/work/p281/cfg.py", encoding="utf-8").read()
     check("there is a way to scan the tool servers again", "def cmd_rescan(" in cfg, True)
+    # A recorded success is not evidence about someone else's system. Reproduced by deleting both
+    # MCP servers while the state still said `scan: done`: the runtime fell to four native tools,
+    # and the fixed apply put it back without being told anything.
+    check("a skip has to be corroborated by the account",
+          "def policy_servers_present(" in cfg and "policy_servers_present(env, pol)" in cfg, True)
+    check("and an unreachable Preloop does not make it repeat or skip",
+          "a question that could not" in cfg, True)
+    check("the heal applies before it scans, because a rescan cannot create a server",
+          up_sh.index("cfg.py apply") < up_sh.index("cfg.py rescan"), True)
     check("and the bring-up takes it when the runtime cannot see the tools",
           "mcp_list.py claude" in up_sh and "cfg.py rescan" in up_sh, True)
     check("the runbook says what that symptom is, and what it is not",
