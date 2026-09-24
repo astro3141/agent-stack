@@ -7,7 +7,8 @@
 #
 # Declared in config/packages.yaml, locked in config/packages.lock. A package that lives in this
 # repository is `from: local` and needs neither: this repo's history is its history. One that lives
-# elsewhere is fetched into packages/<name>, which is then git-ignored here, and pinned by commit.
+# elsewhere is fetched into packages/<name>. Nothing has to be excluded for it: packages/* is
+# ignored by default and this repository's own packages are the named exceptions (OPERATIONS §42).
 #
 # **The fetch happens here, on the host.** Cloning from inside a container would mean a git
 # credential the governed runtime can reach, for no reason: the package is a directory, and the
@@ -68,14 +69,6 @@ write_lock() {      # name commit ref url
   sort -o "$f" "$f.tmp" && rm -f "$f.tmp"
 }
 
-ignore_fetched() {  # name — a fetched package is not this repository's content
-  # In .git/info/exclude, not .gitignore: *which* packages this machine fetched is this machine's
-  # business, and a tracked .gitignore would publish the names of private ones (OPERATIONS §41).
-  ex="$HERE/.git/info/exclude"
-  [ -f "$ex" ] || return 0
-  grep -qx "packages/$1/" "$ex" 2>/dev/null && return 0
-  printf '\n# fetched package, pinned by scripts/packages.sh\npackages/%s/\n' "$1" >> "$ex"
-}
 
 
 state_of() {        # name from — prints one line
@@ -151,7 +144,6 @@ case "$CMD" in
       fi
       head="$(git -C "$dir" rev-parse HEAD)"
       write_lock "$name" "$head" "$ref" "$from"
-      ignore_fetched "$name"
       echo "   at ${head:0:8}, locked"
     done
     echo

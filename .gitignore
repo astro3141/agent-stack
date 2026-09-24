@@ -42,3 +42,29 @@ config/instance.env
 # configuration, like config/instance.env: the package's own repository holds the rules, and this
 # repository holds neither (docs/packages.md, OPERATIONS §39).
 config/*/projects/
+
+# ---------------------------------------------------------------------------------------------
+# Two trees are written by runs and by whoever installs things, not by whoever writes this
+# repository. Both are ignored by default and carry named exceptions, because listing what is
+# private is a list somebody forgets to add to -- and this repository is public (OPERATIONS §42).
+
+# Packages: visible to git only if this repository carries it. A package fetched from its own
+# repository, a client's workflow, anything dropped in by hand -- none of it is staged by accident.
+packages/*
+!packages/hello-lane/
+!packages/auto/
+!packages/novel/
+!packages/research-r/
+
+# Run output: meta, logs, event logs, soak samples, the operator's own records. It is written by
+# runs, it grows without bound, and a Conductor workflow_started event carries the whole graph of
+# whatever ran -- which is how a package's design ended up in this repository's evidence once
+# already. What stays are the hand-written attestations the findings quote.
+evidence/*
+!evidence/build-281.log
+!evidence/container-toolchain.txt
+!evidence/hook-invocations.log
+!evidence/n1-deny-evidence.txt
+!evidence/n1-markers/
+!evidence/n7-bypass-inventory.txt
+!evidence/n7-network-isolation.txt

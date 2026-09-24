@@ -1280,17 +1280,21 @@ def controls_package_sources():
            if (sp or {}).get("from", "local") != "local"], [])
     check("and the overlay that names private ones is not versioned",
           all(x in gi for x in ("config/packages.local.yaml", "config/packages.local.lock")), True)
-    # which packages this machine fetched is this machine's business: excluded locally, so a
-    # tracked ignore file never publishes the name of a private one
-    excl = ""
-    if _o.path.isfile("/work/.git/info/exclude"):
-        excl = open("/work/.git/info/exclude", encoding="utf-8").read()
-    check("and is not this repository's content",
-          all(f"packages/{n}/" in excl for n in fetched), True)
-    check("nor named in a file this repository publishes",
-          any(f"packages/{n}/" in gi for n in fetched), False)
-    check("which is what the script writes",
-          ".git/info/exclude" in sh and 'HERE/.gitignore" 2>/dev/null && return' not in sh, True)
+    # a package is visible to git only if this repository carries it: the ignore file denies the
+    # tree and names the exceptions, so a package dropped in by hand is not staged by accident and
+    # no private package's name is published in order to say it is excluded
+    check("the packages tree is denied by default", "packages/*" in gi.split(), True)
+    check("and only what this repository carries is excepted",
+          sorted(l[len("!packages/"):].rstrip("/") for l in gi.splitlines()
+                 if l.startswith("!packages/")),
+          ["auto", "hello-lane", "novel", "research-r"])
+    check("so a fetched package is named nowhere in what this repository publishes",
+          [n for n in fetched if n in gi], [])
+    check("and the installer has no rule to write any more", "ignore_fetched" in sh, False)
+    # the same shape for what a run writes
+    check("run output is denied by default", "evidence/*" in gi.split(), True)
+    check("and only the hand-written attestations are excepted",
+          all(("!evidence/" + d + "/") not in gi for d in ("ui-runs", "soak", "runs", "ops")), True)
     check("the fetch happens on the host, not in a container",
           "git clone" in sh and "docker exec" not in sh.split("case \"$CMD\"")[1], True)
     check("a bring-up says when what is on disk is not what the lock names",

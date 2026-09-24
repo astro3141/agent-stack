@@ -1,9 +1,0 @@
-╭───────────────────────────── ❌ ValidationError ─────────────────────────────╮
-│                                                                              │
-│  Script 'record_block' declares an output schema but stdout is not valid     │
-│  JSON: Expecting value: line 1 column 1 (char 0)                             │
-│                                                                              │
-│  💡 Suggestion: When 'output:' is declared, the script must write a JSON     │
-│  object to stdout. Write logs to stderr.                                     │
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
