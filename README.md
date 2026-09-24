@@ -33,7 +33,7 @@ directory, and the operations that let the result survive a restart, an update o
 | **[docs/install.md](docs/install.md)** | from a clone to a running stack, what the host needs, and what only a person can do |
 | **[docs/concepts.md](docs/concepts.md)** | how the five pieces fit, the one rule they are arranged around, and what a run leaves behind |
 | **[docs/commands.md](docs/commands.md)** | every command, and which container it belongs in |
-| **[docs/runbook.md](docs/runbook.md)** | what to do when something is wrong, with the symptom first |
+| **[docs/runbook.md](docs/runbook.md)** | **the operator's document**: what the job is, and what to do when something is wrong |
 
 ## The documents that matter
 

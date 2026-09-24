@@ -1164,6 +1164,15 @@ def controls_docs():
     check("the runbook probes the guard from inside the agent",
           "docker exec cadp278-agent" in rb and "403 = the guard is in the path" in rb, True)
 
+    # An operator's document has to say what the job is, not only what to do when it breaks.
+    check("the runbook opens with the duties, before the symptoms",
+          rb.index("## The job") < rb.index("## Every session") < rb.index("Runs hold"), True)
+    for duty in ("Sign in to the providers", "Decide the approvals",
+                 "Keep a backup, and its key", "Say what the stack may become"):
+        check(f"and names the duty: {duty.lower()}", duty in rb, True)
+    check("including the two that are accountability rather than action",
+          "who holds the backup key" in rb and "allowed to answer an approval" in rb, True)
+
     # The standing rules are stated where an operator will read them
     for rule in ("preloop agents onboard", "~/.claude", "0600", "in the panel, as a person"):
         check(f"the runbook states the rule about {rule}", rule in rb, True)

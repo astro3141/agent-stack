@@ -1,12 +1,37 @@
 # Runbook
 
-What to do, starting from what you can see. Every entry here is something that actually happened on
-this stack; the measurement behind it is in OPERATIONS.md under the section named.
+**The operator's document.** It opens with what the job actually is — the five things this stack
+cannot do for itself — and the rest is what to do when something is wrong, starting from what you
+can see. Every entry is something that actually happened here; the measurement behind it is in
+OPERATIONS.md under the section named.
+
+Read [docs/concepts.md](concepts.md) once, to know why the pieces are arranged this way.
+[docs/commands.md](commands.md) is the reference you keep open beside this one.
 
 For the state the composition started from, see [RUNBOOK.md](../RUNBOOK.md) — that file is history,
 this one is operation.
 
 ---
+
+## The job
+
+Most of this stack looks after itself: it refuses a run it cannot govern, it records what it did,
+and it says what it cannot tell. Five things it cannot do, and those are the operator's.
+
+| the duty | how you know it is due | where |
+|---|---|---|
+| **Sign in to the providers** | `every provider's state is knowable` is not `0`, or runs hold with `no eligible provider`. Tokens expire on their own schedule, so this is not a calendar item | panel, 계정 |
+| **Decide the approvals** | a run is waiting; the 승인 대기 card is not empty. Nothing else can decide them, by design | panel |
+| **Decide whether a run should keep going** | a run is going that should not be, or a stopped one is worth continuing | panel, 중지 / 재개 |
+| **Keep a backup, and its key** | before any update or rollback, and on whatever cadence the data deserves. The Preloop database is the only copy of the account, its policies, the principals and the approval history | `scripts/backup.sh` |
+| **Say what the stack may become** | an update, a rollback, a change of composition, a new principal or policy — none of it happens on its own | `scripts/release.sh`, `config/` |
+
+Two of those are accountability rather than action: **who holds the backup key**, and **who is
+allowed to answer an approval**. Both are a person's, and neither is enforced by the stack — the
+approval boundary here is a route, not a right (concepts.md).
+
+Everything else an operator does to this stack is a command or a file. If you find yourself wanting
+a button for it, that is the signal to write it down in `config/`, not in a screen.
 
 ## Every session
 
