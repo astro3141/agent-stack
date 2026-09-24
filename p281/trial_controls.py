@@ -1143,6 +1143,46 @@ def controls_approval_boundary():
           "This probe runs wherever it is run from, which is the point" in ops, True)
 
 
+def controls_retry():
+    print("")
+    print("a member may ask to be run again — and a denial is an answer, not a failure")
+    import json as _j, os as _os, subprocess as _sp
+    ws = "/ws/ctl-retry"
+    _os.makedirs(ws, exist_ok=True)
+    def member(label, argv, **kw):
+        return {"label": label, "steps": [{"kind": "script", "name": label + "1",
+                                           "expected": label + ".json", "argv": argv}], **kw}
+    fail = ["/bin/sh", "-c", "echo '{\"status\":\"FAILED\",\"produced\":false}'; exit 1"]
+    deny = ["/bin/sh", "-c", "echo '{\"status\":\"DENIED\",\"produced\":false}'; exit 0"]
+    heal = ["/bin/sh", "-c",
+            f"c={ws}/.c; n=$(cat $c 2>/dev/null || echo 0); n=$((n+1)); echo $n > $c; "
+            f"if [ $n -ge 2 ]; then echo '{{}}' > {ws}/heal.json; fi; "
+            "echo '{\"status\":\"COMPLETED\",\"produced\":true}'"]
+    plan = {"members": [member("never", fail, retries=2), member("noretry", fail),
+                        member("heal", heal, retries=2),
+                        member("denied", deny, retries=2),
+                        member("deniedok", deny, retries=2, retry_when=["failed", "denied"])]}
+    for f in (f"{ws}/heal.json", f"{ws}/.c"):
+        if _os.path.exists(f):
+            _os.remove(f)
+    _j.dump(plan, open(f"{ws}/plan.json", "w"))
+    _sp.run(["/opt/venv/bin/python", "/work/p281/steps/tasks.py", f"{ws}/receipt.json",
+             "ctl", "research-default", "--plan", f"{ws}/plan.json"],
+            capture_output=True, text=True, env={**os.environ, "CONDUCTOR_SELF_RUN_ID": "ctl-retry"})
+    m = _j.load(open(f"{ws}/receipt.json"))["members"]
+    check("a member that asked for two retries gets three attempts",
+          m["never"]["attempts"], 3)
+    check("one that asked for none is run once", m["noretry"]["attempts"], 1)
+    check("one that succeeds on the second stops there",
+          (m["heal"]["attempts"], m["heal"]["produced"]), (2, True))
+    check("a denial is not retried by default", m["denied"]["attempts"], 1)
+    check("and is retried when the member says so", m["deniedok"]["attempts"], 3)
+    check("every attempt is in the receipt, not only the last",
+          m["deniedok"]["attempt_outcomes"], ["denied", "denied", "denied"])
+    check("the routed call's own retry is kept apart from the member's",
+          "call_attempts" in m["never"], True)
+
+
 def controls_packages():
     print("")
     print("a workflow that arrives as a directory — installing one is not editing this stack")
@@ -1701,6 +1741,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_retry()
     controls_packages()
     controls_docs()
     controls_template()

@@ -94,6 +94,18 @@ The step resolves the name inside that directory and refuses anything that escap
 that travel with the package live in `fixtures/` instead; the hand-in directory is for data that
 arrives from outside a run.
 
+## Asking for a retry
+
+A fan-out member may ask to be run again when it does not produce:
+
+```json
+{"label": "E", "retries": 2, "retry_when": ["failed", "denied"], "steps": [ … ]}
+```
+
+No retry by default; `["failed"]` when retries are asked for and `retry_when` is not given — a
+denial is an answer (a tool rule, or a person), and retrying an answer is something the workflow
+says out loud. Every attempt is in the receipt as `attempts` and `attempt_outcomes`.
+
 ## Identities
 
 If a step should run as its own principal, name it in the workflow

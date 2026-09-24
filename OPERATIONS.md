@@ -2073,3 +2073,58 @@ screen** — the panel shows the run and not what the run decided; that is worth
 screen change with a design question in it (which file, whose format), so it waits for a decision
 rather than being guessed at. And **a denied lane cannot recover**: a retry policy for "denied"
 belongs to the workflow that owns those lanes, not to the platform.
+
+## 34. A lane may ask to be run again — and a decision that was never ours
+
+Two items were left open in §33, and the answer to them turned out to be opposite.
+
+### The retry: a decision with no way to make it
+
+"A retry policy for a denied lane belongs to the workflow, not the platform" was the right rule and
+the wrong conclusion, because the workflow **had no way to say it**. `tasks.py` ran each member
+once, and the only retry anywhere was the routed call's own one for a login the provider itself
+calls transient — invisible to the workflow, not configurable by it. Saying the decision was theirs
+while withholding the means is not a boundary, it is a refusal dressed as one.
+
+A member may now ask:
+
+```json
+{"label": "E", "retries": 2, "retry_when": ["failed", "denied"], "steps": [ … ]}
+```
+
+The default is **no retry**, and when retries are asked for, `["failed"]` only. A denial is an
+answer — Preloop's rules, or a person — and retrying an answer has to be said out loud. Measured,
+with members that fail deterministically:
+
+```
+never     attempts=3  outcomes=[failed, failed, failed]      (retries: 2)
+noretry   attempts=1  outcomes=[failed]                      (asked for none)
+heal      attempts=2  outcomes=[failed, produced]            (stops when it produces)
+denied    attempts=1  outcomes=[denied]                      (default: a denial is not retried)
+deniedok  attempts=3  outcomes=[denied, denied, denied]      (retry_when included denied)
+```
+
+One thing had to be fixed for `retry_when: ["denied"]` to mean anything: a member that is a **chain**
+reported only its own `FAILED`, so a refusal arrived at the member looking like a breakage.
+`task_chain.py` now carries the failing step's own status up (`failed_status`), and the fan-out
+reads that. Every attempt is in the receipt (`attempts`, `attempt_outcomes`), and the routed call's
+own retry stays where it was (`call_attempts`): a retry that disappears from the record is a run
+that lies about what it cost.
+
+### The lane report: not a capability, a readout
+
+The other item — showing a run's decisions on the screen — was dropped, and the argument that
+settled it came from the operator's side: *we cannot know what a workflow's output is for.*
+Conductor's `output:` is a map of strings. Rendering it "as it is" is still a guess — a path shown
+as text is useless, shown as a link assumes a file this stack can serve, a number formatted assumes
+units. Trading decides in text because that workflow decides in text, not because workflows do.
+
+And there is a simpler reason, from this stack's own rule: **the panel is for decisions a person
+must make**, not for readouts. The four are login, approval, stopping a run, resuming one. What a
+lane bought is something to read, and everything needed to read it already exists — the run's
+workspace, its output in `show`, its record in MLflow, and `docs/reading-a-run.md` saying where each
+lands. A workflow that wants a screen for its own decisions builds that screen.
+
+The pair is worth keeping side by side, because they look like the same kind of item and are not:
+one was a capability we had not provided while calling the gap a boundary; the other was a readout
+that would have pulled a domain into the platform.

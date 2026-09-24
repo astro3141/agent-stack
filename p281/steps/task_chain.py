@@ -69,6 +69,10 @@ print(json.dumps({
     "steps_run": len(results),
     "steps_planned": len(member["steps"]),
     "failed_step": "" if ok else results[-1]["step"],
+    # the failing step's *own* status, carried up: a chain that reports only FAILED hides the
+    # difference between "it broke" and "it was refused", which is exactly what a member's
+    # `retry_when` has to decide on (tasks.py, OPERATIONS §34)
+    "failed_status": "" if ok else str(results[-1].get("status") or "FAILED"),
     "model_calls": sum(1 for r in results if r.get("kind") == "model"),
     # every step's own record, so the recorder can give each execution its own run
     "steps": results,
