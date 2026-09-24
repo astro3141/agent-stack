@@ -1319,3 +1319,64 @@ kill — something true in the tree and not true in what runs:
 **In the panel**: a run that stopped before it finished, and has a checkpoint, offers **재개** next
 to **중지**. Whether an interrupted run is worth continuing is the same kind of judgement as
 stopping it was, so it is offered in the same place; the run resumes detached, as a start does.
+
+## 24. Running a set of cases
+
+§19 gave a run's trajectory and a `--suite` label, and then stopped — which left the boundary in
+the wrong place. Deciding **what a case is** and **whether an answer was right** needs the domain,
+and belongs to the workflow. But **starting a run per case, keeping them apart and reading back
+what each one did** is execution, and execution is the platform's. Until now nothing turned a file
+of cases into that set of runs; every case was started by hand.
+
+`p281/suite.py`:
+
+```
+suite.py run  <suite> <workflow> <profile> <cases.jsonl> [--concurrency N]
+suite.py read <suite> [--json]
+```
+
+`cases.jsonl` is one JSON object per line. `case` names the line; **every other key is passed to
+the workflow as an input, unread** — a value this stack does not interpret is a value it cannot
+distort. A line it cannot use is reported, never skipped in silence: not JSON, not an object, a
+case id that is not a name, or a case id that appears twice. One run id per `(suite, case)`, so a
+repeat is recognised rather than duplicated (§17).
+
+What `read` adds to the per-run trajectories is a tally of **execution fact** — how many reached a
+terminal step, how many were recorded, how the loops stood against their own bounds, what it cost,
+how often a rule decided a permission request and how often a person was asked. How the runs ended
+is counted too and labelled as what it is: *the workflow's own word, not a grade*. There is no
+accuracy and no score in this file, and a control fails if one appears in its code. Joining these
+runs to expected answers is the grader's work; the `case` each run carries is what it joins on.
+
+**The first suite found something, which is what a set is for.** Three cases of `novel-a`
+(`default`, `strict`, `strict-nofix`) all ended at `done_hold` with zero model calls:
+
+```
+shape01-strict  novel-a  done_hold  suite=shape01  case=strict
+  steps            route → roles → record_hold → done_hold
+  model calls      0  {}
+suite shape01: 3 of 3 runs read
+  reached a terminal step  3/3   recorded 3/3
+  cost                     0 calls, — tokens
+```
+
+The router had said `ROUTE: codex within limits`, but the roles step could not give the chapter an
+author, because Claude was not eligible: **"unknown: unparseable observed_at"**. Behind it, from
+CodexBar: *"Claude OAuth token expired… run `claude login`, then retry."* The stack held, correctly
+— and `scripts/up.sh` still reported `claude /route login  true`, because that check asks whether a
+login file exists, not whether the token in it still works.
+
+So the bring-up now asks the question a run would ask, through `ops_health.unknowable()`, which
+runs the same three parts in the same order a run's first step does — this profile's policy, a
+fresh collection of observations, the router's own evaluation:
+
+```
+FAIL  every provider's state is knowable           expected 0, got 1
+      claude: unknown: unparseable observed_at
+```
+
+**Only "unknown:" counts.** At a limit, or a stale observation, is ordinary operation and not a
+failure; *not being able to tell* is, because every run that needs that provider will hold while
+the login check still says the login is there. The same fact is a standing risk in
+`p281/ops_health.py`, so it appears in the panel where a person will see it — and signing in again
+is that person's, as every provider login is.

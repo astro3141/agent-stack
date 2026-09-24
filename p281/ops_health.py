@@ -110,6 +110,34 @@ def soaks():
     return out[-3:]
 
 
+def unknowable(profile="research-default"):
+    """Run the router the way a run's first step does, and report what it could not determine.
+
+    The same three parts in the same order — this profile's routing policy, a fresh collection of
+    observations, the router's own evaluation — so what this reports is what a run would meet.
+    """
+    import subprocess, tempfile
+    prof = settings.profile(profile)
+    if not prof:
+        return [{"provider": "(all)", "why": f"unknown: no generated profile {profile!r}"}]
+    with tempfile.TemporaryDirectory() as d:
+        pol = prof["routing"]
+        with open(f"{d}/policy.json", "w") as f:
+            json.dump(pol, f)
+        os.makedirs(f"{d}/obs", exist_ok=True)
+        env = {**os.environ, "P281_MODEL_ROUTES": json.dumps(pol.get("model_route") or {}),
+               "P281_LOGINS": json.dumps(pol.get("login") or {})}
+        subprocess.run([sys.executable, "/work/p281/collect_obs.py", f"{d}/obs"],
+                       capture_output=True, env=env, timeout=180)
+        r = subprocess.run([sys.executable, "/work/p281/router.py", f"{d}/policy.json", f"{d}/obs"],
+                           capture_output=True, text=True, timeout=60)
+    try:
+        ev = json.loads(r.stdout)["evaluated"]
+    except Exception:
+        return [{"provider": "(all)", "why": "unknown: the router did not answer"}]
+    return [e for e in ev if str(e.get("why") or "").startswith("unknown:")]
+
+
 def risks():
     """Standing facts an operator should not have to rediscover. Probed, not assumed.
 
@@ -125,6 +153,18 @@ def risks():
     request id was wrong, so the guard is not in the path.
     """
     out = []
+    # A provider whose state cannot be determined: a login file that exists with a dead token
+    # behind it, an observation that cannot be read. Being at a limit or stale is ordinary and is
+    # not a risk; not being able to tell is, because every run that needs that provider will hold
+    # and the bring-up will still report the login as present (measured: an expired Claude OAuth
+    # token held three runs of a suite while `claude /route login` said true).
+    for e in unknowable():
+        out.append({"risk": f"the stack cannot tell what {e['provider']} can do",
+                    "detail": e.get("why"),
+                    "why_it_matters": "a run that needs this provider will hold, and the login "
+                                      "check will still say the login is there",
+                    "what_would_fix_it": "sign in again for this provider "
+                                         "(the panel's 계정 tab, or `claude auth login` in /route)"})
     try:
         tok = json.load(open(glob.glob(os.path.expanduser(
             "~/.preloop/agents/*/permission_hook.json"))[0], encoding="utf-8"))["token"]

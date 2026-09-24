@@ -3,6 +3,7 @@
 usage:
   run_workflow.py start <ui-id> <workflow> <profile> [key=value ...] [--allow-unrecorded]
                         [--suite <name>]   label this run so a set can be read together
+                        [--case <id>]      which case of that set this run is for
   run_workflow.py resume <ui-id>                                      continue an interrupted run
   run_workflow.py stop   <ui-id>                                      stop a run that is going
   run_workflow.py show  <ui-id>                                       JSON view of one run
@@ -58,7 +59,7 @@ def meta_path(ui):
     return run_dir(ui) / "meta.json"
 
 
-def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite=""):
+def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", case=""):
     if workflow not in WORKFLOWS or not re.fullmatch(r"[a-z0-9-]{1,40}", profile) or not re.fullmatch(r"[a-z0-9-]{6,40}", ui):
         print(json.dumps({"error": "invalid workflow, profile or id"})); return 2
     caps = capabilities.probe()
@@ -80,8 +81,10 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite=""):
     tmp = d / "tmp"
     (tmp / "conductor").mkdir(parents=True, exist_ok=False)     # a fresh id only
     meta = {"ui_id": ui, "workflow": workflow, "profile": profile, "inputs": inputs,
-            # a label only: it groups runs for whoever evaluates them, and changes nothing here
-            "suite": suite,
+            # labels only: they group runs and name the case a run was started for, and change
+            # nothing about what runs. What a case *means* is the dataset's, and this carries it
+            # without reading it (p281/suite.py, OPERATIONS §24).
+            "suite": suite, "case": case,
             "started_at": time.time(), "state": "running",
             # what the stack could do when this run started, so a run read later is read in
             # the light of the stack it actually ran on
@@ -285,7 +288,7 @@ def cmd_list():
     for m in metas:
         v = view(json.loads(m.read_text()))
         rows.append({k: v.get(k) for k in ("ui_id", "workflow", "profile", "state", "started_at", "current_step",
-                                            "terminated_at", "route")}
+                                            "terminated_at", "route", "suite", "case")}
                     | {"decision": (v.get("output") or {}).get("decision"),
                        # a run that stopped before it ended, and has something to continue from
                        # A stop *is* an end in Conductor's log (it fails the run), so "not ended"
@@ -300,11 +303,16 @@ def cmd_list():
 if __name__ == "__main__":
     a = sys.argv[1]
     argv = sys.argv[5:]
-    suite = argv[argv.index("--suite") + 1] if "--suite" in argv and argv.index("--suite") + 1 < len(argv) else ""
+    def labelled(name):
+        i = argv.index(name) if name in argv else -1
+        return argv[i + 1] if 0 <= i < len(argv) - 1 else ""
+    suite, case = labelled("--suite"), labelled("--case")
+    # everything that is neither a flag nor a flag's value is an input pair
     rest = [x for i, x in enumerate(argv)
-            if x not in ("--allow-unrecorded", "--suite") and (i == 0 or argv[i - 1] != "--suite")]
+            if x not in ("--allow-unrecorded", "--suite", "--case")
+            and (i == 0 or argv[i - 1] not in ("--suite", "--case"))]
     sys.exit({"start": lambda: cmd_start(sys.argv[2], sys.argv[3], sys.argv[4], rest,
-                                         "--allow-unrecorded" in argv, suite),
+                                         "--allow-unrecorded" in argv, suite, case),
               "resume": lambda: cmd_resume(sys.argv[2]),
               "stop": lambda: cmd_stop(sys.argv[2]),
               "show": lambda: cmd_show(sys.argv[2]), "list": cmd_list}[a]())

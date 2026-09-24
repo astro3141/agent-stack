@@ -162,6 +162,16 @@ check "codex /route login"               yes "$(in_agent 'CODEX_HOME=/route/code
 check "grok /route login"                yes "$(in_agent 'test -s /route/grok/auth.json && echo yes || echo no')"
 check "observer codex login"             yes "$(docker exec "$STACK-quota" sh -c 'codex login status 2>&1 | grep -q "Logged in" && echo yes || echo no' 2>/dev/null)"
 echo "== quota observer"
+# A login file can exist while its token is dead: the router then reports the provider as
+# ineligible for an *unknown* reason, and every run that needs it holds. Being at a limit or
+# having a stale observation is ordinary; not being able to tell is not, so only "unknown:" fails.
+check "every provider's state is knowable"  0 "$(in_agent '/opt/venv/bin/python -c "
+import sys; sys.path.insert(0, \"/work/p281\")
+import ops_health
+bad = ops_health.unknowable()
+print(len(bad))
+for e in bad: print(\"        \" + e[\"provider\"] + \": \" + str(e[\"why\"]), file=sys.stderr)" 2>/tmp/unknowable')"
+in_agent 'cat /tmp/unknowable 2>/dev/null' | head -4
 check "observation fresh (< 10 min)"     yes "$(in_agent 'python3 -c "
 import json,datetime as d
 r=json.load(open(\"/obs/codex.raw.json\")); t=d.datetime.fromisoformat(r[\"collected_at\"].replace(\"Z\",\"+00:00\"))

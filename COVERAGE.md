@@ -38,16 +38,19 @@ something this stack has been measured doing, or is marked as not covered.
 
 ## §16–18 Evaluation and the production gate
 
-**The trajectory layer is covered; the other two are not ours.** Whether a verdict was right or a
+**The execution half is covered; the meaning half is not ours.** Whether a verdict was right or a
 lane was a good strategy is what the work means, and meaning belongs to the workflow — it needs
 labelled cases from whoever knows the domain. What the platform can answer without knowing the
 domain, it now does: `p281/trajectory.py` assembles what a run did from the records that already
 existed, with four assertions that are true or false (the loop stayed inside its bound, every call
 carried its principal, the run reached a terminal step, the run was recorded), and
-`--suite <name>` groups a set of runs for whoever evaluates them (OPERATIONS §19).
+`p281/suite.py` turns a file of cases into one run per case and reads the set back as execution
+fact — how many reached a terminal step, what they cost, how often a person was asked, how the runs
+ended (the workflow's word, not a grade). The `case` each run carries is what a grader joins on
+(OPERATIONS §19, §24).
 
-Still not covered, and not ours to cover: datasets and their labels, outcome and step graders,
-grader validation. What exists beside the trajectory is:
+Still not covered, and not ours to cover: the **content** of a dataset and its labels, outcome and
+step graders, grader validation. What exists beside the trajectory is:
 
 - **controls** (`p281/trial_controls.py`, 162) that pin the *machinery* against synthetic inputs —
   they answer "does the stack do what it says", not "is the workflow's judgement any good";

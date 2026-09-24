@@ -113,7 +113,7 @@ def of_run(ui):
     declared = bool(principals)          # the workflow assigns them, so every call should carry one
     t = {
         "ui": ui, "workflow": view.get("workflow"), "profile": view.get("profile"),
-        "suite": view.get("suite") or "",
+        "suite": view.get("suite") or "", "case": view.get("case") or "",
         "state": view.get("state"), "ended_at": view.get("terminated_at"),
         "decision": (view.get("output") or {}).get("decision"),
         "steps": steps,
@@ -159,7 +159,8 @@ def _print(t):
         return
     a = t["assertions"]
     print(f"{t['ui']}  {t['workflow']}  {t.get('decision') or t.get('ended_at') or t['state']}"
-          + (f"  suite={t['suite']}" if t["suite"] else ""))
+          + (f"  suite={t['suite']}" if t["suite"] else "")
+          + (f"  case={t['case']}" if t["case"] else ""))
     print(f"  steps            {' → '.join(t['steps'])}")
     print(f"  model calls      {t['model_calls']}  {t['by_provider']}"
           + (f"  principals {t['by_principal']}" if t["by_principal"] else ""))

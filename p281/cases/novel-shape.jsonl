@@ -1,0 +1,3 @@
+{"case": "default", "review_mode": "default", "max_repairs": "1"}
+{"case": "strict", "review_mode": "strict", "max_repairs": "1"}
+{"case": "strict-nofix", "review_mode": "strict", "max_repairs": "0"}

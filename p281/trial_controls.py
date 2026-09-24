@@ -1229,7 +1229,83 @@ def controls_resume():
           "up -d --build" in up, True)
 
 
+def controls_suite():
+    print("")
+    print("a set of cases — running it is ours, saying what it means is not")
+    import importlib.util as il, tempfile, pathlib
+    spec = il.spec_from_file_location("suite_ctl", "/work/p281/suite.py")
+    su = il.module_from_spec(spec); sys.modules["suite_ctl"] = su; spec.loader.exec_module(su)
+    src = open("/work/p281/suite.py", encoding="utf-8").read()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        f = pathlib.Path(tmp) / "cases.jsonl"
+        f.write_text(chr(10).join([
+            '{"case": "a", "review_mode": "strict", "max_repairs": 1}',
+            '# a comment, and a blank line below',
+            '',
+            '{"case": "a", "review_mode": "default"}',
+            'not json at all',
+            '{"case": "UPPER"}',
+            '["not", "an", "object"]',
+            '{"review_mode": "default"}',
+        ]))
+        cases, bad = su.read_cases(str(f))
+        check("a case's inputs are carried as given, not interpreted",
+              [c["inputs"] for c in cases if c["case"] == "c008"], [{"review_mode": "default"}])
+        check("a line without a case id still gets one", [c["case"] for c in cases], ["c008"])
+        check("a value is passed as text, whatever it was written as",
+              su.read_cases(str(f))[0] is not None, True)
+        whys = " ".join(b["why"] for b in bad)
+        check("a duplicate case id is refused, not silently merged", "share this case id" in whys, True)
+        check("a line that is not JSON is named", "not JSON" in whys, True)
+        check("so is one that is not an object", "not an object" in whys, True)
+        check("and a case id that is not a name", "case id" in whys, True)
+        check("nothing unusable is dropped in silence", len(bad), 4)
+
+    check("one run id per case, so a repeat is recognised",
+          su.ui_for("s1", "a"), "s1-a")
+    check("a case already run is not run again", su.REPEATABLE, "guarded")
+
+    # the summary is execution fact and says so
+    rows = [{"decision": "PASS", "model_calls": 2, "tokens": 10, "wall_ms": 1000,
+             "permission_requests": 2, "decided_by_rules": 2, "approvals_requested": 0,
+             "rule_denials": 0, "retries": 0, "loop": {"rounds": 1, "bound": 1, "within": True},
+             "assertions": {"reached_a_terminal_step": True, "recorded": True,
+                            "every_call_had_a_principal": True, "loop_within_bound": True}},
+            {"decision": "BLOCK", "model_calls": 3, "tokens": 20, "wall_ms": 2000,
+             "permission_requests": 1, "decided_by_rules": 0, "approvals_requested": 1,
+             "rule_denials": 1, "retries": 1, "loop": {"rounds": 2, "bound": 1, "within": False},
+             "assertions": {"reached_a_terminal_step": True, "recorded": False,
+                            "every_call_had_a_principal": None, "loop_within_bound": False}}]
+    s2 = su.summarise(rows)
+    check("the set's cost is summed", (s2["model_calls"], s2["tokens"]), (5, 30))
+    check("a rule deciding is still not a person being asked",
+          (s2["decided_by_rules"], s2["asked_a_person"]), (2, 1))
+    check("loops are counted against their own bounds",
+          (s2["loops_within_bound"], s2["loops_measured"]), (1, 2))
+    check("a run that was not recorded is not counted as one", s2["recorded"], 1)
+    check("how the runs ended is a tally", s2["ended_as"], {"BLOCK": 1, "PASS": 1})
+    check("and it is labelled as the workflow's word, not a grade",
+          "not a grade" in src, True)
+
+    # What the first suite found: a login file can exist while its token is dead, and then every
+    # run that needs that provider holds while the bring-up still reports the login as present.
+    oh = open("/work/p281/ops_health.py", encoding="utf-8").read()
+    up_sh = open("/work/scripts/up.sh", encoding="utf-8").read()
+    check("a provider the stack cannot read is a standing risk",
+          "the stack cannot tell what" in oh, True)
+    check("being at a limit is not one", "not a risk" in oh, True)
+    check("and the bring-up checks it where a run would meet it",
+          'state is knowable' in up_sh and 'every provider' in up_sh, True)
+    # The words appear in the file's own docstring, where they are disclaimed. What matters is
+    # that they are absent from the code: a summary that computed one of these would be grading.
+    body = src.split(chr(34) * 3, 2)[2]
+    for word in ("accuracy", "score", "correct", "expected", "label"):
+        check(f"nothing in the code computes {word}", word in body.lower(), False)
+
+
 if __name__ == "__main__":
+    controls_suite()
     controls_resume()
     controls_bootstrap()
     controls_approval_boundary()
