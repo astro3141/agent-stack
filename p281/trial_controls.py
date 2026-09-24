@@ -1279,9 +1279,25 @@ def controls_docs():
     print("the documents — what they promise is what the tree does")
     import glob as _glob, os as _os, re as _re
     docs = {p: open(p, encoding="utf-8").read() for p in _glob.glob("/work/docs/*.md")}
-    check("the four documents exist",
+    check("the documents exist",
           sorted(_os.path.basename(p) for p in docs),
-          ["commands.md", "concepts.md", "install.md", "runbook.md"])
+          ["commands.md", "concepts.md", "containers.md", "install.md", "packages.md",
+           "reading-a-run.md", "runbook.md"])
+    # what a second operator had to reverse-engineer, now stated
+    cont, run_doc, pkg = (docs["/work/docs/containers.md"], docs["/work/docs/reading-a-run.md"],
+                          docs["/work/docs/packages.md"])
+    check("the container map says which side writes to Preloop",
+          "admin" in cont and "the governed party may read the control plane and may not change it"
+          in cont.lower(), True)
+    check("and that a 403 in the agent is the boundary, not a problem to route around",
+          "not a problem to route around" in cont, True)
+    check("reading a run names where each thing lands",
+          all(x in run_doc for x in ("evidence/ui-runs/<id>/meta.json", "events.jsonl",
+                                     "/ws/<conductor run id>/", "evidence/p281/")), True)
+    check("the package contract states the four a step must keep",
+          all(x in pkg for x in ("settings.runtime()", "last line of stdout is JSON",
+                                 "REPEATABLE", '"items"')), True)
+    check("and how data comes in", "handoff" in pkg and "by name, not by path" in pkg, True)
 
     # A command named in a document that does not exist is the worst kind of documentation.
     named = set()
@@ -1381,15 +1397,31 @@ def controls_docs():
           and '"$STACK-quota" codex login' in rb, True)
     check("and says what does not fix it", "**Not a fix:** running a workflow" in rb, True)
 
+    # a refusal names the rule it applied, and a bare call is answered rather than raised
+    rw2 = open("/work/p281/run_workflow.py", encoding="utf-8").read()
+    co2 = open("/work/p281/collect_obs.py", encoding="utf-8").read()
+    hub2 = open("/work/hub/index.html", encoding="utf-8").read()
+    check("an invalid input says which rule it broke",
+          '"rule": "a value is letters, digits' in rw2 and "refused_characters" in rw2, True)
+    check("and a path says where data belongs instead", "hand-in directory" in rw2, True)
+    check("the collector answers a bare call", "needs the directory to write" in co2, True)
+    check("a run can be started without being waited on", '"--detach" not in argv' in rw2, True)
+    check("and watched while it goes", "def cmd_tail(" in rw2, True)
+    check("a run waiting on a person is visible from any tab",
+          "appr-badge" in hub2 and "document.title" in hub2, True)
+    check("and the panel keeps asking while nobody is looking",
+          "setInterval(() => { loadApprovals()" in hub2, True)
+
     # The standing rules are stated where an operator will read them
     for rule in ("preloop agents onboard", "~/.claude", "0600", "in the panel, as a person"):
         check(f"the runbook states the rule about {rule}", rule in rb, True)
 
     # README leads somewhere
     readme = open("/work/README.md", encoding="utf-8").read()
-    check("the README points at all four",
+    check("the README points at all of them",
           all(f"docs/{n}" in readme for n in
-              ("install.md", "concepts.md", "commands.md", "runbook.md")), True)
+              ("install.md", "concepts.md", "commands.md", "runbook.md", "containers.md",
+               "reading-a-run.md", "packages.md")), True)
     check("and says the old runbook is history",
           "use [docs/runbook.md]" in readme, True)
 

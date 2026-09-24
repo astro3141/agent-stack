@@ -143,3 +143,6 @@ A composition is which parts are running: `full`, `no-record` (no MLflow), `runt
 | [docs/install.md](install.md) | from a clone to a running stack |
 | [docs/commands.md](commands.md) | every command, in one table |
 | [docs/runbook.md](runbook.md) | what to do when something is wrong |
+| [docs/containers.md](containers.md) | which container does what, and what it must not |
+| [docs/reading-a-run.md](reading-a-run.md) | where everything a run leaves behind lands |
+| [docs/packages.md](packages.md) | writing a workflow package: the contract its steps keep |

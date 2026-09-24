@@ -32,7 +32,8 @@ docker exec cadp278-admin /opt/venv/bin/python /work/p281/<script>.py …    # w
 
 | | |
 |---|---|
-| `run_workflow.py start <id> <workflow> <profile> [k=v …] [--suite N] [--case C] [--allow-unrecorded]` | start a run (agent) |
+| `run_workflow.py start <id> <workflow> <profile> [k=v …] [--suite N] [--case C] [--detach] [--allow-unrecorded]` | start a run (agent); `--detach` returns the id instead of waiting |
+| `run_workflow.py tail <id> [--follow]` | the steps as they happen, from the run's own event log |
 | `run_workflow.py stop <id>` | graceful cancel — it keeps a checkpoint |
 | `run_workflow.py resume <id>` | re-enter the step that did not finish |
 | `run_workflow.py show <id>` / `list` | one run, or the last fifty, as JSON |
@@ -72,6 +73,12 @@ docker exec cadp278-admin /opt/venv/bin/python /work/p281/<script>.py …    # w
 `http://127.0.0.1:8780` — provider login, approval decisions, starting a run, stopping and
 resuming one, and the state needed to decide those. Its API (`127.0.0.1:8781`) has one route per
 action, each mapping to one known command; adding a capability there is deliberate.
+
+## Where things are
+
+[containers.md](containers.md) — which container may do what, and why a 403 in the agent is the
+boundary rather than a problem. [reading-a-run.md](reading-a-run.md) — where a run's state, events,
+outputs, evidence and record each land.
 
 ## Conventions worth knowing
 

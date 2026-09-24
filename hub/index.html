@@ -46,7 +46,7 @@
   <h1>CADP 실행 허브</h1>
   <nav>
     <button data-tab="dash" class="on">대시보드</button>
-    <button data-tab="accounts">계정·상태</button>
+    <button data-tab="accounts">계정·상태<span id="appr-badge" class="hidden"></span></button>
     <button data-tab="run">워크플로 실행</button>
     <button data-tab="runs">실행 기록</button>
   </nav>
@@ -62,6 +62,7 @@
     <h2>지금 이 스택이 할 수 있는 것</h2>
     <div class="row" id="dash-caps"><span class="muted">불러오는 중…</span></div>
     <div class="row muted" id="dash-comp"></div>
+    <div class="row" id="dash-approvals"></div>
     <div id="dash-lock"></div>
     <div id="dash-risks"></div>
   </div>
@@ -181,6 +182,9 @@
 </section>
 </main>
 
+<style>
+  .waiting { background:#b45309; color:#fff; border-radius:9px; padding:0 6px; margin-left:6px; font-size:12px }
+</style>
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -305,8 +309,29 @@ $("#cfg-apply").onclick = async () => {
 };
 
 // ---- approvals: the one thing here that cannot go on without a person
+// A run that is waiting on a person is the one thing here that stops until someone looks. It used
+// to be visible only on the tab that shows it: a lane waited its whole timeout while nobody was
+// told (reported from the second machine, OPERATIONS §33). The count goes on the tab, in the
+// document title, and in a line the dashboard always shows.
+function showWaiting(n) {
+  const badge = $("#appr-badge");
+  badge.textContent = n ? ` ${n}` : "";
+  badge.className = n ? "waiting" : "hidden";
+  document.title = (n ? `(${n}) ` : "") + "CADP 실행 허브";
+  const line = $("#dash-approvals");
+  if (line) {
+    line.innerHTML = n
+      ? `<span class="warn">실행 ${n}건이 사람의 판정을 기다립니다</span> — <a href="#" id="go-appr">계정·상태 탭에서 판정</a>`
+      : `<span class="ok">기다리는 승인 없음</span>`;
+    const go = $("#go-appr");
+    if (go) go.onclick = (e) => { e.preventDefault();
+      document.querySelector('nav button[data-tab="accounts"]').click(); };
+  }
+}
+
 async function loadApprovals() {
   const a = await api("/api/approvals");
+  showWaiting(Array.isArray(a) ? a.length : 0);
   $("#appr").innerHTML = Array.isArray(a) && a.length
     ? `<table><tr><th>도구</th><th>대상</th><th>작업 폴더</th><th>요청</th><th>만료</th><th>판정</th></tr>` + a.map((r) =>
         `<tr><td>${esc(r.tool)}</td><td class="mono">${esc(r.target)}</td><td class="mono">${esc(r.cwd)}</td>` +
@@ -575,6 +600,10 @@ async function showRun(id) {
 // ---- boot
 loadOverview();
 loadProfiles().then(() => { loadAccounts(); loadConfig(); loadApprovals(); loadChecks(); loadWorkflows(); });
+// An approval arrives while nobody is looking at the tab that shows it, so the panel keeps asking.
+// Every 15 seconds is cheap (one read of Preloop's pending list) and is the difference between a
+// person answering inside the run's own timeout and finding out afterwards.
+setInterval(() => { loadApprovals().catch(() => {}); }, 15000);
 </script>
 </body>
 </html>

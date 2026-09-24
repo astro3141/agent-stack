@@ -2,6 +2,8 @@
 
 usage:
   run_workflow.py start <ui-id> <workflow> <profile> [key=value ...] [--allow-unrecorded]
+                        [--detach]         start it and return the id, rather than waiting
+  run_workflow.py tail  <ui-id> [--follow] the steps as they happen, from the run's own event log
                         [--suite <name>]   label this run so a set can be read together
                         [--case <id>]      which case of that set this run is for
   run_workflow.py resume <ui-id>                                      continue an interrupted run
@@ -133,8 +135,22 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
     inputs = {}
     for kv in pairs:
         k, _, v = kv.partition("=")
-        if not re.fullmatch(r"[a-z][a-z0-9_]{0,29}", k) or not SAFE.fullmatch(v):
-            print(json.dumps({"error": f"invalid input {k!r}"})); return 2
+        # A refusal that does not name the rule sends the reader into the source: a path in
+        # `packet_from` was refused as "invalid input" and finding out that `/` is not allowed
+        # meant opening this file (reported from the second machine, OPERATIONS §33).
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,29}", k):
+            print(json.dumps({"error": f"invalid input name {k!r}",
+                              "rule": "an input name is [a-z][a-z0-9_] of up to 30"})); return 2
+        if not SAFE.fullmatch(v):
+            bad = sorted({c for c in v if not SAFE.fullmatch(c)})
+            print(json.dumps({"error": f"invalid value for input {k!r}",
+                              "rule": "a value is letters, digits, dot, underscore, hyphen or "
+                                      "space, up to 200 — arguments reach Conductor as an argv "
+                                      "list and are never shell-interpreted",
+                              "refused_characters": bad,
+                              "hint": ("a path cannot be passed as an input; put the file in the "
+                                       "hand-in directory and pass its name (docs/packages.md)"
+                                       if "/" in v else "")}, ensure_ascii=False)); return 2
         inputs[k] = v
     d = run_dir(ui)
     tmp = d / "tmp"
@@ -225,6 +241,50 @@ def run_ended(ui, from_byte=0):
     except OSError:
         pass
     return False
+
+
+def cmd_tail(ui, follow=False):
+    """The run's steps as they happen, read from its own event log.
+
+    A start that holds the terminal until the run ends is fine for a script and wrong for a person:
+    the first pilot on another machine was cut by a two-minute client timeout while the run itself
+    carried on (OPERATIONS §33). `--detach` returns the id; this is how you then watch it.
+    """
+    if not meta_path(ui).exists():
+        print(json.dumps({"error": "no such run"})); return 1
+    seen, idle = 0, 0
+    while True:
+        p = events_for(ui)
+        lines = p.open().read().splitlines() if p else []
+        for line in lines[seen:]:
+            try:
+                e = json.loads(line)
+            except Exception:
+                continue
+            t, d = e.get("type"), e.get("data") or {}
+            # Conductor stamps events with epoch seconds, not an ISO string
+            try:
+                at = time.strftime("%H:%M:%S", time.localtime(float(e.get("timestamp"))))
+            except (TypeError, ValueError):
+                at = "--:--:--"
+            if t == "agent_started":
+                print(f"{at}  → {d.get('agent_name')}", flush=True)
+            elif t == "agent_completed" and d.get("agent_type") == "terminate":
+                print(f"{at}  ■ {d.get('agent_name')}: {d.get('termination_reason') or ''}", flush=True)
+            elif t in ("workflow_completed", "workflow_failed"):
+                print(f"{at}  {'done' if t == 'workflow_completed' else 'ended'}", flush=True)
+                if not follow:
+                    return 0
+                return 0
+        seen = len(lines)
+        if not follow:
+            return 0
+        meta = json.loads(meta_path(ui).read_text())
+        if meta.get("state") != "running" and not launcher_alive(meta):
+            idle += 1
+            if idle > 2:          # the launcher is gone and the log has stopped growing
+                return 0
+        time.sleep(2)
 
 
 def cmd_resume(ui):
@@ -429,8 +489,31 @@ if __name__ == "__main__":
     rest = [x for i, x in enumerate(argv)
             if x not in ("--allow-unrecorded", "--suite", "--case")
             and (i == 0 or argv[i - 1] not in ("--suite", "--case"))]
-    sys.exit({"start": lambda: cmd_start(sys.argv[2], sys.argv[3], sys.argv[4], rest,
-                                         "--allow-unrecorded" in argv, suite, case),
+    def start_or_detach():
+        # A start holds the terminal until the run ends, which is right for a script and wrong for
+        # a person: a two-minute client timeout cut the first pilot on another machine while the
+        # run carried on (OPERATIONS §33). `--detach` re-runs this same command in the background
+        # and answers with the id, which `tail` and `show` then take.
+        if "--detach" not in argv:
+            return cmd_start(sys.argv[2], sys.argv[3], sys.argv[4], rest,
+                             "--allow-unrecorded" in argv, suite, case)
+        ui = sys.argv[2]
+        if meta_path(ui).exists():
+            print(json.dumps({"error": f"the run id {ui!r} has been used already"})); return 2
+        child = [a for a in sys.argv if a != "--detach"]
+        subprocess.Popen([sys.executable] + child[0:1] + child[1:], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(30):                      # answer once the run exists, not before
+            if meta_path(ui).exists():
+                break
+            time.sleep(1)
+        print(json.dumps({"ui": ui, "detached": True,
+                          "watch": f"run_workflow.py tail {ui} --follow",
+                          "started": meta_path(ui).exists()}))
+        return 0
+
+    sys.exit({"start": start_or_detach,
+              "tail": lambda: cmd_tail(sys.argv[2], "--follow" in sys.argv),
               "resume": lambda: cmd_resume(sys.argv[2]),
               "stop": lambda: cmd_stop(sys.argv[2]),
               "show": lambda: cmd_show(sys.argv[2]), "list": cmd_list,

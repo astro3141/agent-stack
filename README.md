@@ -33,6 +33,9 @@ directory, and the operations that let the result survive a restart, an update o
 | **[docs/install.md](docs/install.md)** | from a clone to a running stack, what the host needs, and what only a person can do |
 | **[docs/concepts.md](docs/concepts.md)** | how the five pieces fit, the one rule they are arranged around, and what a run leaves behind |
 | **[docs/commands.md](docs/commands.md)** | every command, and which container it belongs in |
+| **[docs/containers.md](docs/containers.md)** | what each container does, what it must not, and why |
+| **[docs/reading-a-run.md](docs/reading-a-run.md)** | where everything a run leaves lands, and what reads it |
+| **[docs/packages.md](docs/packages.md)** | writing a workflow package: the contract its steps keep |
 | **[docs/runbook.md](docs/runbook.md)** | **the operator's document**: what the job is, and what to do when something is wrong |
 
 ## The documents that matter

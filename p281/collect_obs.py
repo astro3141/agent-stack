@@ -24,6 +24,11 @@ RT = settings.runtime()
 EGRESS = settings.egress_env(RT)
 LOGINS = RT["paths"]["logins_root"]
 OBS = RT["paths"]["observations"]
+if len(sys.argv) < 2:
+    print(json.dumps({"error": "collect_obs.py needs the directory to write the observations into",
+                      "usage": "collect_obs.py <observations-dir>",
+                      "reads": "P281_MODEL_ROUTES and P281_LOGINS from the environment"}))
+    raise SystemExit(2)
 out = sys.argv[1]
 os.makedirs(out, exist_ok=True)
 fp = lambda s: "email:" + hashlib.sha256(s.lower().encode()).hexdigest()[:16] if s else None
@@ -272,7 +277,12 @@ def codexbar_claude_direct():
             "observed_account": ident if item else None,
             "executing_account": ident, "identity_basis": "same-credential", "model_route": "direct",
             "windows": wins, "extra_windows": u.get("extraRateWindows") or [],
-            **({} if item else {"error": (p.stderr or p.stdout or "")[-200:]})}
+            # CodexBar answers with an item that carries an `error` when it cannot read the
+            # account — an expired login, most often. Carrying it here is what lets the router say
+            # *why* a provider is unusable instead of "unparseable observed_at" (OPERATIONS §33).
+            **({"error": str((item or {}).get("error", {}).get("message")
+                             or (p.stderr or p.stdout or "")[-200:])[:200]}
+               if (not item or not wins or (item or {}).get("error")) else {})}
 
 
 if ROUTES.get("claude") == "direct":

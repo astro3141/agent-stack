@@ -61,7 +61,12 @@ def evaluate(cand, obs, policy, now):
     try:
         age = (now - parse_ts(obs["observed_at"])).total_seconds()
     except Exception:
-        return {**r, "eligible": False, "why": "unknown: unparseable observed_at"}
+        # The source usually knows why it has nothing, and says so. Passing that on is the
+        # difference between "unparseable observed_at" — which sends a reader into the plumbing —
+        # and "the provider's login expired", which sends them to the panel (OPERATIONS §33).
+        detail = str(obs.get("error") or "").strip()
+        return {**r, "eligible": False,
+                "why": f"unknown: {detail[:160]}" if detail else "unknown: no timestamp on the observation"}
     r["age_s"] = round(age)
     if age < -60:
         return {**r, "eligible": False, "why": f"unknown: observed_at is {-round(age)}s in the future"}
