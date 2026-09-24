@@ -2435,6 +2435,22 @@ is found, not repeated (§38's rule, applied).
   the adapter instead of `devflow-reviewer`; re-adjudicating the same receipt now names the principal
   and the call.
 
-**Not measured**: any run against GitHub. It needs `DEVFLOW_GITHUB_TOKEN` in `docker/package.env`,
-`^api\.github\.com$` in `docker/egress/allow`, and the project's `.devflow/` merged to its canonical
+**Measured against GitHub** (astro3141/infra-scanner-io):
+
+* The project's side is a pull request (#13): `.devflow/` and `.github/workflows/devflow-ci.yml`, no
+  product file. Its CI is the project's own gates, unchanged, with the guards fetched from the pinned
+  remote. The first run failed both gates in `run_submission_tests.sh`'s shellcheck — the runner's
+  apt shellcheck flags SC2120 on the very `dist/infra-collector.sh` (`dbccf4c8…`) the project's D3
+  validation log shows passing. With ShellCheck 0.11.0 installed and its version printed: **4/4 pass**
+  (545 tests, ZIP self-verification, the submission ZIP uploaded with its sha256, the guards PASS in
+  CI). The check was not relaxed; the environment was named.
+* `lib/remote.py`'s GitHub adapter, read-only from the host with the operator's token in the
+  environment only: the pull request, its head and base, the changed files, ancestry, a 8 MB criterion
+  file's blob, the check runs on the head, reviews and statuses — the same shapes the fixture gives.
+  Rules and branch protection answer 403 on this plan; the adapter first called that a tool failure,
+  and now reports it as *not available* (`merge_queue: false`, `protection.available: false`), which
+  `integrate` records instead of assuming either.
+
+**Not measured**: a devflow run against GitHub. It needs `DEVFLOW_GITHUB_TOKEN` in
+`docker/package.env`, `^api\.github\.com$` in `docker/egress/allow`, and #13 merged to the canonical
 branch — the first two are the operator's to give, the third a person's to merge.
