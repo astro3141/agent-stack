@@ -2399,3 +2399,44 @@ may not be the one that wrote it. That is the CONTRACT.md line, not an omission:
 the platform's, the decision is the workflow's.
 
 **Measured**: 425/425 controls, fifteen of them new and pinning exactly the four behaviours above.
+
+## 40. A directory was not a decision, and an identity outlives the decision
+
+Two halves of the same sentence — *installing a package is a decision to trust it* (§27) — were
+never actually wired to anything. Both were found by the session that had just split devflow into
+its own repository, reading the live stack rather than the design.
+
+**The loader did not read the declaration.** `config/packages.yaml` said which packages this
+instance runs, `config/packages.lock` pinned them, `scripts/packages.sh` read both — and
+`packages.py` listed directories. Anything under `packages/` was loaded, offered in the panel, and
+had its `principals.yaml` applied by `up.sh`. Removing an entry from the declaration removed
+nothing from the running stack; a directory copied in was a package. The loader reads the
+declaration now: an undeclared directory is unusable **with that as its reason**, carries no
+workflow and no identity.
+
+```
+$ packages.py
+devflow    -    UNUSABLE: not declared in config/packages.yaml — a package is loaded because
+                this instance asked for it, not because the directory is there
+```
+
+**And an identity outlives the declaration that asked for it.** `principals.py apply` creates and
+updates; it has never removed. So devflow stopped being declared and `Role: devflow-reviewer` was
+still in Preloop, still holding its tool rules and a live credential:
+
+```
+$ principals.py list
+devflow-reviewer   50587fa3-…   credential in the environment: yes   UNDECLARED — no package or
+                                                                    config asks for this one
+$ principals.py apply --dry-run
+{"declared": 3, "changes": [], "undeclared": ["devflow-reviewer"], …}
+```
+
+Reported, never deleted. Deleting an identity is the operator's to do — §35 is the same argument
+about what a reinstall keeps — and a report that names one is what makes it somebody's decision
+instead of nobody's. What this does not do is revoke: until the operator removes it, that
+credential still works, which is exactly why the line is printed on every `apply`.
+
+**Measured**: 439/440 controls. The remaining failure is this machine's true state — `packages/
+devflow` is fetched on disk and declared on the devflow branch, not on main — and the control is
+right to say so.

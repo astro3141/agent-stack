@@ -63,12 +63,14 @@ def env_name(name):
 
 
 def cmd_list():
+    want = declared()
     for name, aid in sorted(principals().items()):
         cfg = (api("GET", f"/api/v1/agents/{aid}/governance") or {}).get("config") or {}
         rules = cfg.get("tool_rules") or {}
         off = [t for t, v in (cfg.get("tool_enabled_overrides") or {}).items() if v is False]
         has = os.environ.get(env_name(name)) is not None
-        print(f"{name:<18} {aid}  credential in the environment: {'yes' if has else 'NO'}")
+        mark = "" if name in want else "   UNDECLARED — no package or config asks for this one"
+        print(f"{name:<18} {aid}  credential in the environment: {'yes' if has else 'NO'}{mark}")
         for tool, rs in rules.items():
             for r in rs:
                 print(f"    {tool}: {r.get('action')} when "
@@ -209,7 +211,21 @@ def cmd_apply(dry_run=False):
             # losing a credential Preloop has already issued over a failed chmod is the worse
             # outcome; the file's protection is the host's once it is moved
             pass
+    # An identity outlives the declaration that asked for it. `apply` creates and updates; it has
+    # never removed, and a package that stops being declared leaves its principals behind with
+    # their rights and their credentials still live — measured the day devflow moved out of this
+    # repository: the package was gone from config/packages.yaml and `Role: devflow-reviewer` was
+    # still there, still able to write. Reported, never deleted: deleting an identity is the
+    # operator's to do, and a report that names one is what makes it their decision instead of
+    # nobody's (OPERATIONS §35, §40).
+    orphans = sorted(set(have) - set(want))
     print(json.dumps({"ok": True, "declared": len(want), "changes": changes,
+                      "undeclared": orphans,
+                      "undeclared_note": ("these identities exist in Preloop and no declaration "
+                                          "names them — a package that was removed leaves them "
+                                          "behind; `principals.py list` shows what each may still "
+                                          "do, and removing one is yours to do"
+                                          if orphans else ""),
                       "restart_needed": bool(env_lines), "credentials_at": out_file,
                       "note": ("new credentials are waiting in the admin container — scripts/up.sh "
                                "puts them in docker/principals.env") if env_lines else ""},

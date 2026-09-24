@@ -1296,6 +1296,14 @@ def controls_package_sources():
         check("nor given the identities it declares",
               sorted(_pk2.principals()[0]), ["asked-for-writer"])
 
+    # an identity outlives the declaration that asked for it: reported, never deleted
+    pr = open("/work/p281/principals.py", encoding="utf-8").read()
+    check("an identity no declaration names is reported by apply",
+          '"undeclared": orphans' in pr, True)
+    check("and marked in the listing", "UNDECLARED" in pr, True)
+    check("but never removed by this stack",
+          ('api("DELETE"' in pr, "yours to do" in pr), (False, True))
+
     pkdoc = open("/work/docs/packages.md", encoding="utf-8").read()
     check("its own repository is the documented default, not the exception",
           "Its own repository is the recommendation" in pkdoc, True)

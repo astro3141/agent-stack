@@ -178,6 +178,13 @@ if docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
     *'"ok": true'*) echo "$out" | grep -q '"changes": \[\]' || echo "== principals: $out";;
     *) echo "  WARN  the declared principals could not be applied: $out" >&2;;
   esac
+  # An identity outlives the declaration that asked for it: `apply` creates and updates, never
+  # removes, so a package that stopped being declared leaves its principal behind with a live
+  # credential. Reported here because a bring-up is where someone is looking (OPERATIONS §40).
+  echo "$out" | grep -q '"undeclared": \[\]' || {
+    left="$(echo "$out" | sed 's/.*"undeclared": \[//; s/\].*//')"
+    [ -n "$left" ] && echo "  NOTE  identities no declaration asks for: $left"                            "— principals.py list shows what each may still do; removing one is yours"
+  }
   # A credential just minted is a line in docker/principals.env, which the agent reads as
   # environment when it starts. Without this, a fresh machine has the principals and their rules
   # but the steps that run as them can present nothing until someone runs up.sh a second time —
