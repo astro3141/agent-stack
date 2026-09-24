@@ -24,6 +24,12 @@ scripts/packages.sh verify            # is what is on disk still the commit the 
 scripts/up.sh                         # applies what it declares
 ```
 
+**Declaring it is what installs it.** The loader offers what `config/packages.yaml` names, not what
+is on disk: a directory copied under `packages/` without a declaration is listed with that as its
+reason, is not offered as a workflow, and its `principals.yaml` is not applied. Removing the entry
+removes the package from the running stack at the next read — which is what "installing a package
+is a decision to trust it" has to mean if it means anything.
+
 **Its own repository is the recommendation; `from: local` is the exception.** A platform repository
 should say which workflows it runs, not carry them — and it is the repository that can be published,
 which a package inside it inherits. Write the package in its own repository from the start if any

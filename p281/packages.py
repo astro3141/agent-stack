@@ -25,6 +25,7 @@ graph, the steps and the meaning stay the package's own.
 import json, os, re, sys
 
 ROOT = os.environ.get("P281_PACKAGES", "/work/packages")
+DECL = os.environ.get("P281_PACKAGES_YAML", "/work/config/packages.yaml")
 NAME = re.compile(r"[a-z][a-z0-9-]{1,39}")
 
 
@@ -85,15 +86,39 @@ def _read(directory):
     return out
 
 
+def declared():
+    """The package names this instance declares (config/packages.yaml).
+
+    Installing a package is a decision to trust it: scripts/up.sh creates the principals it
+    declares and mints their credentials (OPERATIONS §27). Until this was read here, that decision
+    was made by a *directory existing* — anything dropped under packages/ was loaded, offered in
+    the panel and given identities, and the declaration was a note the loader never read. Removing
+    a package from config/packages.yaml did not remove it from the running stack.
+    """
+    try:
+        return {str(k) for k in ((_yaml(DECL) or {}).get("packages") or {})}
+    except Exception:
+        return set()          # unreadable declaration: nothing is declared, and every row says so
+
+
 def installed():
     """Every package directory under the packages root, usable or not, by name."""
     if not os.path.isdir(ROOT):
         return {}
-    out = {}
+    known, out = declared(), {}
     for entry in sorted(os.listdir(ROOT)):
         d = os.path.join(ROOT, entry)
         if os.path.isdir(d) and not entry.startswith("."):
-            out[entry] = _read(d)
+            row = _read(d)
+            if entry not in known:
+                # on disk and nobody asked for it: not loaded, and the reason is the answer
+                row["usable"], row["declared"] = False, False
+                row["why"] = ("not declared in config/packages.yaml — a package is loaded because "
+                              "this instance asked for it, not because the directory is there "
+                              "(scripts/packages.sh list)")
+            else:
+                row["declared"] = True
+            out[entry] = row
     return out
 
 

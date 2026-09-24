@@ -2284,6 +2284,15 @@ whether what is on disk is still the commit the lock names, and a bring-up says 
 reported, not enforced, because a package edited during development is an ordinary state and being
 told is the point.
 
+**A directory was not a decision.** The declaration existed, the lock existed, `packages.sh` read
+both — and the loader read neither. `packages.py` listed directories, so anything under `packages/`
+was loaded, offered in the panel, and had its `principals.yaml` applied by `up.sh`: identities
+created and credentials minted for a package nobody declared. Removing an entry from
+`config/packages.yaml` did not remove the package from the running stack. Found by the session that
+had just split devflow out, which noticed the live stack still loading it (its words: "선언이 없으면
+… 라이브 스택도 devflow를 계속 로드합니다"). The loader now reads the declaration: an undeclared
+directory is unusable with that as its reason, carries no workflow and no identity.
+
 **Which way round is the default.** Its own repository, from the start — `from: local` is for the
 example and the capability trials. Said as a rule in docs/packages.md, because it was learned twice:
 trading moved out after 36 files, and devflow landed here complete, carrying a private repository's

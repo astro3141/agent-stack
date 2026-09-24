@@ -1180,6 +1180,15 @@ def controls_review_findings():
 
     # 2. one name, two packages
     made = []
+    real_decl = _pk.DECL
+    # The loader loads what this instance declares, so the collision has to be declared to happen
+    # at all. Written as a temp declaration the subprocess reads too (P281_PACKAGES_YAML).
+    tmp_decl = "/tmp/packages-collision.yaml"
+    with open(real_decl, encoding="utf-8") as f:
+        open(tmp_decl, "w", encoding="utf-8").write(
+            f.read() + chr(10) + "  zz-dup-one: {from: local}" + chr(10)
+            + "  zz-dup-two: {from: local}" + chr(10))
+    _pk.DECL = tmp_decl
     try:
         for pkg, cap in (("zz-dup-one", "record"), ("zz-dup-two", "admission")):
             d = f"/work/packages/{pkg}"
@@ -1201,10 +1210,12 @@ def controls_review_findings():
         import subprocess as _sp, sys as _sy
         out = _j.loads(_sp.run([_sy.executable, "/work/p281/run_workflow.py", "start",
                                 "zzdup-probe", "zz-shared", "research-default"],
-                               capture_output=True, text=True).stdout.strip())
+                               capture_output=True, text=True,
+                               env={**_o.environ, "P281_PACKAGES_YAML": tmp_decl}).stdout.strip())
         check("and a run refused for it says which packages are fighting over the name",
               "both declare it" in (out.get("why") or ""), True)
     finally:
+        _pk.DECL = real_decl
         for d in made:
             _sh.rmtree(d, ignore_errors=True)
     check("with the collision gone, the loader is itself again",
@@ -1259,6 +1270,32 @@ def controls_package_sources():
           "git clone" in sh and "docker exec" not in sh.split("case \"$CMD\"")[1], True)
     check("a bring-up says when what is on disk is not what the lock names",
           "packages.sh\" verify" in up_sh or "packages.sh verify" in up_sh, True)
+    # a directory is not a decision: the loader loads what this instance declared
+    import importlib.util as _il, pathlib as _pl, tempfile as _tf
+    _spec = _il.spec_from_file_location("pkg_decl", "/work/p281/packages.py")
+    _pk2 = _il.module_from_spec(_spec); _spec.loader.exec_module(_pk2)
+    with _tf.TemporaryDirectory() as _tmp:
+        _root = _pl.Path(_tmp)
+        for n in ("asked-for", "just-appeared"):
+            (_root / n).mkdir()
+            (_root / n / "manifest.yaml").write_text("name: " + n + chr(10) + "entry: workflow.yaml")
+            (_root / n / "workflow.yaml").write_text("workflow: {}")
+            (_root / n / "principals.yaml").write_text(
+                "principals:" + chr(10) + "  " + n + "-writer: {provider: codex}" + chr(10))
+        _pk2.ROOT = str(_root)
+        declare_temp(_pk2, _root, extra=())
+        io_decl = _pl.Path(_pk2.DECL)
+        io_decl.write_text("packages:" + chr(10) + "  asked-for: {from: local}" + chr(10))
+        rows = _pk2.installed()
+        check("a package this instance declared is loaded", rows["asked-for"]["usable"], True)
+        check("one that just appeared on disk is not",
+              (rows["just-appeared"]["usable"],
+               "not declared" in rows["just-appeared"]["why"]), (False, True))
+        check("and it is not offered as a workflow",
+              sorted(_pk2.workflows()), ["asked-for"])
+        check("nor given the identities it declares",
+              sorted(_pk2.principals()[0]), ["asked-for-writer"])
+
     pkdoc = open("/work/docs/packages.md", encoding="utf-8").read()
     check("its own repository is the documented default, not the exception",
           "Its own repository is the recommendation" in pkdoc, True)
@@ -1316,6 +1353,21 @@ def controls_retry():
           "call_attempts" in m["never"], True)
 
 
+def declare_temp(pk, root, extra=()):
+    """Declare every package directory in `root` (plus `extra`) in a temp config/packages.yaml, and
+    point the loader at it. Since the loader reads the declaration, a control that makes packages
+    has to say it asked for them — the same sentence a real instance writes."""
+    import os as _os
+    names = sorted([d for d in _os.listdir(str(root))
+                    if _os.path.isdir(_os.path.join(str(root), d))] + list(extra))
+    path = _os.path.join(str(root), "_packages.yaml")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("packages:" + chr(10)
+                + chr(10).join("  " + n + ": {from: local}" for n in names) + chr(10))
+    pk.DECL = path
+    return path
+
+
 def controls_packages():
     print("")
     print("a workflow that arrives as a directory — installing one is not editing this stack")
@@ -1345,12 +1397,13 @@ def controls_packages():
         (root / "no-entry" / "manifest.yaml").write_text("name: no-entry")
         (root / "escape").mkdir()
         (root / "escape" / "manifest.yaml").write_text("name: escape" + chr(10) + "entry: ../../etc/passwd")
-        old_root = pk.ROOT
+        old_root, old_decl = pk.ROOT, pk.DECL
         try:
             pk.ROOT = str(root)
+            declare_temp(pk, root)
             got = {n: p["why"] for n, p in pk.installed().items()}
         finally:
-            pk.ROOT = old_root
+            pk.ROOT, pk.DECL = old_root, old_decl
         check("a directory without a manifest is not a package", got["no-manifest"], "no manifest.yaml")
         check("a manifest that names another package is refused",
               "manifest says" in got["wrong-name"], True)
@@ -1368,12 +1421,13 @@ def controls_packages():
             (d / "workflow.yaml").write_text("workflow: {}")
             (d / "principals.yaml").write_text(
                 "principals:" + chr(10) + "  shared:" + chr(10) + f"    tool_rules: {{write_file: [{{action: {rule}}}]}}")
-        old_root = pk.ROOT
+        old_root, old_decl = pk.ROOT, pk.DECL
         try:
             pk.ROOT = str(root)
+            declare_temp(pk, root)
             who, conflicts = pk.principals()
         finally:
-            pk.ROOT = old_root
+            pk.ROOT, pk.DECL = old_root, old_decl
         check("a principal two packages declare differently is a conflict, not a merge",
               [c.get("principal") for c in conflicts], ["shared"])
 
