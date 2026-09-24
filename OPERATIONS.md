@@ -2420,6 +2420,16 @@ did the opposite — the registration was committed here, with the project's rep
 branch layout and a snapshot of its policy — and an audit asking whether this repository could be
 published is what caught it (§37, docs/packages.md).
 
+**And the same test, applied backwards, found an older one.** devflow's reviewer was declared in
+devflow's own package, which is right — while `novel-author` and `novel-reviewer` sat in the
+platform's `config/principals.yaml` although only the novel package names them. Its manifest even
+said `principals: [novel-author, novel-reviewer]`, so the package announced two identities whose
+rights lived somewhere else: installing it on another machine would have produced steps naming
+principals that did not exist. They are in `packages/novel/principals.yaml` now, and
+`config/principals.yaml` is empty on purpose — what belongs there is an identity no package owns,
+and there is none today. `principals.py apply --dry-run` after the move: `{"declared": 4,
+"changes": []}`, which is the proof it was a move and not a change.
+
 **What stays here is the record**: that the shape runs on this stack, and that nothing in the
 platform had to change to run it. A workflow that opens a pull request is the platform's clearest
 case of an effect outside itself — and the platform still does not deduplicate it (§38). The package

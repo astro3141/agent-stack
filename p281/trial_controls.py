@@ -1730,7 +1730,10 @@ def controls_template():
     up = open("/work/scripts/up.sh", encoding="utf-8").read()
     inst = open("/work/scripts/install.sh", encoding="utf-8").read()
     readme = open("/work/README.md", encoding="utf-8").read()
-    decl = yaml.safe_load(open("/work/config/principals.yaml", encoding="utf-8"))["principals"]
+    # the stack's own answer, not one file's: the platform's declarations plus every installed
+    # package's. Reading only config/principals.yaml is how a control can pass while a package
+    # carries its identities somewhere the runtime never looks.
+    decl = pr.declared()
 
     # Every principal any workflow names must be declared, or that workflow's steps run on a
     # second machine with no rights of their own — which is the gap this file closes.
@@ -1745,6 +1748,16 @@ def controls_template():
           bool((decl.get("novel-reviewer") or {}).get("tool_rules", {}).get("write_file")), True)
     check("a reviewer's last rule is the deny that makes the allow mean something",
           decl["novel-reviewer"]["tool_rules"]["write_file"][-1]["action"], "deny")
+    # an identity belongs with the thing that names it
+    import importlib.util as _il3
+    _s3 = _il3.spec_from_file_location("pkg_prin", "/work/p281/packages.py")
+    _pk3 = _il3.module_from_spec(_s3); _s3.loader.exec_module(_pk3)
+    by_package = _pk3.principals()[0]
+    check("a principal a package's workflow names is declared by that package",
+          sorted(named - set(by_package)), [])
+    check("and the platform's own file holds only what no package owns",
+          sorted(set(yaml.safe_load(open("/work/config/principals.yaml", encoding="utf-8"))
+                     .get("principals") or {}) & set(by_package)), [])
     check("applying it is part of every bring-up", "principals.py apply" in up, True)
     check("and it runs where a write to Preloop is allowed",
           '"$STACK-admin" /opt/venv/bin/python /work/p281/principals.py apply' in up, True)

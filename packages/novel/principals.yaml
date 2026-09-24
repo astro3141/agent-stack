@@ -1,0 +1,30 @@
+# The identities this package's steps run as, in the shape of config/principals.yaml.
+# `principals.py apply` (scripts/up.sh) creates them and mints their credentials.
+#
+# They were in the platform's own config/principals.yaml until the rule that put devflow's reviewer
+# in its package was applied backwards to what was already here: this package's manifest said it
+# needed `[novel-author, novel-reviewer]` while their definitions lived somewhere else, so
+# installing this package was not enough to run it (OPERATIONS §39, docs/packages.md).
+#
+# novel-a names them per role: `architect=codex:novel-author`, `story=codex:novel-reviewer`.
+principals:
+  novel-author:
+    description: >
+      Writes the chapter and its repairs. No rules: within the account's policy it may use the
+      tools the policy allows, because writing the draft is its work.
+    tool_rules: {}
+
+  novel-reviewer:
+    description: >
+      Reads the frozen draft and writes its own review. It may not touch what it judges — measured
+      as "Access denied: Scoped rule 2" when it tries (OPERATIONS.md §10).
+    tool_rules:
+      write_file:
+        - action: allow
+          condition_type: simple
+          condition_expression: "args.path.contains('review_')"
+          rule_description: a reviewer writes its own review
+        - action: deny
+          condition_type: simple
+          condition_expression: ""
+          rule_description: and nothing else - the draft it judges is not its to change

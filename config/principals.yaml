@@ -17,24 +17,9 @@
 # First match wins, and the default without rules is allow — which is why a principal that may do
 # only one thing ends with an explicit deny.
 
-principals:
-  novel-author:
-    description: >
-      Writes the chapter and its repairs. No rules: within the account's policy it may use the
-      tools the policy allows, because writing the draft is its work.
-    tool_rules: {}
-
-  novel-reviewer:
-    description: >
-      Reads the frozen draft and writes its own review. It may not touch what it judges — measured
-      as "Access denied: Scoped rule 2" when it tries (OPERATIONS.md §10).
-    tool_rules:
-      write_file:
-        - action: allow
-          condition_type: simple
-          condition_expression: "args.path.contains('review_')"
-          rule_description: a reviewer writes its own review
-        - action: deny
-          condition_type: simple
-          condition_expression: ""
-          rule_description: and nothing else - the draft it judges is not its to change
+principals: {}
+# Empty on purpose. Every identity here belonged to a package and now lives with it
+# (packages/<name>/principals.yaml): a package that names a principal declares what it may do, so
+# installing the package is enough for the identity to exist with rights of its own. What belongs
+# in this file is an identity no package owns — one the platform itself runs something as. There
+# is none today, and an empty declaration is the honest way to say so (OPERATIONS §39).
