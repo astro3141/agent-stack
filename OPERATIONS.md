@@ -1830,7 +1830,29 @@ a credential with spending it. Claude and Grok are usually observed through the 
 that executes, so they survive an unconfigured observer; codex is read through it, so codex is the
 one that shows.
 
-**And a gap that stays open:** the routing logins have a path through the panel; the observer's
-does not. It is the one human step of a fresh install that exists only as a command
-(`docker exec -it $STACK-quota codex login`), which contradicts this stack's own rule that a
-decision only a person can make belongs on the screen. Written down rather than quietly tolerated.
+**And then the question that removed the problem rather than documenting it:** *does codex have to
+be signed in twice, for ever?* It did not. Grok is read by running CodexBar **here**, with the
+routing login (`GROK_HOME=/route/grok`); nobody had tried the same for codex. Measured:
+
+```
+CODEX_HOME=/route/codex codexbar usage --provider codex --json
+  identity.accountEmail → email:4d34b3335abfc261
+  /route/codex/auth.json id_token email → email:4d34b3335abfc261     (the same account)
+```
+
+So `collect_obs.py` now offers a third candidate for codex — the reading taken with the credential
+that executes, basis `same-credential`, exactly Grok's trust model — and it is the one the router
+picks:
+
+```
+picked  codexbar-route:oauth   same-credential   observed = executing = email:4d34b…
+others  rollout:… (the routing login's own session), codexbar:oauth (the observer)
+```
+
+**A fresh install now needs one login per provider, the routing one.** The observer's login remains
+a second source and the thing that keeps an idle provider's reading fresh; it is no longer what
+stands between a signed-in codex and a usable one.
+
+The panel gap is narrower but real: the observer's login still exists only as a command
+(`docker exec -it $STACK-quota codex login`). It is no longer on the path of a first install, which
+is what made it worth fixing rather than only writing down.

@@ -1319,6 +1319,16 @@ def controls_docs():
     check("two accounts that really differ are still a mismatch",
           differ.startswith("account_mismatch:"), True)
     oh_src = open("/work/p281/ops_health.py", encoding="utf-8").read()
+    # codex used to be the one provider whose account only the observer could see, which made a
+    # fresh install need a second login. It is now read the way Grok is: with the login that
+    # executes (measured — the two fingerprints are the same account).
+    co = open("/work/p281/collect_obs.py", encoding="utf-8").read()
+    check("codex can be read with the login that executes",
+          "def codex_direct(" in co and 'CODEX_HOME": home' in co, True)
+    check("and that reading is offered as same-credential",
+          '"identity_basis": "same-credential"' in co.split("def codex_direct(")[1], True)
+    check("the observer's reading is still a candidate, not the only one",
+          "def codex_from_observer(" in co, True)
     check("the remedy is per case, with the command",
           "def fix_for(" in oh_src and "$STACK-quota" in oh_src, True)
     check("the runbook tells a fresh install what to do",

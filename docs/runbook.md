@@ -100,19 +100,24 @@ codex   불일치   unknown: nothing has observed this account yet (executing='e
                  — the quota observer has no login for it
 ```
 
-**What it means.** There are **two** login lineages here, deliberately: the **routing** logins under
-`/route` that actually execute, and the **quota observer's** own login in its own container, which
-reads the provider's remaining quota. The router uses a provider only when the account that was
-observed is the account that will execute — so an observer with no login leaves that provider with
-no usable observation, however well the routing login works.
+**What it means.** The router uses a provider only when the account that was **observed** is the
+account that will **execute**. All three providers are now read with the routing login itself, so
+one login per provider is enough; the quota observer's own login is a second source and a way to
+keep an idle provider's reading fresh. A stack that was brought up before this, or whose reading is
+older than the profile's `max_age_s`, can still show this.
 
-Claude and Grok usually survive this because their observation comes from the same credential that
-executes. Codex is read through the observer, so it is the one that shows.
-
-**Do:**
+**Do:** first, simply re-collect — codex is now read with the routing login itself, and a stack
+brought up before that change may be carrying an older observation:
 
 ```bash
-docker exec -it "$STACK-quota" codex login      # the SAME account the routing login uses
+scripts/up.sh --check
+```
+
+If it is still refused, the observer's own login is the second source, and it must be the **same**
+account the routing login uses:
+
+```bash
+docker exec -it "$STACK-quota" codex login
 scripts/up.sh --check
 ```
 

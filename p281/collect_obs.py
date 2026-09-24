@@ -15,7 +15,7 @@ place where each source's shape is translated; router.py sees only the common fo
            executing account = the same credential, when Claude's route is the Preloop gateway
            No email is available on either side                                   → basis "structural"
 """
-import base64, glob, hashlib, json, os, sys, urllib.request
+import base64, subprocess, glob, hashlib, json, os, sys, urllib.request
 from datetime import datetime, timezone
 
 sys.path.insert(0, "/work/p281")
@@ -113,6 +113,38 @@ def codex_from_rollouts(home, account):
     return best
 
 
+def codex_direct():
+    """CodexBar, run here with the routing layer's own Codex login — exactly how Grok is read.
+
+    Until this existed, codex was the one provider whose account could only be observed by the
+    quota observer's separate login, so a fresh install had a provider that was signed in and still
+    unusable (OPERATIONS §29). Measured: with `CODEX_HOME=/route/codex` CodexBar returns the same
+    account this stack executes as (`identity.accountEmail` fingerprints to the id_token's email),
+    which is the same trust as Grok's reading — the credential that is read is the credential that
+    will spend.
+    """
+    home = login_dir("codex")
+    if not os.path.isfile(os.path.join(home, "auth.json")):
+        return None
+    p = subprocess.run(["codexbar", "usage", "--provider", "codex", "--json"],
+                       capture_output=True, text=True, timeout=60,
+                       env={**os.environ, "CODEX_HOME": home, "HOME": f"{home}/home", **EGRESS})
+    item = next((x for x in json.loads(p.stdout or "[]") if x.get("provider") == "codex"), None)
+    if not item:
+        return None
+    u = item.get("usage") or {}
+    wins = {}
+    for k in ("primary", "secondary"):
+        w = u.get(k)
+        if w and w.get("usedPercent") is not None:
+            wins[window_name(w.get("windowMinutes"))] = {"used_percent": w["usedPercent"],
+                "resets_at": w.get("resetsAt"), "window_minutes": w.get("windowMinutes")}
+    if not wins:
+        return None
+    return {"source": f"codexbar-route:{item.get('source')}", "observed_at": u.get("updatedAt"),
+            "account": fp((u.get("identity") or {}).get("accountEmail") or ""), "windows": wins}
+
+
 def codex_from_observer():
     raw = json.load(open(f"{OBS}/codex.raw.json"))
     item = next((x for x in (raw.get("payload") or []) if x.get("provider") == "codex"), None)
@@ -144,6 +176,15 @@ try:
                       "observed_account": executing, "identity_basis": "same-credential",
                       "windows": r["windows"]})
 except Exception as e:
+    pass
+try:
+    d = codex_direct()
+    if d:
+        # the reading is taken with the credential that executes, like Grok's
+        cands.append({"source": d["source"], "observed_at": d["observed_at"],
+                      "observed_account": d["account"], "identity_basis": "same-credential",
+                      "windows": d["windows"]})
+except Exception:
     pass
 try:
     o = codex_from_observer()
