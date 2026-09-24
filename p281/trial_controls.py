@@ -1245,6 +1245,19 @@ def controls_packages():
     check("a run id used twice is an answer, not a traceback",
           "has been used already" in rw_src, True)
 
+    # More than one onboarded agent means more than one hook file in the home. Taking whichever
+    # sorts first worked and attributed every permission request to the wrong agent.
+    mjs = open("/work/p281/run-agent.mjs", encoding="utf-8").read()
+    check("the credential presented is the running agent's",
+          "function preloopHook(provider)" in mjs and "h.source === want" in mjs, True)
+    check("and which one it was is in the run's own record",
+          '"hook":' in mjs.split("const out = {")[1][:400] or "hook: HOOK_FOR" in mjs, True)
+    co_src = open("/work/p281/collect_obs.py", encoding="utf-8").read()
+    check("a reading with numbers and no vendor timestamp is dated by when it was taken",
+          'u.get("updatedAt") or (taken_at if wins else None)' in co_src, True)
+    check("and a reading with no numbers stays undated",
+          "if wins else None" in co_src, True)
+
     # a step's imports work wherever the step lives
     compose = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
     check("the step library is importable from a package's steps",

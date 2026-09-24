@@ -1965,3 +1965,51 @@ that workflow rights. `up.sh` applies its `principals.yaml` — creating the pri
 and minting their credentials — because that is what makes a workflow governed the same way on
 every machine (§27). A package is therefore trusted code, not sandboxed content: read it before
 installing it, exactly as you would a dependency.
+
+## 32. Two onboarded agents, and one reading with no clock
+
+The second machine reinstalled on §31's fixes and ran the pilot 5/5. Two things came back, and the
+first is the shape this stack keeps meeting: **a fix in one place moved the problem to another.**
+
+**A. Onboarding a second vendor broke two checks.** §31 made a fresh install onboard `claude-code`
+*and* `codex`, so the agent's home now holds **two** `permission_hook.json` files. `up.sh` read them
+with `cat …/agents/*/permission_hook.json`, which concatenates two JSON documents into something no
+parser will take: the *runtime may read approvals* and *…read its tool rights* checks answered
+401/404 while the boundary itself was perfectly intact. The second machine found it and fixed it
+with `ls … | head -1` (8f96eba), which is right for a check.
+
+It is not right for the **adapter**. `run-agent.mjs` took the same first hook and presented that
+credential for every provider's permission request — so a codex run could ask Preloop as
+`claude-code`. It works, because both credentials belong to the same account and neither runtime
+agent carries tool rules, and it is wrong in the way that is discovered later as rights nobody
+meant. Each hook says which agent it is for (`source`, the same value the permission request
+carries), so the adapter now picks the hook that matches the provider it is running, falls back to
+the first, and **records which it presented**:
+
+```
+bb014a58-claude  status COMPLETED  hook {"principal": "claude-code-e7bab34cd7fd",
+                                         "source": "claude_code", "matched": true}
+```
+
+**B. An observation with numbers and no clock was called unknown.** Claude in `direct` mode has one
+source and no fallback — codex has its rollouts and the observer's file, Grok's reading always
+carries a timestamp. On that machine CodexBar returned Claude's usage **without `updatedAt`**, so
+`observed_at` was null, the router called the state unknown, and every run that wanted Claude held
+while Claude itself answered calls perfectly well.
+
+A reading that arrives with no timestamp of its own is not undated: it was taken now. The collector
+dates it with when it took it — exactly as the codex observer's file already falls back to its
+`collected_at` — and **only when there are numbers to date**. Driven with a stand-in CodexBar:
+
+```
+numbers, no vendor timestamp →  2026-09-24T11:47:30Z   windows ['session']
+no reading at all            →  None                   windows []
+```
+
+The second case is the line that matters: an observation with no numbers stays unknown, because
+that is what it is.
+
+The second machine's own answer to (B) was to bind every lane of the arch cycle to **one** provider
+the router admitted, which is a workflow's decision about its own experiment — one model across
+lanes so that what varies is the architecture — and it is theirs to make. This side's part was the
+plumbing, and that is what is fixed here.

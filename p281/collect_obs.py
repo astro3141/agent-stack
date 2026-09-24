@@ -241,7 +241,19 @@ if ROUTES.get("grok") == "direct":
 # Direct route: CodexBar with the routing layer's own Claude login (CLAUDE_CONFIG_DIR=/route/claude)
 # through the proxy — fresh, the executing credential itself ("same-credential").
 def codexbar_claude_direct():
+    """The reading taken here with the routing layer's own Claude login.
+
+    Claude in `direct` mode has one source and no fallback — codex has its rollouts and the
+    observer's file, Grok is read the same way as this but always returns a timestamp. On another
+    machine this reading came back **without `updatedAt`**, and the router then called the state
+    unknown and every run that wanted Claude held (reported from the second install). A reading
+    that arrives with no timestamp of its own is not undated: it was taken now, and that is what
+    `taken_at` records, exactly as the codex observer's file already falls back to its
+    `collected_at`. What must stay absent is the *window* data — an observation with no numbers is
+    still unknown, and this returns none.
+    """
     import subprocess
+    taken_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     p = subprocess.run(["codexbar", "usage", "--provider", "claude", "--source", "oauth", "--json"],
                        capture_output=True, text=True, timeout=60,
                        env={**os.environ, "CLAUDE_CONFIG_DIR": login_dir("claude"), **EGRESS})
@@ -255,7 +267,9 @@ def codexbar_claude_direct():
                 "resets_at": w.get("resetsAt"), "window_minutes": w.get("windowMinutes")}
     ident = "route-login:claude:" + (json.load(open(f"{login_dir('claude')}/.claude.json")).get("oauthAccount") or {}).get("organizationUuid", "unknown")
     return {"provider": "claude", "source": f"codexbar:{(item or {}).get('source')}",
-            "observed_at": u.get("updatedAt"), "observed_account": ident if item else None,
+            # the vendor's own timestamp when it gives one; otherwise when this reading was taken
+            "observed_at": u.get("updatedAt") or (taken_at if wins else None),
+            "observed_account": ident if item else None,
             "executing_account": ident, "identity_basis": "same-credential", "model_route": "direct",
             "windows": wins, "extra_windows": u.get("extraRateWindows") or [],
             **({} if item else {"error": (p.stderr or p.stdout or "")[-200:]})}

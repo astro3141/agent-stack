@@ -202,9 +202,30 @@ const PROVIDERS = {
 };
 // -----------------------------------------------------------------------------------------
 
+// The credential of the agent that is actually running, not whichever hook file sorts first.
+// A fresh install now onboards more than one vendor (claude-code and codex), so the home holds
+// more than one hook; each says which agent it is for (`source`, the same value the permission
+// request carries). Presenting the wrong one still works today — both credentials belong to the
+// same account and neither runtime agent carries tool rules — and it would attribute every
+// permission request to the wrong agent, which is the kind of thing that is discovered later as
+// rights nobody meant. The fallback is the first hook, and the choice is recorded in the run's
+// evidence either way (OPERATIONS §32).
+function preloopHook(provider) {
+  const files = globSync(join(homedir(), ".preloop/agents/*/permission_hook.json"));
+  if (!files.length) throw new Error("no Preloop permission hook in this home");
+  const want = provider ? PROVIDERS[provider]?.preloopSource : null;
+  for (const f of files) {
+    try {
+      const h = JSON.parse(readFileSync(f, "utf8"));
+      if (want && h.source === want) return { hook: h, file: f, matched: true };
+    } catch { /* a hook that cannot be read is not the one to use */ }
+  }
+  return { hook: JSON.parse(readFileSync(files[0], "utf8")), file: files[0], matched: false };
+}
+
+let HOOK_FOR = null;     // set once per run, in main(), from the provider being run
 function preloopToken() {
-  const [p] = globSync(join(homedir(), ".preloop/agents/*/permission_hook.json"));
-  return JSON.parse(readFileSync(p, "utf8")).token;
+  return (HOOK_FOR ?? preloopHook(null)).hook.token;
 }
 
 function postJson(url, obj, signal) {
@@ -279,6 +300,8 @@ async function main() {
   const prof = PROVIDERS[req.provider];
   LOGIN = req.login ?? null;
   if (!prof) throw new Error(`unknown provider ${req.provider}`);
+  // whose credential this run presents to Preloop, decided once, from the provider being run
+  HOOK_FOR = preloopHook(req.provider);
   const evDir = req.evidence_dir ?? `/tmp/p281/runs/${req.run_id}`;
   mkdirSync(evDir, { recursive: true });
   const permissions = [];
@@ -387,6 +410,9 @@ async function main() {
   const out = {
     run_id: req.run_id,
     status: norm,
+    // which onboarded agent's credential was presented, and whether it was the matching one
+    hook: HOOK_FOR ? { principal: HOOK_FOR.hook.runtime_principal ?? null,
+                       source: HOOK_FOR.hook.source ?? null, matched: HOOK_FOR.matched } : null,
     retryable_elsewhere: norm === "FAILED" && (result?.error?.retryable ?? false),
     provider: req.provider,
     mcp_principal: PRINCIPAL ?? "",
