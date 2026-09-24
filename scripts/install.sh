@@ -67,13 +67,15 @@ else
   need "docker compose >= 2.24" "" "have $cv — 2.24 introduced env_file.required and !reset"
 fi
 
-# The agent image fetches x86_64 binaries (Node, CodexBar). On another architecture the build
-# fails at those lines; saying so here is cheaper than a five-minute build that ends in a tar error.
+# The agent image picks its Node and CodexBar by architecture. amd64 is what this stack has been
+# built and run on; arm64 is parameterized and untried, which is worth saying before a build rather
+# than after it. Anything else fails at those lines by design.
 arch="$(docker info --format '{{.Architecture}}' 2>/dev/null)"
 case "$arch" in
-  x86_64|amd64) need "architecture" "$arch";;
-  "")           need "architecture" "" "could not ask Docker";;
-  *)            need "architecture" "" "$arch — docker/agent.Dockerfile installs x86_64 Node and CodexBar";;
+  x86_64|amd64)  need "architecture" "$arch";;
+  aarch64|arm64) need "architecture" "$arch (parameterized, never built here — OPERATIONS §25)";;
+  "")            need "architecture" "" "could not ask Docker";;
+  *)             need "architecture" "" "$arch — the agent image has no Node or CodexBar for it";;
 esac
 
 free_gb="$(docker run --rm alpine:3.20 df -P /var 2>/dev/null | awk 'NR==2 {print int($4/1048576)}')"

@@ -1544,4 +1544,8 @@ from `config/principals.yaml` with the reviewer's deny rule, and the runtime ref
 decision, the rights rewrite and the credential mint. Only the logins were missing, and those are a
 person's.
 
-Still not run anywhere: macOS, and any arm64 host (§25 above says what would have to change).
+**arm64 is now a parameter, not a rewrite.** The two downloads that tied the agent image to
+x86_64 — Node and CodexBar — pick their build from `TARGETARCH` (both publish `arm64` /
+`musl-aarch64`), and `install.sh` reports an arm64 host as *parameterized and never built here*
+rather than refusing it. The amd64 image was rebuilt and all checks passed after the change; the
+arm64 one has not been built. Still not run anywhere: macOS, and any arm64 host.

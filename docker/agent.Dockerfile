@@ -66,13 +66,38 @@ USER agent
 # launch, which cannot work here: the governed runtime has no egress. Adapters are installed
 # ahead of time and invoked by path.
 USER root
+ARG TARGETARCH
 ARG NODE_VERSION=22.14.0
-RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz       | tar -xz -C /opt     && ln -s /opt/node-v${NODE_VERSION}-linux-x64 /opt/node
+# TARGETARCH is set by BuildKit; uname is the fallback for a build without it. These two downloads
+# were the only thing tying this image to x86_64 — every image the stack pulls is multi-arch.
+# arm64 is parameterized here and has not been built or run: see OPERATIONS §25.
+RUN arch="${TARGETARCH:-$(uname -m)}"; \
+    case "$arch" in \
+      amd64|x86_64) node_arch=x64;; \
+      arm64|aarch64) node_arch=arm64;; \
+      *) echo "unsupported architecture: $arch" >&2; exit 1;; \
+    esac; \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.gz" \
+      | tar -xz -C /opt \
+    && ln -s "/opt/node-v${NODE_VERSION}-linux-${node_arch}" /opt/node
 ENV PATH=/opt/node/bin:/opt/npm-global/bin:/opt/codexbar:$PATH     NPM_CONFIG_PREFIX=/opt/npm-global
 RUN npm install -g --no-fund --no-audit       acpx@0.18.0       @agentclientprotocol/claude-agent-acp@0.79.0       @agentclientprotocol/codex-acp@1.12.0       @openai/codex@0.155.1       @xai-official/grok@1.0.40     && chmod -R a+rX /opt/npm-global
 # CodexBar CLI (quota observation). Static musl build: the glibc build needs GLIBC_2.38, bookworm has 2.36. No Windows build exists.
 ARG CODEXBAR_VERSION=0.63.0
-RUN mkdir -p /opt/codexbar     && curl -fsSL -o /tmp/cb.tgz https://github.com/steipete/CodexBar/releases/download/v${CODEXBAR_VERSION}/CodexBarCLI-v${CODEXBAR_VERSION}-linux-musl-x86_64.tar.gz     && curl -fsSL -o /tmp/cb.sha https://github.com/steipete/CodexBar/releases/download/v${CODEXBAR_VERSION}/CodexBarCLI-v${CODEXBAR_VERSION}-linux-musl-x86_64.tar.gz.sha256     && (cd /tmp && echo "$(awk '{print $1}' cb.sha)  cb.tgz" | sha256sum -c -)     && tar -xzf /tmp/cb.tgz -C /opt/codexbar     && rm -f /tmp/cb.tgz /tmp/cb.sha     && chmod -R a+rX /opt/codexbar
+RUN arch="${TARGETARCH:-$(uname -m)}"; \
+    case "$arch" in \
+      amd64|x86_64) cb_arch=x86_64;; \
+      arm64|aarch64) cb_arch=aarch64;; \
+      *) echo "unsupported architecture: $arch" >&2; exit 1;; \
+    esac; \
+    base="https://github.com/steipete/CodexBar/releases/download/v${CODEXBAR_VERSION}/CodexBarCLI-v${CODEXBAR_VERSION}-linux-musl-${cb_arch}.tar.gz"; \
+    mkdir -p /opt/codexbar \
+    && curl -fsSL -o /tmp/cb.tgz "$base" \
+    && curl -fsSL -o /tmp/cb.sha "${base}.sha256" \
+    && (cd /tmp && echo "$(awk '{print $1}' cb.sha)  cb.tgz" | sha256sum -c -) \
+    && tar -xzf /tmp/cb.tgz -C /opt/codexbar \
+    && rm -f /tmp/cb.tgz /tmp/cb.sha \
+    && chmod -R a+rX /opt/codexbar
 # #281 option B: /ws is the workspace shared with the filesystem MCP container. Created here
 # so the named volume is seeded agent-owned. (Native-tool removal is per run, in the
 # workspace's project settings — not managed settings, which would also strip Write/Bash

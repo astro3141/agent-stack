@@ -17,7 +17,7 @@ the policy applied, the principals created and the runtime refused every write t
 | Docker, and a running daemon | everything here is containers |
 | **Docker Compose 2.24+** | the composition uses `env_file: required: false`; older compose fails with a parse error that does not name the feature |
 | bash, git, curl | the scripts, and Preloop's own installer |
-| **x86_64** | `docker/agent.Dockerfile` installs a linux-x64 Node and an x86_64 CodexBar. Every image pulled is multi-arch, so arm64 is those two lines away — not done, not tried |
+| **x86_64**, or arm64 untried | the agent image picks its Node and CodexBar by `TARGETARCH`; every image pulled is multi-arch. amd64 is what this has been built and run on, arm64 is parameterized and has never been built — the host check says so rather than letting a build discover it |
 | ~11GB of images, plus volumes | measured |
 
 `install.sh --check` asks for each of these by name and stops on the first that is missing, rather
