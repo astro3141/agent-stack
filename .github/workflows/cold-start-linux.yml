@@ -1,0 +1,83 @@
+name: cold start on linux
+
+# Everything in OPERATIONS §25 was measured on one Windows machine. The scripts guard their single
+# Windows-specific call and every image this stack pulls is multi-arch, but "guards it" is not
+# "was run there". This runs the same thing a second machine runs — clone, install.sh, up.sh — on
+# a host that has none of it, and judges the result by what may fail there and what may not.
+#
+# A runner has no provider logins, and never will: those are a person's accounts at Anthropic,
+# OpenAI and xAI. So the login and quota checks are expected to fail, and only those.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cold-start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # The images come to about 11GB (measured), and a runner starts with roughly 14GB free.
+      - name: make room
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h / | tail -1
+
+      - name: what this host has
+        run: bash scripts/install.sh --check
+
+      - name: install Preloop, build the stack, claim it, check it
+        id: install
+        continue-on-error: true
+        run: set -o pipefail; bash scripts/install.sh 2>&1 | tee /tmp/cold-start.log
+
+      - name: judge the result
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          log = open("/tmp/cold-start.log", encoding="utf-8", errors="replace").read()
+
+          # What a machine without provider logins may fail, and nothing else.
+          allowed = {"claude /route login", "codex /route login", "grok /route login",
+                     "observer codex login", "every provider's state is knowable",
+                     "observation fresh (< 10 min)"}
+          failed = [re.sub(r"\s{2,}.*$", "", l.strip()[6:]).strip()
+                    for l in log.splitlines() if l.startswith("  FAIL")]
+          unexpected = [f for f in failed if f not in allowed]
+
+          # What must be there: the instance claimed itself, the policy went on, the principals
+          # were created from the declaration, and the boundary holds.
+          required = [
+              ('"onboarded": true', "Preloop was claimed and the runtime credential issued"),
+              ('"preloop-policy:policy/b-fsmcp.yaml": "applied"', "the account policy was applied"),
+              ('"did": "created"', "the declared principals were created"),
+              ("ok    runtime may not decide approvals", "the runtime cannot decide approvals"),
+              ("ok    runtime may not rewrite them", "the runtime cannot rewrite its rights"),
+              ("ok    fsmcp tools exposed via Preloop", "tools are served through Preloop"),
+          ]
+          missing = [why for needle, why in required if needle not in log]
+
+          for f in failed:
+              print(("expected  " if f in allowed else "UNEXPECTED ") + f)
+          for why in missing:
+              print("MISSING   " + why)
+          if unexpected or missing:
+              sys.exit(1)
+          print("\nthe stack came up on a host that had none of it; only the provider logins failed")
+          PY
+
+      - name: keep the log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cold-start-log
+          path: /tmp/cold-start.log
+
+      - name: take it down the way an operator would
+        if: always()
+        run: bash scripts/down.sh --volumes || true

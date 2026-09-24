@@ -78,7 +78,7 @@ esac
 
 free_gb="$(docker run --rm alpine:3.20 df -P /var 2>/dev/null | awk 'NR==2 {print int($4/1048576)}')"
 if [ -n "$free_gb" ] && [ "$free_gb" -ge 20 ]; then need "disk for images" "${free_gb}GB free"
-else need "disk for images" "" "about 20GB is needed for the images and volumes"; fi
+else need "disk for images" "" "the images come to about 11GB (measured), plus volumes and build cache"; fi
 
 echo "== Preloop OSS"
 if [ -f "$PRELOOP_DIR/docker-compose.yaml" ]; then
