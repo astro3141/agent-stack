@@ -127,7 +127,10 @@ def cmd_evaluate():
             rows.append({"lane": lane, "status": "MISSING",
                          "why": "planned but produced nothing"})
     report = f"{WS}/port_report.json"
-    json.dump({"rows": rows, "scored": bool(held)},
+    # "items" is the platform's evidence-index contract (steps/record.py
+    # counts and stores exactly that key) — "rows" here would be stored
+    # but counted as 0, which reads later as "nothing kept"
+    json.dump({"items": rows, "scored": bool(held)},
               open(report, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     valid = [r for r in rows if r["status"] == "VALID"]
     best = max(valid, key=lambda r: r.get("excess", r.get("ret", -1e9))) \

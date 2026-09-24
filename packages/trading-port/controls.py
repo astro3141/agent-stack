@@ -130,7 +130,10 @@ def main():
     except Exception:
         e = {}
     rep = json.load(open(f"{ws}/port_report.json")) if os.path.exists(f"{ws}/port_report.json") else {}
-    rows = {x["lane"]: x for x in rep.get("rows", [])}
+    rows = {x["lane"]: x for x in rep.get("items", [])}
+    # the platform's record step counts the "items" key of an evidence file;
+    # any other key stores the file but records 0 kept items
+    ck("report uses the evidence contract key", "items" in rep, str(list(rep)))
     ck("evaluate valid lane E", rows.get("E", {}).get("status") == "VALID", str(rows.get("E")))
     ck("evaluate rejects off-universe G", rows.get("G", {}).get("status") == "INVALID")
     ck("evaluate flags MISSING F/H",
