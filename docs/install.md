@@ -83,11 +83,31 @@ tree fails on Linux, and the failure once left an account whose password nobody 
 Give it its own `config/instance.env` (name, ports, Preloop project and directory) and it runs
 beside the first — separate containers, volumes and networks.
 
-One constraint, measured: a second instance cannot be **installed** while the first is running.
-Preloop's own compose publishes 8000 / 8001 / 3000 with those numbers written in, and its installer
-starts the stack before any override of ours applies. Stop the first instance for the install
-(`scripts/down.sh`, then `scripts/up.sh` afterwards). On a real second machine the question does
-not arise.
+Set every port, including Preloop's. `install.sh` writes `docker-compose.override.yaml` into the
+Preloop install directory **before** running Preloop's installer, because Preloop's own compose has
+8000 / 8001 / 3000 written into it and its installer starts the stack before anything of ours
+applies. `!override` replaces that list rather than adding to it, so the installer, `up.sh` and
+`down.sh` all use this instance's numbers and a second instance can be installed while a first one
+is running.
+
+A minimal second instance, beside a running first:
+
+```
+# config/instance.env
+STACK=agst2
+PRELOOP_PROJECT=preloop-two
+PRELOOP_DIR=/home/you/.preloop-two
+POC_HOST_DIR=/home/you/agent-stack-two
+HUB_PORT=8880
+OPS_PORT=8881
+MLFLOW_PORT=5100
+PRELOOP_API_PORT=8020
+PRELOOP_GATEWAY_PORT=8021
+PRELOOP_CONSOLE_PORT=3020
+```
+
+Never point a second instance at a first one's Preloop (`--no-preloop` with a shared directory):
+the policy and the principals would be applied to **that** account.
 
 ## Addresses
 

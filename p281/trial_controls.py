@@ -1230,6 +1230,13 @@ def controls_template():
           "Docker Compose 2.24 or newer" in readme and "x86_64" in readme, True)
     check("and says which choices are the operator's",
           "none of which the script decides for you" in readme, True)
+    check("the installer sets Preloop's own published ports before it starts",
+          "write_ports_override" in inst and "!override" in inst
+          and inst.index("write_ports_override            #") < inst.index("preloop.ai/install/oss"), True)
+    check("and leaves an override it did not write alone",
+          "is not ours; its ports are whatever it says" in inst, True)
+    check("under --check it writes nothing at all",
+          '[ "$CHECK_ONLY" = 1 ] || write_ports_override' in inst, True)
     check("signing in to a provider is not one of the script's jobs",
           "sign in to any provider" in inst, True)
 

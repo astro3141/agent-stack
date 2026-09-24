@@ -1508,11 +1508,28 @@ Four things it found, none of which could have been found by reasoning:
    Compose does recreate the agent when that file's contents change, and `up.sh` now also asks for
    it explicitly when `apply` reports a mint.
 
-**Also true, and a constraint rather than a defect:** a second instance cannot be *installed* while
-the first one is running, because Preloop's own compose publishes 8000 / 8001 / 3000 with those
-numbers written in, and its installer starts the stack before any override of ours applies. The
-cold start was run with the live instance stopped (`scripts/down.sh`, then `up.sh` afterwards — all
-checks passed again). On a real second machine the question does not arise.
+**One constraint, since removed.** The cold start above was run with the live instance stopped,
+because Preloop's own compose publishes 8000 / 8001 / 3000 with those numbers written in and its
+installer starts the stack before anything of ours applies. That made a second instance
+uninstallable on a machine running a first — which is exactly the situation on a host that already
+runs another Preloop for something else.
+
+`scripts/install.sh` now writes `docker-compose.override.yaml` into the Preloop install directory
+*before* calling their installer. Compose reads that file from the project directory by itself, and
+`!override` replaces the base list instead of adding to it (2.24+), so the installer publishes this
+instance's ports. Measured on the live install directory, base + override + `preloop.cadp.yaml`
+resolve to **one** mapping per service:
+
+```
+api      published "8020"        (with PRELOOP_API_PORT=8020)
+gateway  published "8021"
+console  published "3020"
+```
+
+and with the defaults the live instance comes up unchanged — 8000 / 8001 / 3000, all checks passing.
+The rule that remains is the one that matters: a second instance gets its own Preloop **directory,
+project and database**. Pointing it at a running instance's Preloop would apply this stack's policy
+and principals to that account.
 
 ### The same cold start, on Linux
 

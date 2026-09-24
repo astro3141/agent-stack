@@ -82,16 +82,48 @@ free_gb="$(docker run --rm alpine:3.20 df -P /var 2>/dev/null | awk 'NR==2 {prin
 if [ -n "$free_gb" ] && [ "$free_gb" -ge 20 ]; then need "disk for images" "${free_gb}GB free"
 else need "disk for images" "" "the images come to about 11GB (measured), plus volumes and build cache"; fi
 
+# Preloop's own compose writes 8000 / 8001 / 3000 into the file, and its installer starts the stack
+# before anything of ours applies — so a second instance on this machine could not be installed
+# while the first was running. Compose reads docker-compose.override.yaml from the project
+# directory automatically, and `!override` (2.24+) *replaces* the base list instead of adding to it,
+# so putting this there first makes the installer publish this instance's ports. scripts/up.sh
+# publishes the same numbers, and the two agree.
+write_ports_override() {
+  f="$PRELOOP_DIR/docker-compose.override.yaml"
+  if [ -f "$f" ]; then
+    grep -q 'written by agent-stack' "$f" \
+      || echo "  note  $f is not ours; its ports are whatever it says"
+    return
+  fi
+  mkdir -p "$PRELOOP_DIR" || return
+  cat > "$f" <<EOF
+# The published ports of this instance — written by agent-stack (scripts/install.sh).
+# \`!override\` replaces Preloop's own list rather than adding to it, which is what lets a second
+# instance be installed while a first one is running.
+services:
+  api:
+    ports: !override ["${PRELOOP_API_PORT:-8000}:8000"]
+  gateway:
+    ports: !override ["${PRELOOP_GATEWAY_PORT:-8001}:8000"]
+  console:
+    ports: !override ["${PRELOOP_CONSOLE_PORT:-3000}:80"]
+EOF
+  echo "  ports  api ${PRELOOP_API_PORT:-8000}, gateway ${PRELOOP_GATEWAY_PORT:-8001}, console ${PRELOOP_CONSOLE_PORT:-3000}"
+}
+
 echo "== Preloop OSS"
 if [ -f "$PRELOOP_DIR/docker-compose.yaml" ]; then
   printf '  ok    %-28s %s\n' "installed" "$PRELOOP_DIR"
   [ -f "$PRELOOP_DIR/.env" ] || { printf '  MISS  %-28s %s\n' ".env" "$PRELOOP_DIR/.env is missing"; miss=1; }
+  # an install that predates this file gets it too, so its ports stop depending on Preloop's own
+  [ "$CHECK_ONLY" = 1 ] || write_ports_override
 elif [ "$NO_PRELOOP" = 1 ]; then
   printf '  MISS  %-28s %s\n' "installed" "--no-preloop was given but $PRELOOP_DIR has no compose file"; miss=1
 elif [ "$CHECK_ONLY" = 1 ]; then
   printf '  --    %-28s %s\n' "installed" "not there; install.sh would run Preloop's own installer"
 else
   echo "  not there — running Preloop's own installer into $PRELOOP_DIR"
+  write_ports_override            # before it starts anything, or it takes 8000 / 8001 / 3000
   # INSTALL_DIR is theirs and defaults to ~/.preloop-oss: without passing it, --preloop-dir would
   # be honoured by the check above and ignored by the install, which on a machine that already has
   # an instance would write over it. PRELOOP_SKIP_ADMIN because claiming the instance is this
