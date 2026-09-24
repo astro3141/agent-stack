@@ -81,7 +81,12 @@ elif [ "$CHECK_ONLY" = 1 ]; then
   printf '  --    %-28s %s\n' "installed" "not there; install.sh would run Preloop's own installer"
 else
   echo "  not there — running Preloop's own installer into $PRELOOP_DIR"
-  curl -fsSL https://preloop.ai/install/oss | sh || { echo "  the Preloop installer failed" >&2; exit 1; }
+  # INSTALL_DIR is theirs and defaults to ~/.preloop-oss: without passing it, --preloop-dir would
+  # be honoured by the check above and ignored by the install, which on a machine that already has
+  # an instance would write over it. PRELOOP_SKIP_ADMIN because claiming the instance is this
+  # stack's own step (OPERATIONS §22) and it must not be done twice; PRELOOP_SKIP_SMTP because
+  # this stack sends no mail.
+  INSTALL_DIR="$PRELOOP_DIR" PRELOOP_SKIP_ADMIN=1 PRELOOP_SKIP_SMTP=1     sh -c 'curl -fsSL https://preloop.ai/install/oss | sh'     || { echo "  the Preloop installer failed" >&2; exit 1; }
   [ -f "$PRELOOP_DIR/docker-compose.yaml" ] || {
     echo "  the installer did not leave a compose file in $PRELOOP_DIR — see README" >&2; exit 1; }
 fi
