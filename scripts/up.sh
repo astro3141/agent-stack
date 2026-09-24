@@ -89,7 +89,25 @@ if [ "$MODE" != "--check" ]; then
   docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
     -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml" \
     -f "$HERE/docker/preloop.cadp.yaml" up -d $FORCE || exit 1
-  sleep 8
+  # Wait for Preloop's API to answer rather than for a number of seconds. On a machine that has
+  # run it before, eight seconds was enough and the fixed sleep went unnoticed; on a fresh install
+  # the first boot runs migrations, and the claim below met "Connection refused" (measured, on a
+  # Linux runner). Asking is also faster when it is already up.
+  printf '   waiting for Preloop to answer'
+  ready=0
+  for i in $(seq 1 90); do
+    if docker exec "$STACK-admin" sh -c \
+         'curl -fsS -o /dev/null --max-time 3 http://preloop-api:8000/api/v1/openapi.json' 2>/dev/null; then
+      ready=1; break
+    fi
+    [ $((i % 5)) = 0 ] && printf '.'
+    sleep 2
+  done
+  if [ "$ready" = 1 ]; then echo " ok"; else
+    echo " no answer after 180s" >&2
+    echo "  Preloop did not come up; nothing below would be governed" >&2
+    exit 1
+  fi
 
   # A fresh Preloop has no user, and without one nothing in this stack is governed. Claiming it is
   # this stack's work, not the operator's: it is our own container, the bootstrap token is already
