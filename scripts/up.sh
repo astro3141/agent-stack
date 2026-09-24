@@ -69,6 +69,17 @@ export PRELOOP_API_PORT PRELOOP_GATEWAY_PORT PRELOOP_CONSOLE_PORT
 FORCE=""; [ "$MODE" = "--recreate" ] && FORCE="--force-recreate"
 
 if [ "$MODE" != "--check" ]; then
+  # The containers run as uid 1000; this tree is a bind mount owned by whoever cloned it. On a
+  # Windows host that difference does not exist, and on Linux it stops the stack dead: measured on
+  # a runner, `cfg.py generate` answered "Permission denied: /work/config/generated" and the
+  # account ended up with no MCP servers, so no tool was served through Preloop. Only the two
+  # trees the containers actually write to are opened up, and neither holds a secret — the
+  # credentials live in docker/*.env, which the host writes and keeps at 0600.
+  for d in config/generated evidence evidence/checks evidence/ops evidence/p281 evidence/ui-runs; do
+    mkdir -p "$HERE/$d" 2>/dev/null || true
+  done
+  chmod -R a+rwX "$HERE/config/generated" "$HERE/evidence" 2>/dev/null || true
+
   echo "== PoC stack (composition: $COMPOSITION)"
   # `--build` because the images whose source is this tree (agent, ops, hub, toolsvc, fsmcp,
   # egress, mlflow) are built from it: without it an edit to ops/server.py or hub/index.html
