@@ -30,6 +30,12 @@ def profile(name):
     return json.loads(p.read_text()) if p.is_file() else None
 
 
+def profile_names():
+    """Every generated profile's name — so a refusal can say what there is instead."""
+    d = GEN / "profiles"
+    return [f.stem for f in d.glob("*.json")] if d.is_dir() else []
+
+
 def egress_env(rt=None):
     rt = rt or runtime()
     e = rt["egress"]; np = ",".join(e.get("no_proxy") or [])

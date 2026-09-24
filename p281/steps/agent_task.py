@@ -44,6 +44,24 @@ def run_once():
         return {"status": "FAILED", "failure": {"message": (p.stderr or p.stdout)[-400:]}}
 
 
+# What "produced" is going to mean. The expected file existing is not enough: this step is run
+# again — by its own retry below, and by a fan-out member that asked to be retried (§34) — in the
+# *same* workspace, under the same name. A call that failed after an earlier attempt had written
+# the file would otherwise report `produced: true`, and a chain would advance on an artifact that
+# nothing in this attempt wrote. So what counts is that this attempt wrote it.
+exp_path = os.path.join(ws, expected)
+
+
+def stamp():
+    try:
+        st = os.stat(exp_path)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+before = stamp()
+
 r = run_once()
 # One retry for a login the provider itself calls transient. Measured: two processes touching the
 # same Claude login directory (the quota observer reading usage, and this step) collide on an
@@ -57,7 +75,10 @@ if r.get("status") != "COMPLETED" and "refresh" in msg.lower():
     attempts = 2
 q = ((r.get("turn") or {}).get("_meta") or {}).get("quota") or {}
 meas = {"total_tokens": (q.get("token_count") or {}).get("totalTokens"), "wall_ms": r.get("wall_ms")}
-exp_path = os.path.join(ws, expected)
+after = stamp()
+# left over from an earlier attempt, untouched by this one: the reader is told, rather than the
+# file being deleted — an artifact someone may want to look at is not this step's to destroy
+stale = bool(after and after == before)
 print(json.dumps({
     "status": r.get("status", "FAILED"),
     "provider": provider,
@@ -66,7 +87,8 @@ print(json.dumps({
     "run_id": run_id,
     "workspace": ws,
     "produced_path": exp_path,
-    "produced": os.path.isfile(exp_path),
+    "produced": bool(after) and not stale,
+    "produced_stale": stale,
     "model_session_reported": (r.get("model") or {}).get("session_reported") or "",
     "model_adapter_reported": ",".join(m.get("model", "") for m in q.get("model_usage", [])),
     "model_served": (r.get("model") or {}).get("served") or "unknown",

@@ -2297,3 +2297,70 @@ items, recorded) and the package's own controls pass 20/20 from their new home.
 What was **not** done: a registry. Naming a git URL and a commit is what dbt, Helm and Krew do
 before anyone builds an index, and an index is worth its cost when there are more packages than a
 person can name — which is not yet true here.
+
+## 38. Three answers to a question nobody asked
+
+A reading of the common code at `8e46fb1` — not a run, a reading — named three places where the
+platform answered something other than what was asked. None of them had ever failed a control,
+because in this stack's own runs the question and the answer happened to coincide. All three are
+now measured, and the measurement is what makes them findings rather than opinions.
+
+**A run was admitted on a profile it was not going to use.** §33 moved admission from "read the
+observer's file" to "ask the router", which was right, and asked it for `research-default` whatever
+the run had selected:
+
+```
+before   cost-first → "the router would take claude"     (research-default's order)
+after    cost-first → "under cost-first, the router would take codex"
+```
+
+Two profiles ship; they name the same three providers in a different order, so the admission answer
+for a `cost-first` run was computed from the wrong policy and named the wrong provider. A profile
+with different thresholds would have been admitted or refused on thresholds nobody asked for.
+`capabilities.probe()` now takes the profile, `run_workflow.py` passes the one the run selected, and
+a profile that does not exist is refused at the start — by name, with the profiles there are —
+instead of failing several minutes in, inside the first step that reads it.
+
+**A workflow name two packages declared resolved to half of each.** `workflows()` kept the last
+package read, `requires_of()` answered from the first: the file came from one package and the
+admission requirements from the other, by accident of directory order, with nothing said. A name
+two packages want is now carried by **neither**, and the refusal says which two:
+
+```
+$ run_workflow.py start r1 shared-name research-default
+{"error": "no workflow named 'shared-name'",
+ "why": "dup-one and dup-two both declare it, so neither carries it; rename one in its manifest"}
+```
+
+This is the same rule `principals()` already used for an identity two packages declare (§27), which
+is the argument for it: a package is a dependency, and a silent winner between two dependencies is
+the thing you find out about later.
+
+**A run that judged without calling a model was recorded as one that judged nothing.** The recorder
+had one path for "no executions" — status `HOLD`, gate `NOT_RUN`, the router started nothing. A
+workflow whose result is a deterministic check (a documentation check, a lint gate, a scanner) took
+that path and was written down as *nothing was judged*, discarding the decision it had reached.
+`novel-a` already carries a comment about working around this from the other side (a BLOCK had to be
+given a fake execution to be recorded truthfully). Now a payload with no execution but a decision is
+recorded as `NO_EXECUTION` with that decision, its reason and its evidence index; the router's HOLD
+is still `HOLD`/`NOT_RUN`, and the two are no longer the same record.
+
+**And what `produced` means.** It was "the expected file is there", which is true of a file an
+earlier attempt left behind: this step retries itself once for a login refresh (§19) and a fan-out
+member may ask to be retried (§34), both in the same workspace under the same name. A call that
+failed after an earlier attempt had written the file reported `produced: true`, and a chain would
+advance on an artifact nothing in this attempt wrote. `produced` now means *this attempt wrote it*
+— the file is stat'd before and after the call — and a leftover is reported as `produced_stale`
+rather than deleted, because an artifact someone may want to read is not this step's to destroy.
+
+**What was not changed, and why.** The same reading asked what stops a resumed run from repeating an
+external side effect — creating the same pull request twice. Nothing in the platform does, and
+nothing should: the platform cannot know which effects are outside its world. What it provides is
+the means — every step declares what a repeat does (`REPEATABLE`, §17), the recorder dedupes on an
+idempotency key, and this runtime reaches only the hosts in `docker/egress/allow`, which does not
+include GitHub. A step with an external effect declares `guarded` and asks the **remote** whether
+the effect already happened; a local flag is not a guard, because the workspace a resume starts from
+may not be the one that wrote it. That is the CONTRACT.md line, not an omission: the capability is
+the platform's, the decision is the workflow's.
+
+**Measured**: 425/425 controls, fifteen of them new and pinning exactly the four behaviours above.

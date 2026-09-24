@@ -12,8 +12,12 @@ Reads one JSON payload on stdin:
 
 What it records depends only on how many executions the run actually made:
 
-  * **none** — the router started nothing. That decision is a result too, so it is recorded
-    (status HOLD, gate.decision NOT_RUN).
+  * **none, and no decision in `check`** — the router started nothing. That decision is a result
+    too, so it is recorded (status HOLD, gate.decision NOT_RUN).
+  * **none, with a decision in `check`** — the run judged without calling a model (a
+    documentation check, a lint gate, a scanner). Recorded as status NO_EXECUTION with that
+    decision, its reason and its evidence: a workflow does not have to call a model to have a
+    result, and one that does not used to be written down as "nothing was judged".
   * **one** — one MLflow run, as before.
   * **more than one** — a parent run carrying the run's judgement, and a **child run per
     execution** (`mlflow.parentRunId`), each with its own provider, model, evidence and numbers.
@@ -203,16 +207,30 @@ def record(payload):
                 "children": 0, "repeated": True, "record_error": "; ".join(errors)}
 
     if not exps:
-        # HOLD: the router started nothing.
-        rid = new_run(exp_id, f"{cid}-hold")
+        # Nothing executed. Two different runs look like this, and writing them down the same way
+        # loses the one that matters:
+        #   * the router started nothing — HOLD, and there is no judgement to record;
+        #   * the run reached a judgement without calling a model — a documentation check, a
+        #     lint gate, a scanner. That is a finished run with a decision, and recording it as
+        #     HOLD/NOT_RUN said "nothing was judged" about a run that judged.
+        # The check's own decision is the record; `status` says only that no model ran.
+        decided = str(ck.get("decision") or "")
+        rid = new_run(exp_id, f"{cid}-" + ("check" if decided else "hold"))
         log(rid, {"conductor.run_id": cid, "idempotency_key": key,
-                  "provider": "none", "status": "HOLD",
-                  "gate.decision": "NOT_RUN", "route.decision": rt.get("decision"),
+                  "provider": "none",
+                  "status": "NO_EXECUTION" if decided else "HOLD",
+                  "gate.decision": decided or "NOT_RUN",
+                  "gate.reason": ck.get("reason", ""),
+                  "file_sha256": ck.get("file_sha256", ""),
+                  "route.decision": rt.get("decision"),
                   "route.reason": rt.get("reason"), "route.evaluated": rt.get("evaluated"),
-                  "evidence_dir": rt.get("evidence_dir")})
+                  "profile": rt.get("profile", ""),
+                  "evidence_dir": rt.get("evidence_dir")},
+            numbers(payload.get("measurements") or {}))
+        n = attach_evidence(payload, exp_id, rid) if decided else 0
         finish(rid)
         return {"mlflow_run_id": rid, "experiment_id": exp_id, "executions": 0, "children": 0,
-                "record_error": "; ".join(errors)}
+                "evidence_items": n, "record_error": "; ".join(errors)}
 
     if len(exps) == 1:
         ex = exps[0]

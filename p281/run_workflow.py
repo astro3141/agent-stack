@@ -57,6 +57,17 @@ def known():
         return dict(BUILT_IN)
 
 
+def contested():
+    """Workflow names more than one installed package declares. Nobody may start them, and a
+    refusal says which packages are fighting over the name rather than "invalid workflow"."""
+    try:
+        import packages
+        return {c["workflow"]: c["declared_by"]
+                for c in packages.workflows(with_conflicts=True)[1]}
+    except Exception:
+        return {}
+
+
 def described():
     """Each workflow with what it says about itself: its description and the inputs it declares.
 
@@ -107,10 +118,27 @@ def meta_path(ui):
 
 
 def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", case=""):
-    if workflow not in WORKFLOWS or not re.fullmatch(r"[a-z0-9-]{1,40}", profile) or not re.fullmatch(r"[a-z0-9-]{6,40}", ui):
-        print(json.dumps({"error": "invalid workflow, profile or id"})); return 2
-    caps = capabilities.probe()
-    gone = capabilities.missing(caps, need_record=not allow_unrecorded)
+    if workflow not in WORKFLOWS:
+        fight = contested().get(workflow)
+        print(json.dumps({"error": f"no workflow named {workflow!r}",
+                          "why": (f"{' and '.join(fight)} both declare it, so neither carries it; "
+                                  "rename one in its manifest" if fight else None),
+                          "workflows": sorted(WORKFLOWS)}, ensure_ascii=False))
+        return 2
+    if not re.fullmatch(r"[a-z0-9-]{1,40}", profile) or not re.fullmatch(r"[a-z0-9-]{6,40}", ui):
+        print(json.dumps({"error": "invalid profile or id",
+                          "rule": "a profile is [a-z0-9-] up to 40, a run id [a-z0-9-] of 6 to 40"}))
+        return 2
+    # A profile that is not there is refused here rather than deep inside a step: every step that
+    # reads it calls settings.profile(), which returns None on purpose so callers fail instead of
+    # guessing, and the first of them to fail does so several minutes into a run.
+    if settings.profile(profile) is None:
+        print(json.dumps({"error": f"no profile named {profile!r}",
+                          "profiles": sorted(settings.profile_names())}))
+        return 2
+    # Admission is asked of the profile this run selected, not of a default one.
+    caps = capabilities.probe(profile)
+    gone = capabilities.missing(caps, need_record=not allow_unrecorded, profile=profile)
     # and what this workflow's own package says it needs — declared in its manifest, refused here
     try:
         import packages
@@ -518,5 +546,7 @@ if __name__ == "__main__":
               "stop": lambda: cmd_stop(sys.argv[2]),
               "show": lambda: cmd_show(sys.argv[2]), "list": cmd_list,
               # the one answer both this and the panel use, so neither keeps its own list
-              "workflows": lambda: (print(json.dumps(described() if "--detail" in sys.argv
-                                                     else known(), ensure_ascii=False)), 0)[1]}[a]())
+              "workflows": lambda: (print(json.dumps(
+                  {**(described() if "--detail" in sys.argv else known()),
+                   **({"_contested": contested()} if contested() else {})},
+                  ensure_ascii=False)), 0)[1]}[a]())

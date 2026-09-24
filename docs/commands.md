@@ -63,7 +63,7 @@ docker exec cadp278-admin /opt/venv/bin/python /work/p281/<script>.py …    # w
 | | |
 |---|---|
 | `ops_health.py [--last N] [--json]` | cycles, the lock, the last check, standing risks, capabilities, soaks |
-| `capabilities.py` | what the running composition can do, probed |
+| `capabilities.py [--profile <name>]` | what the running composition can do, probed — admission is asked of that profile |
 | `elsewhere.py` | the switches elsewhere that would make this panel's claims untrue |
 | `router.py <policy.json> <obs-dir>` | one routing decision, from observations only |
 | `collect_obs.py <dir>` | collect the quota observations the router reads |

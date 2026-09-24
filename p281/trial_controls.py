@@ -454,11 +454,18 @@ def controls_recorder():
           rec.record({"execute": ex("run-ai", "codex"), "receipts": [receipt],
                       "check": check_, "route": route})["executions"], 2)
 
-    # nothing ran at all
+    # nothing ran at all — and the two runs that look like this are not the same run
     sent.clear()
-    out = rec.record({"check": check_, "route": route})
+    out = rec.record({"check": {}, "route": route})
     check("a run the router held is still recorded",
-          (out["executions"], tags_of(out["mlflow_run_id"]).get("status")), (0, "HOLD"))
+          (out["executions"], tags_of(out["mlflow_run_id"]).get("status"),
+           tags_of(out["mlflow_run_id"]).get("gate.decision")), (0, "HOLD", "NOT_RUN"))
+    sent.clear()
+    out = rec.record({"check": check_, "route": route, "idempotency_key": "noexec-judged"})
+    t = tags_of(out["mlflow_run_id"])
+    check("a run that judged without calling a model keeps its judgement",
+          (out["executions"], t.get("status"), t.get("gate.decision"), t.get("gate.reason")),
+          (0, "NO_EXECUTION", "CYCLE", "best ai"))
 
     # a receipt that cannot be read is reported, not guessed at
     out = rec.record({"execute": ex("solo", "claude"), "receipts": ["/nowhere/x.json"],
@@ -1143,6 +1150,81 @@ def controls_approval_boundary():
           "This probe runs wherever it is run from, which is the point" in ops, True)
 
 
+def controls_review_findings():
+    """Three defects a reader of the common code found, and what each one now does instead.
+
+    None of them showed up in a run: each is a place where the platform answered a question with
+    something other than what was asked — a different profile, one of two packages, or a record
+    that said nothing had been judged. They are pinned here because a reading found them and only
+    a control keeps them found.
+    """
+    print("")
+    print("what a reading of the common code found (OPERATIONS §38)")
+    import capabilities as _caps, packages as _pk, json as _j, os as _o, shutil as _sh
+    import settings as _st
+
+    # 1. admission is a question about a routing policy, and there is more than one
+    check("admission is asked of the profile the run selected",
+          _caps.probe.__defaults__ is not None
+          and "settings.profile(profile)" in open("/work/p281/capabilities.py",
+                                                  encoding="utf-8").read(), True)
+    detail = {n: _caps.probe(n)["admission"]["detail"] for n in ("research-default", "cost-first")}
+    check("and the answer names it", all(n in detail[n] for n in detail), True)
+    check("a profile that does not exist is not silently a default",
+          _caps.probe("no-such-profile")["admission"]["available"], False)
+    rw = open("/work/p281/run_workflow.py", encoding="utf-8").read()
+    check("the runner passes its own profile to the probe", "capabilities.probe(profile)" in rw, True)
+    check("and refuses a run on a profile that is not there",
+          "settings.profile(profile) is None" in rw, True)
+    check("naming the profiles there are", sorted(_st.profile_names()), ["cost-first", "research-default"])
+
+    # 2. one name, two packages
+    made = []
+    try:
+        for pkg, cap in (("zz-dup-one", "record"), ("zz-dup-two", "admission")):
+            d = f"/work/packages/{pkg}"
+            _o.makedirs(d, exist_ok=True)
+            made.append(d)
+            open(f"{d}/manifest.yaml", "w").write(chr(10).join(
+                [f"name: {pkg}", "version: 0.0.1", "description: a control's collision",
+                 "workflows:", "  zz-shared: workflow.yaml",
+                 "requires:", f"  capabilities: [{cap}]", ""]))
+            open(f"{d}/workflow.yaml", "w").write(
+                chr(10).join(["workflow:", f"  name: {pkg}", ""]))
+        offered, conflicts = _pk.workflows(with_conflicts=True)
+        check("a workflow name two packages declare is carried by neither",
+              "zz-shared" in offered, False)
+        check("and the conflict names both",
+              [c["declared_by"] for c in conflicts if c["workflow"] == "zz-shared"],
+              [["zz-dup-one", "zz-dup-two"]])
+        check("neither package's requires is used for it", _pk.requires_of("zz-shared"), ([], ""))
+        import subprocess as _sp, sys as _sy
+        out = _j.loads(_sp.run([_sy.executable, "/work/p281/run_workflow.py", "start",
+                                "zzdup-probe", "zz-shared", "research-default"],
+                               capture_output=True, text=True).stdout.strip())
+        check("and a run refused for it says which packages are fighting over the name",
+              "both declare it" in (out.get("why") or ""), True)
+    finally:
+        for d in made:
+            _sh.rmtree(d, ignore_errors=True)
+    check("with the collision gone, the loader is itself again",
+          "zz-shared" in _pk.workflows(), False)
+
+    # 3. a run may judge without calling a model
+    rec = open("/work/p281/steps/record.py", encoding="utf-8").read()
+    check("a decision reached without a model call is not recorded as NOT_RUN",
+          'NO_EXECUTION" if decided else "HOLD"' in rec, True)
+    check("and its evidence is kept with it",
+          "attach_evidence(payload, exp_id, rid) if decided" in rec, True)
+
+    # 4. what "produced" means when a step is run again in the same workspace
+    at = open("/work/p281/steps/agent_task.py", encoding="utf-8").read()
+    check("produced means this attempt wrote the file",
+          "bool(after) and not stale" in at, True)
+    check("a file left by an earlier attempt is reported, not deleted",
+          '"produced_stale": stale' in at and "os.remove" not in at, True)
+
+
 def controls_package_sources():
     print("")
     print("where a package comes from — declared, pinned, and fetched by the host")
@@ -1803,6 +1885,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_review_findings()
     controls_package_sources()
     controls_retry()
     controls_packages()

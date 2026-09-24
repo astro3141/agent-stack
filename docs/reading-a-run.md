@@ -40,6 +40,11 @@ run_workflow.py resume <id>   # re-enters the step that did not finish
 | who answered an approval, and with which credential | `evidence/ops/controls.jsonl` | `grep` |
 | what the stack could do when the run started | `meta.json` → `capabilities` | `show <id>` |
 
+A record's `status` says what the run did, not whether it was right: `COMPLETED` or `PARTIAL` when
+models ran, `NO_EXECUTION` when the run reached its decision without calling one (a check, a lint
+gate, a scanner — `gate.decision` is still the decision it reached), and `HOLD` when the router
+started nothing and there was nothing to judge.
+
 The **conductor run id** is the short hex in the workspace and evidence paths (`/ws/af95bad4`,
 `evidence/p281/af95bad4-E1-grok/`). `show` prints it as `conductor_run`, and the panel shows it on
 the run's row.

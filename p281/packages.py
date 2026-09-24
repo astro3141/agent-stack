@@ -97,14 +97,33 @@ def installed():
     return out
 
 
-def workflows():
-    """{workflow name: path relative to /work} — every workflow every usable package carries."""
+def _carriers():
+    """{workflow name: [(package, file), ...]} — who declares each name, across usable packages."""
     out = {}
-    for p in installed().values():
+    for name, p in sorted(installed().items()):
         if p["usable"]:
             for wf_name, path in (p.get("entries") or {}).items():
-                out[wf_name] = os.path.relpath(path, "/work")
+                out.setdefault(wf_name, []).append((p, path))
     return out
+
+
+def workflows(with_conflicts=False):
+    """{workflow name: path relative to /work} — every workflow exactly one usable package carries.
+
+    A name two packages declare is carried by neither. It used to be resolved by accident of
+    directory order — the file came from the package read last, the `requires` from the one read
+    first — so a run could execute one package's workflow under another package's admission rules,
+    and the caller had no way to see it had happened. Two packages wanting the same name is a
+    thing to be told about, and the operator renames one (OPERATIONS §38).
+    """
+    out, conflicts = {}, []
+    for wf_name, carriers in sorted(_carriers().items()):
+        if len(carriers) > 1:
+            conflicts.append({"workflow": wf_name,
+                              "declared_by": [c[0]["name"] for c in carriers]})
+            continue
+        out[wf_name] = os.path.relpath(carriers[0][1], "/work")
+    return (out, conflicts) if with_conflicts else out
 
 
 def requires_of(workflow_name):
@@ -114,10 +133,11 @@ def requires_of(workflow_name):
     reads this and refuses a run the stack cannot govern the way that package expects — the same
     refusal a missing global capability gets (OPERATIONS §31).
     """
-    for p in installed().values():
-        if p["usable"] and workflow_name in (p.get("entries") or {}):
-            return list(((p.get("requires") or {}).get("capabilities")) or []), p["name"]
-    return [], ""
+    carriers = _carriers().get(workflow_name) or []
+    if len(carriers) != 1:         # unknown, or contested — workflows() offers neither
+        return [], ""
+    p = carriers[0][0]
+    return list(((p.get("requires") or {}).get("capabilities")) or []), p["name"]
 
 
 def principals():
@@ -163,13 +183,14 @@ if __name__ == "__main__":
                                                 "why": "not installed"}), ensure_ascii=False))
         sys.exit(0)
     rows = installed()
+    _, wf_conflicts = workflows(with_conflicts=True)
     if "--json" in a:
         who, conflicts = principals()
-        print(json.dumps({"packages": rows, "principals": who, "conflicts": conflicts},
-                         ensure_ascii=False))
+        print(json.dumps({"packages": rows, "principals": who,
+                          "conflicts": conflicts + wf_conflicts}, ensure_ascii=False))
         sys.exit(0)
     _print(rows)
     _, conflicts = principals()
-    for c in conflicts:
+    for c in conflicts + wf_conflicts:
         print(f"  conflict: {json.dumps(c, ensure_ascii=False)}")
     sys.exit(0)

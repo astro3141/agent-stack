@@ -1,6 +1,7 @@
 """What this stack can do right now — probed, not declared.
 
-usage: capabilities.py [--json] [--missing [--allow-unrecorded]]   (in the agent container)
+usage: capabilities.py [--json] [--profile <name>] [--missing [--allow-unrecorded]]
+       (in the agent container)
 
 A composition may leave a service out (scripts/up.sh --composition), and a service that is
 supposed to be there can also be down. Both come to the same question for a run that is about to
@@ -31,7 +32,12 @@ def http(url, timeout=5):
         return 0
 
 
-def probe():
+DEFAULT_PROFILE = "research-default"
+
+
+def probe(profile=DEFAULT_PROFILE):
+    """What the stack can do now. `profile` is the profile the caller is about to run under:
+    admission is a question about a routing policy, and there is more than one."""
     mcp = RT["preloop"]["mcp_url"]
     caps = {}
 
@@ -74,9 +80,16 @@ def probe():
     # the model when codex became readable with the login that executes (§29): the router said
     # ROUTE while this said admission=no, and a screen that contradicts the run is worse than a
     # screen that says nothing.
+    #
+    # Asked of *this run's* profile. It used to ask for "research-default" whatever the run had
+    # selected, so a run started on another profile was admitted or refused on a routing policy it
+    # was not going to use — cost-first names the same three providers in a different order, and a
+    # profile with different thresholds would have been judged on thresholds nobody asked for.
     try:
         import subprocess, tempfile
-        prof = settings.profile("research-default") or {}
+        prof = settings.profile(profile)
+        if prof is None:
+            raise FileNotFoundError(f"no profile named {profile!r}")
         pol = prof.get("routing") or {}
         with tempfile.TemporaryDirectory() as tmp:
             os.makedirs(f"{tmp}/obs", exist_ok=True)
@@ -91,11 +104,11 @@ def probe():
         d = json.loads(out)
         usable = [e["provider"] for e in d.get("evaluated") or [] if e.get("eligible")]
         fresh = bool(usable)
-        detail = (f"the router would take {usable[0]}" if fresh
-                  else "no eligible provider: " + "; ".join(
+        detail = (f"under {profile}, the router would take {usable[0]}" if fresh
+                  else f"under {profile}, no eligible provider: " + "; ".join(
                       f"{e['provider']}={e.get('why')}" for e in (d.get("evaluated") or []))[:160])
     except Exception as e:
-        fresh, detail = False, f"could not ask the router ({type(e).__name__})"
+        fresh, detail = False, f"could not ask the router for {profile} ({type(e).__name__}: {e})"
     caps["admission"] = {
         "available": fresh, "detail": detail,
         "without_it": "the router sees no quota, calls every provider unknown, and holds the run",
@@ -103,9 +116,9 @@ def probe():
     return caps
 
 
-def missing(caps=None, need_record=True):
+def missing(caps=None, need_record=True, profile=DEFAULT_PROFILE):
     """The capabilities a run cannot start without, given whether it insists on being recorded."""
-    caps = caps or probe()
+    caps = caps or probe(profile)
     out = [k for k, c in caps.items() if c["required"] and not c["available"]]
     if need_record and not caps["record"]["available"]:
         out.append("record")
@@ -113,7 +126,10 @@ def missing(caps=None, need_record=True):
 
 
 if __name__ == "__main__":
-    caps = probe()
+    prof = DEFAULT_PROFILE
+    if "--profile" in sys.argv and sys.argv.index("--profile") + 1 < len(sys.argv):
+        prof = sys.argv[sys.argv.index("--profile") + 1]
+    caps = probe(prof)
     if "--missing" in sys.argv:
         # one answer for every caller that has to decide whether a run may start
         gone = missing(caps, need_record="--allow-unrecorded" not in sys.argv)

@@ -56,6 +56,14 @@ requires:
 A package may carry **several workflows** when they share steps — that is why the three trading
 workflows are one package.
 
+A workflow **name** belongs to whichever package declares it, and to only one: a name two installed
+packages declare is carried by neither, and `packages.py` and any refused run name both packages so
+you can rename one. Check yours against what is already installed:
+
+```bash
+docker exec cadp278-agent /opt/venv/bin/python /work/p281/run_workflow.py workflows
+```
+
 ## Which container runs what
 
 Every step runs in the **agent**, with `/work` mounted and `PYTHONPATH=/work/p281:/work/p281/steps`,
@@ -91,6 +99,12 @@ REPEATABLE = "yes"       # same inputs, same result — running it again changes
 REPEATABLE = "guarded"   # it recognises the repeat and does not redo the work
 REPEATABLE = "no"        # it does the work again (a model call, for instance)
 ```
+
+A step with an effect **outside this stack** — opening a pull request, sending something, moving
+money — declares `guarded`, and its guard asks the *remote* whether the effect already happened. A
+local flag is not a guard: a resumed run may start from a workspace that is not the one that wrote
+it. Nothing in the platform deduplicates an external effect for you, and nothing can: what counts
+as the same effect is the workflow's to know.
 
 **4. Evidence files use `items`.** `p281/steps/record.py` counts and stores exactly that key; a file
 with `rows` is stored and counted as **zero**, so the record reads as "nothing kept":
