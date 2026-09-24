@@ -1,7 +1,7 @@
 # Operations — what is actually running, and what must survive
 
 Scope: keeping the environment in use, and being able to undo a change. Full unattended
-installation from nothing is deliberately out of scope for now (§6).
+installation from nothing is covered as of §25.
 
 Measured 2026-09-23 on the running stack. Everything below was read from the live host and
 containers, not from the compose files.
@@ -1394,3 +1394,63 @@ failure; *not being able to tell* is, because every run that needs that provider
 the login check still says the login is there. The same fact is a standing risk in
 `p281/ops_health.py`, so it appears in the panel where a person will see it — and signing in again
 is that person's, as every provider login is.
+
+## 25. What a second machine gets
+
+Everything above assumed this machine. Two things were missing for any other one, and they are
+different in kind.
+
+**The host, before anything.** `scripts/install.sh --check` asks for what this stack needs by name
+and changes nothing:
+
+```
+== the host
+  ok    docker compose >= 2.24       5.5.1
+  ok    architecture                 x86_64
+  ok    disk for images              910GB free
+== Preloop OSS
+  ok    installed                    ~/.preloop-oss
+```
+
+Two of those are not preferences. The composition uses `env_file: required: false`, which compose
+learned in **2.24** — an older one fails with a parse error that does not name the feature it did
+not know. And `docker/agent.Dockerfile` installs a **linux-x64** Node and an **x86_64** CodexBar;
+every image this stack pulls is multi-arch (checked: preloop, console, pgvector, nats, nginx,
+python, docker-cli), so arm64 is two parameterized lines away and has neither been done nor tried.
+Without the check, an arm64 machine finds that out five minutes into a build, in a tar error.
+
+Without `--check` the installer runs **Preloop's own installer** if `~/.preloop-oss` is not there,
+then hands over to `scripts/up.sh`. It signs in to no provider: those accounts belong to a person.
+
+**The governance, which was the real gap.** `p281/workflows/novel-a.yaml` names the identities its
+steps run as — `story=codex:novel-reviewer` — but nothing in this tree said what those identities
+*were*. They existed only in Preloop's database, put there by hand. A second machine would have run
+the same workflow with no principals at all: the reviewer that may not touch the draft (§10) would
+have been a sentence in a document.
+
+So they are declared, in `config/principals.yaml`, in Preloop's own rule shape, and
+`principals.py apply` makes Preloop match the file — creating what is missing, replacing rules that
+differ, leaving alone what agrees. `scripts/up.sh` runs it on every bring-up, on the admin side,
+because changing tool rights is a write the guard refuses from the governed network (§21).
+
+Measured, by changing the declaration and watching Preloop follow it:
+
+```
+changed rule, applied      {"changes": [{"principal": "novel-reviewer", "did": "rules set"}]}
+preloop now says           a reviewer writes its own review (v2)
+restored, applied          {"changes": [{"principal": "novel-reviewer", "did": "rules set"}]}
+applied again              {"changes": []}
+and preloop says           a reviewer writes its own review
+```
+
+One defect the measurement found: the first version decided whether a principal needed a credential
+by looking at **its own process environment**. The credentials are mounted into the agent and
+`apply` runs in the admin container, so it saw none, tried to mint a second one for every principal
+and failed on the duplicate name. It now asks Preloop whether a live credential exists *and* the
+env file whether a line for it exists — either missing and the pair is unusable — and it picks a
+name Preloop will accept. A control pins that the environment is not consulted.
+
+**Still not verified**: a cold start on a machine that has none of this. What is verified is each
+part — the host check here, the Preloop claim against a throwaway instance (§22), the policy and
+principals applied on every bring-up above. The whole thing end to end wants either a second
+instance beside this one or a Linux runner, and neither has been run yet.

@@ -1,6 +1,7 @@
 """Role principals: the identities a workflow's steps run as, and the rights each one carries.
 
 usage:
+  principals.py apply [--dry-run]            make Preloop match config/principals.yaml
   principals.py list                         what exists, and what each may do
   principals.py create <name>                a principal and its credential (prints the env line)
   principals.py rules <name> <spec.json>     replace that principal's tool rules
@@ -12,7 +13,12 @@ agent behind it — never per step. A step gets its own rights by running as its
 The vendor and the principal are chosen separately, so three vendors can share one reviewer's
 rights, which is what the novel workflow does.
 
-**This never writes a credential anywhere.** `create` prints the line to put in
+`apply` is what a bring-up runs: the identities and their rights are declared in
+`config/principals.yaml`, so a fresh machine gets the same governance as this one instead of
+whatever somebody set by hand. It creates what is missing, replaces rules that differ, and leaves
+what already agrees — and it mints a credential only for a principal that has none.
+
+**A credential is never printed to a log or committed.** `create` prints the line to put in
 `docker/principals.env` (git-ignored, read by the agent container as environment); the adapter
 takes it from the environment and records only the principal's name. A credential that is not in
 that file simply is not available, and a step that asks for it fails closed.
@@ -87,6 +93,104 @@ def cmd_create(name):
     return 0
 
 
+ENV_FILE = "/work/docker/principals.env"
+
+
+def credentials_of(aid):
+    r = api("GET", f"/api/v1/agents/{aid}/credentials")
+    rows = r if isinstance(r, list) else ((r or {}).get("items") or (r or {}).get("credentials") or [])
+    return [c for c in rows if isinstance(c, dict)]
+
+
+def has_credential(aid, name):
+    """Live in Preloop *and* named in the env file — either missing and the pair is unusable."""
+    live = any(c.get("status") not in ("revoked", "expired") for c in credentials_of(aid))
+    try:
+        in_file = any(l.startswith(env_name(name) + "=") for l in open(ENV_FILE, encoding="utf-8"))
+    except OSError:
+        in_file = False
+    return live and in_file
+
+
+def credential_name(aid, name):
+    """A name Preloop will accept: it refuses a duplicate, including a revoked one's."""
+    taken = {c.get("name") for c in credentials_of(aid)}
+    base = f"{name}-mcp"[:36]
+    if base not in taken:
+        return base
+    return next(f"{base}-{n}" for n in range(2, 99) if f"{base}-{n}" not in taken)
+
+
+def declared():
+    """config/principals.yaml, or nothing if it is not there (a stack may declare none)."""
+    import yaml
+    path = "/work/config/principals.yaml"
+    if not os.path.exists(path):
+        return {}
+    return (yaml.safe_load(open(path, encoding="utf-8")) or {}).get("principals") or {}
+
+
+def cmd_apply(dry_run=False):
+    """Make Preloop match the declaration. Idempotent: a second run changes nothing."""
+    want = declared()
+    if not want:
+        print(json.dumps({"ok": True, "declared": 0, "note": "no config/principals.yaml"})); return 0
+    have = principals()
+    changes, env_lines = [], []
+    for name, spec in sorted(want.items()):
+        rules = spec.get("tool_rules") or {}
+        aid = have.get(name)
+        if not aid:
+            if dry_run:
+                changes.append({"principal": name, "would": "create"}); continue
+            a = api("POST", "/api/v1/agents", {"display_name": PREFIX + name,
+                                               "agent_kind": "claude_code"})
+            if "id" not in a:
+                print(json.dumps({"ok": False, "principal": name, "stage": "create", "detail": a}))
+                return 1
+            aid = a["id"]
+            changes.append({"principal": name, "did": "created"})
+        cfg = api("GET", f"/api/v1/agents/{aid}/governance")
+        cfg = (cfg or {}).get("config") or {}
+        if (cfg.get("tool_rules") or {}) != rules:
+            if dry_run:
+                changes.append({"principal": name, "would": "set rules"})
+            else:
+                cfg["tool_rules"] = rules
+                r = api("PUT", f"/api/v1/agents/{aid}/governance", cfg)
+                if "error" in (r or {}):
+                    print(json.dumps({"ok": False, "principal": name, "stage": "rules", "detail": r}))
+                    return 1
+                changes.append({"principal": name, "did": "rules set"})
+        # A credential only when there is none: this is the one part that is a secret, and
+        # re-minting would leave the old one live while the env file pointed at the new one.
+        # Whether one exists is asked of Preloop and of the env file — never of this process's
+        # own environment, which differs by container (the file is mounted in the agent, and
+        # `apply` runs on the admin side).
+        if not dry_run and not has_credential(aid, name):
+            c = api("POST", f"/api/v1/agents/{aid}/credentials",
+                    {"name": credential_name(aid, name), "scopes": ["mcp:read", "mcp:write"]})
+            if "token" not in c:
+                print(json.dumps({"ok": False, "principal": name, "stage": "credential",
+                                  "detail": c})); return 1
+            env_lines.append(f"{env_name(name)}={c['token']}")
+            changes.append({"principal": name, "did": "credential minted",
+                            "sha12": hashlib.sha256(c["token"].encode()).hexdigest()[:12]})
+    if env_lines:
+        path = "/work/docker/principals.env"
+        head = "" if os.path.exists(path) else (
+            "# Credentials of the role principals. Written by principals.py apply, "
+            "never versioned." + chr(10))
+        with open(path, "a", encoding="utf-8", newline=chr(10)) as f:
+            f.write(head + chr(10).join(env_lines) + chr(10))
+        os.chmod(path, 0o600)
+    print(json.dumps({"ok": True, "declared": len(want), "changes": changes,
+                      "restart_needed": bool(env_lines),
+                      "note": ("new credentials are in docker/principals.env — scripts/up.sh again "
+                               "so the agent reads them") if env_lines else ""}, ensure_ascii=False))
+    return 0
+
+
 def cmd_rules(name, spec_path):
     aid = principals().get(name)
     if not aid:
@@ -129,7 +233,8 @@ def cmd_check(name):
 
 if __name__ == "__main__":
     a = sys.argv[1:] or ["list"]
-    code = {"list": lambda: cmd_list(),
+    code = {"apply": lambda: cmd_apply("--dry-run" in a),
+            "list": lambda: cmd_list(),
             "create": lambda: cmd_create(a[1]),
             "rules": lambda: cmd_rules(a[1], a[2]),
             "check": lambda: cmd_check(a[1])}[a[0]]()

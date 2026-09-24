@@ -1134,6 +1134,54 @@ def controls_approval_boundary():
           "This probe runs wherever it is run from, which is the point" in ops, True)
 
 
+def controls_template():
+    print("")
+    print("what a second machine gets — the governance is declared, not remembered")
+    import importlib.util as il, yaml
+    spec = il.spec_from_file_location("prin_ctl", "/work/p281/principals.py")
+    pr = il.module_from_spec(spec); sys.modules["prin_ctl"] = pr; spec.loader.exec_module(pr)
+    src = open("/work/p281/principals.py", encoding="utf-8").read()
+    up = open("/work/scripts/up.sh", encoding="utf-8").read()
+    inst = open("/work/scripts/install.sh", encoding="utf-8").read()
+    readme = open("/work/README.md", encoding="utf-8").read()
+    decl = yaml.safe_load(open("/work/config/principals.yaml", encoding="utf-8"))["principals"]
+
+    # Every principal any workflow names must be declared, or that workflow's steps run on a
+    # second machine with no rights of their own — which is the gap this file closes.
+    import glob as _glob, re as _re
+    named = set()
+    for f in _glob.glob("/work/p281/workflows/*.yaml"):
+        named |= set(_re.findall(r'=[a-z0-9-]+:([a-z0-9-]+)', open(f, encoding="utf-8").read()))
+    check("the principals the workflows name are declared", sorted(named - set(decl)), [])
+    check("and the scan found the ones this stack uses",
+          sorted(named & set(decl)), ["novel-author", "novel-reviewer"])
+    check("and what each may do is in the file, not in someone's memory",
+          bool((decl.get("novel-reviewer") or {}).get("tool_rules", {}).get("write_file")), True)
+    check("a reviewer's last rule is the deny that makes the allow mean something",
+          decl["novel-reviewer"]["tool_rules"]["write_file"][-1]["action"], "deny")
+    check("applying it is part of every bring-up", "principals.py apply" in up, True)
+    check("and it runs where a write to Preloop is allowed",
+          '"$STACK-admin" /opt/venv/bin/python /work/p281/principals.py apply' in up, True)
+    check("a credential is asked about, never assumed from this process's environment",
+          "def has_credential(" in src and "os.environ.get(env_name" not in
+          src.split("def cmd_apply(")[1].split("def cmd_rules(")[0], True)
+    check("and a name that Preloop would refuse is not offered twice",
+          "def credential_name(" in src, True)
+
+    # the host, before any of it
+    check("the installer checks the compose version the composition needs",
+          "2.24" in inst and "env_file" in inst, True)
+    check("and says which architecture the image build assumes",
+          "x86_64" in inst and "CodexBar" in inst, True)
+    check("and changes nothing under --check", "nothing was changed" in inst, True)
+    check("the README names the prerequisites rather than implying them",
+          "Docker Compose 2.24 or newer" in readme and "x86_64" in readme, True)
+    check("and says which choices are the operator's",
+          "none of which the script decides for you" in readme, True)
+    check("signing in to a provider is not one of the script's jobs",
+          "sign in to any provider" in inst, True)
+
+
 def controls_bootstrap():
     print("")
     print("claiming a fresh Preloop — the stack's work, not the operator's")
@@ -1326,6 +1374,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_template()
     controls_suite()
     controls_resume()
     controls_bootstrap()

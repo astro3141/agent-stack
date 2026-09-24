@@ -41,6 +41,43 @@ directory, and the operations that let the result survive a restart, an update o
 - `p281/TRIAL-A-novel.md`, `p281/TRIAL-B-trading.md` — whether workflows of a given shape actually
   run here, and what broke when they did.
 
+## Installing it
+
+```bash
+scripts/install.sh --check           # what the host is missing, changing nothing
+scripts/install.sh                   # install Preloop OSS if needed, then bring the stack up
+```
+
+**What the host needs**, and what the check asks for by name:
+
+| | why |
+|---|---|
+| Docker, and a running daemon | everything here is containers |
+| **Docker Compose 2.24 or newer** | the composition uses `env_file: required: false`; an older compose fails with a parse error that does not say which feature it did not know |
+| bash, git, curl | the scripts, and Preloop's own installer |
+| **x86_64** | `docker/agent.Dockerfile` installs a linux-x64 Node and an x86_64 CodexBar. Every image this stack pulls is multi-arch, so arm64 needs those two lines parameterized — it has not been done or tried |
+| ~20GB free | images and volumes |
+
+The installer runs **Preloop's own installer** (`https://preloop.ai/install/oss`) into
+`~/.preloop-oss` when that directory is not there, and `--preloop-dir` puts it elsewhere. From then
+on `scripts/up.sh` is enough: it builds this tree's images, **claims a fresh Preloop** (registers
+the first user with the bootstrap token, issues the runtime's credential — OPERATIONS §22), applies
+the account policy from `policy/` and the principals declared in `config/principals.yaml`, and
+checks the result.
+
+**What no script will do for you: sign in to a provider.** Claude, Codex and Grok accounts belong
+to a person, on the vendor's own page. The panel's 계정 tab is where that happens
+(`http://127.0.0.1:8780`), and until it does, runs hold with `no eligible provider` — which the
+bring-up now says out loud rather than reporting a login file's existence as a login.
+
+Choices worth making before installing, none of which the script decides for you:
+
+- **Which composition.** The full stack, or `--composition no-record` (no MLflow) / `minimal` —
+  `scripts/up.sh` prints what each one costs in capabilities.
+- **Where Preloop lives.** `--preloop-dir`, if `~/.preloop-oss` is not where you want it.
+- **The instance's name and ports.** `config/instance.env` (`STACK`, `OPS_PORT`, `HUB_PORT`,
+  `PRELOOP_*_PORT`) — a second instance on the same machine needs its own.
+
 ## Running it
 
 ```bash
@@ -50,7 +87,7 @@ scripts/cycle.sh trading-b           # one unattended cycle, for a scheduler to 
 docker exec cadp278-agent /opt/venv/bin/python /work/p281/ops_health.py
 ```
 
-`scripts/up.sh --check` answers 16 questions about isolation, services, logins and quota
+`scripts/up.sh --check` answers about twenty questions about isolation, services, logins and quota
 observation, and prints which capabilities the running composition has.
 
 ## How this repository came to be

@@ -1,0 +1,40 @@
+# The identities a workflow's steps run as, and what each one may do.
+#
+# Why this file exists: a workflow names its principals (`story=codex:novel-reviewer` in
+# p281/workflows/novel-a.yaml), but until now nothing in this tree said what those principals
+# *were*. They lived only in Preloop's database, put there by hand — so a fresh machine had
+# workflows referring to identities that did not exist, and the rights a review is supposed to run
+# under were something somebody did once rather than something the stack declares.
+#
+# `p281/principals.py apply` makes Preloop match this file: it creates what is missing, replaces
+# the rules of what is not, and leaves alone what already agrees. It runs on the admin side, from
+# scripts/up.sh, because changing tool rights is a write the guard refuses from the governed
+# network (OPERATIONS.md §21). Credentials are not in here and never will be: `apply` mints one
+# for a principal that has none and writes the line to docker/principals.env, which is git-ignored.
+#
+# Rules are Preloop's own, in Preloop's shape (`condition_type: simple`):
+#   args.<field> == 'v'        args.<field>.contains('s')        '' = anything else
+# First match wins, and the default without rules is allow — which is why a principal that may do
+# only one thing ends with an explicit deny.
+
+principals:
+  novel-author:
+    description: >
+      Writes the chapter and its repairs. No rules: within the account's policy it may use the
+      tools the policy allows, because writing the draft is its work.
+    tool_rules: {}
+
+  novel-reviewer:
+    description: >
+      Reads the frozen draft and writes its own review. It may not touch what it judges — measured
+      as "Access denied: Scoped rule 2" when it tries (OPERATIONS.md §10).
+    tool_rules:
+      write_file:
+        - action: allow
+          condition_type: simple
+          condition_expression: "args.path.contains('review_')"
+          rule_description: a reviewer writes its own review
+        - action: deny
+          condition_type: simple
+          condition_expression: ""
+          rule_description: and nothing else - the draft it judges is not its to change

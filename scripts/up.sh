@@ -122,6 +122,18 @@ check() {  # name, expected, actual
 }
 in_agent() { docker exec "$STACK-agent" sh -c "$1" 2>/dev/null; }
 
+# The identities a workflow's steps run as, and the rights each carries, are declared in
+# config/principals.yaml — not remembered from whoever created them by hand. Applying that on
+# every bring-up is what keeps a second machine governed the same way as this one; it writes to
+# Preloop, so it runs on the admin side (OPERATIONS.md §21, §25).
+if docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
+  out="$(docker exec "$STACK-admin" /opt/venv/bin/python /work/p281/principals.py apply 2>&1 | tail -1)"
+  case "$out" in
+    *'"ok": true'*) echo "$out" | grep -q '"changes": \[\]' || echo "== principals: $out";;
+    *) echo "  WARN  the declared principals could not be applied: $out" >&2;;
+  esac
+fi
+
 # The guard's rules are a bind-mounted file, and compose does not restart a container because a
 # file under it changed — a rule edited without this reload is a rule that is not enforced.
 if docker ps --format '{{.Names}}' | grep -qx "$STACK-apiguard"; then
