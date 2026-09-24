@@ -26,6 +26,15 @@ directory, and the operations that let the result survive a restart, an update o
 | `policy/`, `gate/`, `config/` | the tool policies, the evidence gate, and the profiles everything is generated from |
 | `evidence/` | what runs actually produced — checks, UI runs, soak samples, operations records |
 
+## Start here
+
+| | |
+|---|---|
+| **[docs/install.md](docs/install.md)** | from a clone to a running stack, what the host needs, and what only a person can do |
+| **[docs/concepts.md](docs/concepts.md)** | how the five pieces fit, the one rule they are arranged around, and what a run leaves behind |
+| **[docs/commands.md](docs/commands.md)** | every command, and which container it belongs in |
+| **[docs/runbook.md](docs/runbook.md)** | what to do when something is wrong, with the symptom first |
+
 ## The documents that matter
 
 - **[CONTRACT.md](CONTRACT.md)** — the line this codebase is organized around: *the platform
@@ -37,7 +46,7 @@ directory, and the operations that let the result survive a restart, an update o
   and restore, update and rollback, cleanup, compositions, tool policy per principal, and long
   operation. Every section is a measurement, including the ones that went wrong.
 - **[RUNBOOK.md](RUNBOOK.md)** — the composition stack as first measured (#278), kept as the state
-  it started from.
+  it started from. For operating the stack as it is now, use [docs/runbook.md](docs/runbook.md).
 - `p281/TRIAL-A-novel.md`, `p281/TRIAL-B-trading.md` — whether workflows of a given shape actually
   run here, and what broke when they did.
 

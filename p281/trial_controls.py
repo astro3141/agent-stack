@@ -1134,6 +1134,49 @@ def controls_approval_boundary():
           "This probe runs wherever it is run from, which is the point" in ops, True)
 
 
+def controls_docs():
+    print("")
+    print("the documents — what they promise is what the tree does")
+    import glob as _glob, os as _os, re as _re
+    docs = {p: open(p, encoding="utf-8").read() for p in _glob.glob("/work/docs/*.md")}
+    check("the four documents exist",
+          sorted(_os.path.basename(p) for p in docs),
+          ["commands.md", "concepts.md", "install.md", "runbook.md"])
+
+    # A command named in a document that does not exist is the worst kind of documentation.
+    named = set()
+    for text in docs.values():
+        named |= {("scripts/" + m) for m in _re.findall(r"scripts/([a-z-]+\.sh)", text)}
+        named |= {("p281/" + m) for m in _re.findall(r"p281/([a-z_]+\.py)", text)}
+    check("every command the documents name exists",
+          sorted(n for n in named if not _os.path.exists("/work/" + n)), [])
+
+    # And the flags they tell an operator to type
+    down = open("/work/scripts/down.sh", encoding="utf-8").read()
+    up = open("/work/scripts/up.sh", encoding="utf-8").read()
+    rb = docs["/work/docs/runbook.md"]
+    check("the runbook's stopping flags are real",
+          ("--now)" in down and "--volumes)" in down
+           and "scripts/down.sh --now" in rb and "scripts/down.sh --volumes" in rb), True)
+    check("and its bring-up flags are", "--composition)" in up and "--check|" in up, True)
+
+    # The runbook's guard probe must be the one that actually distinguishes the two cases
+    check("the runbook probes the guard from inside the agent",
+          "docker exec cadp278-agent" in rb and "403 = the guard is in the path" in rb, True)
+
+    # The standing rules are stated where an operator will read them
+    for rule in ("preloop agents onboard", "~/.claude", "0600", "in the panel, as a person"):
+        check(f"the runbook states the rule about {rule}", rule in rb, True)
+
+    # README leads somewhere
+    readme = open("/work/README.md", encoding="utf-8").read()
+    check("the README points at all four",
+          all(f"docs/{n}" in readme for n in
+              ("install.md", "concepts.md", "commands.md", "runbook.md")), True)
+    check("and says the old runbook is history",
+          "use [docs/runbook.md]" in readme, True)
+
+
 def controls_template():
     print("")
     print("what a second machine gets — the governance is declared, not remembered")
@@ -1398,6 +1441,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_docs()
     controls_template()
     controls_suite()
     controls_resume()
