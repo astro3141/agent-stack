@@ -1060,7 +1060,7 @@ def controls_approval_boundary():
     print("the approval boundary — a route, and it says so")
     guard = open("/work/docker/apiguard.conf", encoding="utf-8").read()
     compose = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
-    preloop = open("/work/docker/preloop.cadp.yaml", encoding="utf-8").read()
+    preloop = open("/work/docker/preloop.agentstack.yaml", encoding="utf-8").read()
     up = open("/work/scripts/up.sh", encoding="utf-8").read()
 
     # what the guard refuses, and what it deliberately does not. The refusals are one table, so
@@ -1250,7 +1250,14 @@ def controls_package_sources():
     print("")
     print("where a package comes from — declared, pinned, and fetched by the host")
     import os as _o, yaml as _y
-    decl = _y.safe_load(open("/work/config/packages.yaml", encoding="utf-8"))["packages"]
+    import importlib.util as _il2
+    _sp2 = _il2.spec_from_file_location("pkg_src", "/work/p281/packages.py")
+    _pks = _il2.module_from_spec(_sp2); _sp2.loader.exec_module(_pks)
+    # the same question the loader answers: the tracked declaration plus this instance's overlay
+    decl = {}
+    for _f in ("/work/config/packages.yaml", "/work/config/packages.local.yaml"):
+        if _o.path.isfile(_f):
+            decl.update((_y.safe_load(open(_f, encoding="utf-8")) or {}).get("packages") or {})
     sh = open("/work/scripts/packages.sh", encoding="utf-8").read()
     gi = open("/work/.gitignore", encoding="utf-8").read()
     up_sh = open("/work/scripts/up.sh", encoding="utf-8").read()
@@ -1260,12 +1267,30 @@ def controls_package_sources():
     check("and every declaration is installed",
           sorted(n for n in decl if not _o.path.isdir(f"/work/packages/{n}")), [])
     fetched = [n for n, spec in decl.items() if (spec or {}).get("from", "local") != "local"]
+    pins = []
+    for _f in ("/work/config/packages.lock", "/work/config/packages.local.lock"):
+        if _o.path.isfile(_f):
+            pins += open(_f, encoding="utf-8").read().splitlines()
     check("a fetched package is pinned by commit",
-          all(any(l.startswith(n + " ") for l in
-                  open("/work/config/packages.lock", encoding="utf-8"))
-              for n in fetched), True)
+          all(any(l.startswith(n + " ") for l in pins) for n in fetched), True)
+    # a declaration this repository does not carry lives in the overlay, and neither file is tracked
+    check("the tracked declaration is one a stranger could run",
+          [n for n, sp in ((_y.safe_load(open("/work/config/packages.yaml", encoding="utf-8"))
+                            or {}).get("packages") or {}).items()
+           if (sp or {}).get("from", "local") != "local"], [])
+    check("and the overlay that names private ones is not versioned",
+          all(x in gi for x in ("config/packages.local.yaml", "config/packages.local.lock")), True)
+    # which packages this machine fetched is this machine's business: excluded locally, so a
+    # tracked ignore file never publishes the name of a private one
+    excl = ""
+    if _o.path.isfile("/work/.git/info/exclude"):
+        excl = open("/work/.git/info/exclude", encoding="utf-8").read()
     check("and is not this repository's content",
-          all(f"packages/{n}/" in gi for n in fetched), True)
+          all(f"packages/{n}/" in excl for n in fetched), True)
+    check("nor named in a file this repository publishes",
+          any(f"packages/{n}/" in gi for n in fetched), False)
+    check("which is what the script writes",
+          ".git/info/exclude" in sh and 'HERE/.gitignore" 2>/dev/null && return' not in sh, True)
     check("the fetch happens on the host, not in a container",
           "git clone" in sh and "docker exec" not in sh.split("case \"$CMD\"")[1], True)
     check("a bring-up says when what is on disk is not what the lock names",
@@ -1587,7 +1612,7 @@ def controls_docs():
 
     # The runbook's guard probe must be the one that actually distinguishes the two cases
     check("the runbook probes the guard from inside the agent",
-          "docker exec cadp278-agent" in rb and "403 = the guard is in the path" in rb, True)
+          "docker exec agentstack-agent" in rb and "403 = the guard is in the path" in rb, True)
 
     # An operator's document has to say what the job is, not only what to do when it breaks.
     check("the runbook opens with the duties, before the symptoms",
@@ -1748,7 +1773,7 @@ def controls_template():
     check("under --check it writes nothing at all",
           '[ "$CHECK_ONLY" = 1 ] || patch_preloop_ports' in inst, True)
     check("and nothing else publishes those ports",
-          "ports:" not in open("/work/docker/preloop.cadp.yaml", encoding="utf-8").read()
+          "ports:" not in open("/work/docker/preloop.agentstack.yaml", encoding="utf-8").read()
           .split("services:")[1], True)
     check("signing in to a provider is not one of the script's jobs",
           "sign in to any provider" in inst, True)

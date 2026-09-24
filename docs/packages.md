@@ -94,7 +94,7 @@ packages declare is carried by neither, and `packages.py` and any refused run na
 you can rename one. Check yours against what is already installed:
 
 ```bash
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/run_workflow.py workflows
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py workflows
 ```
 
 ## Which container runs what
@@ -212,12 +212,12 @@ package before installing it, as you would a dependency.
 ## Before you call it done
 
 ```bash
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/packages.py          # is it usable
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/run_workflow.py workflows --detail
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/packages.py          # is it usable
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py workflows --detail
 scripts/up.sh                                                                  # principals applied
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/run_workflow.py \
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py \
   start <id> <workflow> research-default --detach
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/run_workflow.py tail <id> --follow
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py tail <id> --follow
 ```
 
 Then read it back the way everyone else will: [reading-a-run.md](reading-a-run.md).

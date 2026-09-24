@@ -11,5 +11,5 @@ set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
 export MSYS_NO_PATHCONV=1
-STACK="${STACK:-cadp278}"
+STACK="${STACK:-agentstack}"
 exec docker exec "$STACK-agent" /opt/venv/bin/python /work/p281/cleanup.py "$@"

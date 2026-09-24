@@ -14,8 +14,8 @@ set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 command -v cygpath >/dev/null && HERE="$(cygpath -m "$HERE")"
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
-BACKUPS="${BACKUP_DIR:-$HOME/cadp-backups}"
-RELEASES="${RELEASE_DIR:-$HOME/cadp-releases}"
+BACKUPS="${BACKUP_DIR:-$HOME/agentstack-backups}"
+RELEASES="${RELEASE_DIR:-$HOME/agentstack-releases}"
 OUT="$HERE/evidence/ops/host-state.json"
 mkdir -p "$HERE/evidence/ops"
 

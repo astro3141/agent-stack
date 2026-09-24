@@ -29,5 +29,11 @@ evidence/ops/host-state.json
 handoff/*
 !handoff/README.md
 
-# fetched package, pinned in config/packages.lock and installed by scripts/packages.sh
-packages/trading/
+
+# Declarations and pins for packages this repository does not carry — a private repository, a
+# client's workflow. The tracked config/packages.yaml stays a declaration a stranger can run.
+config/packages.local.yaml
+config/packages.local.lock
+
+# This machine's instance name, ports and paths (scripts/restore.sh writes it)
+config/instance.env

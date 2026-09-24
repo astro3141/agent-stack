@@ -1,4 +1,4 @@
-"""cadp278-ops — the only component with Docker control. A fixed set of actions over HTTP.
+"""agentstack-ops — the only component with Docker control. A fixed set of actions over HTTP.
 
 The UI (and anything else) calls this API; it never talks to Docker itself. Each route maps to
 one predetermined `docker exec` into a known container, with arguments passed as an argv list
@@ -24,10 +24,10 @@ import json, os, re, secrets, subprocess, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-AGENT = os.environ.get("OPS_AGENT_CONTAINER", "cadp278-agent")
+AGENT = os.environ.get("OPS_AGENT_CONTAINER", "agentstack-agent")
 # The operator's own commands — the ones that change what the account enforces — run here, on the
 # admin side, because the guard refuses those writes from the governed network (OPERATIONS §21).
-ADMIN = os.environ.get("OPS_ADMIN_CONTAINER", "cadp278-admin")
+ADMIN = os.environ.get("OPS_ADMIN_CONTAINER", "agentstack-admin")
 PY = "/opt/venv/bin/python"
 PROVIDERS = {"claude", "codex", "grok"}
 NAME = re.compile(r"[a-z0-9-]{1,40}")

@@ -16,6 +16,6 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 command -v cygpath >/dev/null && HERE="$(cygpath -m "$HERE")"
 export MSYS_NO_PATHCONV=1
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
-STACK="${STACK:-cadp278}"
+STACK="${STACK:-agentstack}"
 
 exec docker exec "$STACK-agent" /opt/venv/bin/python /work/p281/cycle.py "$@" --by scheduler

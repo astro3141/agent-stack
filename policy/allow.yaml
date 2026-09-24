@@ -2,19 +2,19 @@
 # vertical slice. N1 swaps this for policy/n1-deny.yaml.
 version: '1.0'
 metadata:
-  name: cadp278-allow
+  name: agentstack-allow
   description: Baseline — write_marker permitted
 mcp_servers:
-- name: cadp278-toolsvc
+- name: agentstack-toolsvc
   url: http://toolsvc:8000/mcp
   transport: http-streaming
   auth_type: none
 tools:
 - name: write_marker
-  source: cadp278-toolsvc
+  source: agentstack-toolsvc
   enabled: true
 - name: list_markers
-  source: cadp278-toolsvc
+  source: agentstack-toolsvc
   enabled: true
 defaults:
   unknown_tools: allow

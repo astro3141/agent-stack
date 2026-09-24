@@ -17,7 +17,7 @@
 # file tool server and the quota observer. Dropping any of those does not make the stack smaller,
 # it makes it something else — one that cannot say what an agent was allowed to do.
 #
-# No manual step afterwards: Preloop joins the PoC networks through docker/preloop.cadp.yaml,
+# No manual step afterwards: Preloop joins the PoC networks through docker/preloop.agentstack.yaml,
 # every PoC container restarts on its own, the quota observer's loop is its container process,
 # and logins / Preloop's database / MLflow live in volumes or bind mounts.
 set -u
@@ -53,7 +53,7 @@ esac
 export COMPOSE_PROFILES
 # One instance per name: STACK selects container/volume/network names and the published ports.
 # The defaults are the live instance; a restored copy runs under another name (scripts/restore.sh).
-STACK="${STACK:-cadp278}"
+STACK="${STACK:-agentstack}"
 OPS_PORT="${OPS_PORT:-8781}"; HUB_PORT="${HUB_PORT:-8780}"; MLFLOW_PORT="${MLFLOW_PORT:-5000}"
 PRELOOP_PROJECT="${PRELOOP_PROJECT:-preloop-oss}"
 PRELOOP_API_PORT="${PRELOOP_API_PORT:-8000}"; PRELOOP_GATEWAY_PORT="${PRELOOP_GATEWAY_PORT:-8001}"
@@ -99,7 +99,7 @@ if [ "$MODE" != "--check" ]; then
   echo "== Preloop (+ PoC network attachment)"
   docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
     -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml" \
-    -f "$HERE/docker/preloop.cadp.yaml" up -d $FORCE || exit 1
+    -f "$HERE/docker/preloop.agentstack.yaml" up -d $FORCE || exit 1
   # Wait for Preloop's API to answer rather than for a number of seconds. On a machine that has
   # run it before, eight seconds was enough and the fixed sleep went unnoticed; on a fresh install
   # the first boot runs migrations, and the claim below met "Connection refused" (measured, on a

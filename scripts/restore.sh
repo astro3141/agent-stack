@@ -7,7 +7,7 @@
 #
 #   --workspace DIR    where the restored instance's /work lives. With --clone-from it is created
 #                      as a fresh clone (the repository layout: <clone>/poc/281-routing).
-#   --stack NAME       instance name for containers, volumes and networks (default cadp278r).
+#   --stack NAME       instance name for containers, volumes and networks (default agentstackr).
 #   --into-existing    allow a workspace that already holds config/ or evidence/ to be overwritten.
 #
 # Ports default to the live ones + 10 (hub 8790, ops 8791, MLflow 5010, Preloop 8010/8011/3010).
@@ -26,11 +26,14 @@ u() { if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "
 m() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
 ARCHIVE=""; WORKSPACE=""; CLONE_FROM=""; REV=""; VERIFY_ONLY=0; INTO_EXISTING=0
-STACK="${STACK:-cadp278r}"
-LIVE_STACK="${LIVE_STACK:-cadp278}"
+STACK="${STACK:-agentstackr}"
+LIVE_STACK="${LIVE_STACK:-agentstack}"
 LIVE_PRELOOP_PROJECT="${LIVE_PRELOOP_PROJECT:-preloop-oss}"
 LIVE_PRELOOP_DIR="${LIVE_PRELOOP_DIR:-$HOME/.preloop-oss}"
-KEY="${BACKUP_KEY:-$HOME/.cadp-backup.key}"
+KEY="${BACKUP_KEY:-$HOME/.agentstack-backup.key}"
+# A machine that made archives under the old name keeps decrypting them: the key is the
+# secret, and renaming its file would have minted a new one and orphaned every archive.
+[ -f "$KEY" ] || [ ! -f "$HOME/.cadp-backup.key" ] || KEY="$HOME/.cadp-backup.key"
 PRELOOP_PROJECT="${RESTORE_PRELOOP_PROJECT:-preloop-restore}"
 PRELOOP_RESTORE_DIR="${RESTORE_PRELOOP_DIR:-$HOME/.preloop-restore}"
 HUB_PORT="${HUB_PORT:-8790}"; OPS_PORT="${OPS_PORT:-8791}"; MLFLOW_PORT="${MLFLOW_PORT:-5010}"
@@ -152,7 +155,7 @@ if [ "$VERIFY_ONLY" = 0 ]; then
   say "live instance" "stopped; its volumes and paths untouched"
 fi
 
-STAGE="$(u "${TMPDIR:-/tmp}")/cadp-restore-$$"
+STAGE="$(u "${TMPDIR:-/tmp}")/agentstack-restore-$$"
 STAGEM="$(m "$STAGE")"
 (umask 077; mkdir -p "$STAGE")
 cleanup() { rm -rf "$STAGE"; }
@@ -192,7 +195,7 @@ WORKSPACE="$(m "$WORKSPACEU")"
 # instance file this restore writes. A revision missing either one would start the live
 # instance's containers against this workspace instead — checked before anything is started.
 for need in \
-  "docker/compose.poc.yaml:STACK:-cadp278" \
+  "docker/compose.poc.yaml:STACK:-agentstack" \
   "scripts/up.sh:config/instance.env" \
   "scripts/down.sh:config/instance.env"
 do

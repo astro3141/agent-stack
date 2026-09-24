@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs inside cadp278-quota (egress, own logins). Every INTERVAL seconds, writes the raw
+# Runs inside agentstack-quota (egress, own logins). Every INTERVAL seconds, writes the raw
 # CodexBar observation plus the observer's own clock to /obs, atomically. Emails never leave
 # the stack: the agent reads this volume read-only and fingerprints them.
 INTERVAL=${INTERVAL:-300}

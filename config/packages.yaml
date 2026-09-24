@@ -29,9 +29,3 @@ packages:
   novel:
     from: local
     note: capability trial — role-split chapter with a bounded repair loop
-  trading:
-    from: https://github.com/astro3141/agent-stack-trading.git
-    ref: main
-    note: >
-      the trading workflows and their deterministic core — 36 of this repository's files until it
-      moved out. A platform repository should say which workflows it runs, not carry their content.

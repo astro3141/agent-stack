@@ -5,7 +5,7 @@ marker file. The N1 negative control asserts that when Preloop policy denies the
 call, this file does NOT appear — i.e. the deny prevented the underlying effect,
 not merely the agent's report of it.
 
-This service sits on `cadp278-toolnet`, which the agent container is NOT a member
+This service sits on `agentstack-toolnet`, which the agent container is NOT a member
 of. The only route to it is through the Preloop MCP safety layer.
 """
 
@@ -16,7 +16,7 @@ import pathlib
 from mcp.server.fastmcp import FastMCP
 
 MARKERS = pathlib.Path("/markers")
-mcp = FastMCP("cadp278-toolsvc", host="0.0.0.0", port=8000)
+mcp = FastMCP("agentstack-toolsvc", host="0.0.0.0", port=8000)
 
 
 @mcp.tool()

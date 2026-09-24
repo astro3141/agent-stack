@@ -308,7 +308,7 @@ Preloop's approval window is 300 s (`timeout_seconds` in the hook config, `expir
 + 5 min) and it answers a moment after the window closes. The console proxy's own 300 s read
 timeout fires first. Through the proxy, the adapter still refuses (a 504 is an error, and errors
 reject) but classifies an **expired approval** as **control unavailable**. The adapter now calls
-the api directly; the agent reaches it by the `api` alias on `cadp278-governed`.
+the api directly; the agent reaches it by the `api` alias on `agentstack-governed`.
 
 After the server answered `timed_out`, the request record still read `status: pending`,
 `resolved_at: null` — the stale-state issue above, confirmed on a request whose expiry was
@@ -465,11 +465,11 @@ vendors' native write/shell tools are removed where the vendor allows it.
 
 ### Setup
 
-- `cadp278-fsmcp`: official `@modelcontextprotocol/server-filesystem@2026.8.31` (stdio)
+- `agentstack-fsmcp`: official `@modelcontextprotocol/server-filesystem@2026.8.31` (stdio)
   wrapped by `supergateway@4.0.0` as Streamable HTTP, because Preloop only proxies
-  URL-addressed MCP servers. On `cadp278-toolnet` only; from the agent, `cadp278-fsmcp:8000`
+  URL-addressed MCP servers. On `agentstack-toolnet` only; from the agent, `agentstack-fsmcp:8000`
   is unreachable (`000`) — the only route is Preloop's MCP proxy.
-- Shared volume `cadp278-ws` at `/ws` in both containers (same absolute paths on both sides).
+- Shared volume `agentstack-ws` at `/ws` in both containers (same absolute paths on both sides).
 - Policy `policy/b-fsmcp.yaml` (CEL): `write_file` / `edit_file` / `create_directory` /
   `move_file` denied when the path is under `/.claude` or ends in `forbidden.txt`.
 - After `policy apply`, the new server's tools were **not** exposed until
@@ -615,7 +615,7 @@ Idle sleep is now blocked while `tools/keep-awake.ps1` runs (`SetThreadExecution
 
 | provider | source | account binding | freshness |
 |---|---|---|---|
-| codex | CodexBar 0.63.0 in the **observer container** `cadp278-quota` (egress, own `codex login --device-auth` — done by the operator from a phone; passkey login worked) | observer's `identity.accountEmail` vs the id_token email of the agent's `~/.codex/auth.json`, compared as sha256 fingerprints — **basis "email"**; matched | provider `updatedAt`, re-collected every 300 s |
+| codex | CodexBar 0.63.0 in the **observer container** `agentstack-quota` (egress, own `codex login --device-auth` — done by the operator from a phone; passkey login worked) | observer's `identity.accountEmail` vs the id_token email of the agent's `~/.codex/auth.json`, compared as sha256 fingerprints — **basis "email"**; matched | provider `updatedAt`, re-collected every 300 s |
 | claude | Preloop gateway's stored upstream headers (`anthropic-ratelimit-unified-5h/7d-utilization`, via `GET /api/v1/account/gateway-usage/rate-limits`) — **no new login needed** | the Preloop-custodied OAuth credential is both the observed and the executing account — **basis "structural"**, no email on either side | only when Preloop writes a usage row |
 
 - Observer placement: the observer has egress and credentials, so it joins no network the
@@ -695,13 +695,13 @@ Preloop owning the decision.
 
 ### Setup
 
-- `cadp278-egress`: tinyproxy, CONNECT :443 only, allowlist `chatgpt.com`, `auth.openai.com`,
+- `agentstack-egress`: tinyproxy, CONNECT :443 only, allowlist `chatgpt.com`, `auth.openai.com`,
   `api.openai.com`, `api.anthropic.com`, `platform.claude.com`, `console.anthropic.com`,
-  `claude.ai`. On `cadp278-governed` (alias `egress`) and `cadp278-egressnet`. Measured: the
+  `claude.ai`. On `agentstack-governed` (alias `egress`) and `agentstack-egressnet`. Measured: the
   agent still has no default route and no direct egress; through the proxy the provider hosts
   answer (403/404 from the servers) and `pypi.org`, `github.com`, `example.com` are refused
   ("Proxying refused on filtered domain").
-- `cadp278-route-creds` at `/route` (mode 700): the routing layer's **own** Codex login
+- `agentstack-route-creds` at `/route` (mode 700): the routing layer's **own** Codex login
   (`CODEX_HOME=/route/codex codex login --device-auth`, via the proxy; operator on a phone).
   A separate lineage from the credential Preloop custodies (F8: never share a rotating token
   between two custodians). Same ChatGPT account (email fingerprint equal).
@@ -1103,8 +1103,8 @@ the logins come back with no manual step, and a small task succeeds.
 
 What changed:
 
-- `docker/preloop.cadp.yaml`: an extra compose file on top of the upstream Preloop install that
-  attaches `api` / `console` / `gateway` to `cadp278-governed` (and `api` to `cadp278-toolnet`)
+- `docker/preloop.agentstack.yaml`: an extra compose file on top of the upstream Preloop install that
+  attaches `api` / `console` / `gateway` to `agentstack-governed` (and `api` to `agentstack-toolnet`)
   with the aliases the agent resolves. Replaces the out-of-band `docker network connect`, which
   was lost on every Preloop restart. (`default` is listed explicitly — naming any network
   replaces a service's implicit one.)
@@ -1202,7 +1202,7 @@ measured. Result: **not achievable on Preloop OSS 0.15.0; kept open.**
 
 ## UX track, step 3 — login and run API with a Docker-operation boundary (2026-09-22)
 
-- `cadp278-ops` (`docker/ops.Dockerfile`: `docker:27.5.1-cli` + Python stdlib; `ops/server.py`):
+- `agentstack-ops` (`docker/ops.Dockerfile`: `docker:27.5.1-cli` + Python stdlib; `ops/server.py`):
   the **only** component with the Docker socket. A fixed route table; every route is one
   predetermined `docker exec` into the agent with an argv list (no shell) and validated
   arguments (provider allowlist, `[a-z0-9-]` names, workflow allowlist, input charset). Published
@@ -1233,7 +1233,7 @@ planned through the UI in step 4.
 
 ## UX track, step 4 — one screen from account to result (2026-09-22)
 
-`cadp278-hub` (`docker/hub.Dockerfile`, `hub/server.py`, `hub/index.html`): serves one page and
+`agentstack-hub` (`docker/hub.Dockerfile`, `hub/server.py`, `hub/index.html`): serves one page and
 forwards `/api/*` to the ops API. **No mounts, no Docker access, no credentials** (checked by
 `up.sh`). Published on `127.0.0.1:8780`. The page reads state from the owning systems via ops and
 hands actions to them; it keeps none of its own.
@@ -1293,7 +1293,7 @@ checked against the running stack. No screen features were added.
 | 2 | policy A→B→A showed A "applied" while B stayed on the account | `generate` drops policy targets no profile references; `apply` only applies referenced policies and records `preloop_active` (policy + hash); status says `applied` / `replaced` / `changed_since_apply` / `saved` / `apply_failed` with the policy actually active on the account | real Preloop: A→B→A ends on A; re-applying A reports "already applied" |
 | 3 | a UI run was bound to its Conductor run by start time | each UI run has its own directory and `TMPDIR`; Conductor writes its event log under it, so the directory holds exactly that run's log; the view reads the Conductor run id from it | two runs started 1 s apart: PASS (`7f7e0fa0`) and DENIED (`552e1957`), each with its own result and MLflow run; a failed terminate now also fills where/why |
 | 4 | a pending approval was not visible while a model step waited | the view gives `workspace_prefix` = `<workspace_root>/<conductor run id>` from the start; the screen matches pending approvals against it | `research-r` run `20260922-163951-6d6bb6`: during `propose`, run detail showed "Preloop 승인 대기 중 (Write /ws/e13fe17b-codex/synthetic.txt)"; the request was declined |
-| 5 | runs cut by a restart stayed "running" forever | meta records launcher pid + container instance (PID 1 start time); a running run whose launcher is gone and whose log has no end becomes `interrupted` — not resumed | same run: `docker restart cadp278-agent` during `propose` → `interrupted`, screen "중단됨"; `up.sh --check` all pass after |
+| 5 | runs cut by a restart stayed "running" forever | meta records launcher pid + container instance (PID 1 start time); a running run whose launcher is gone and whose log has no end becomes `interrupted` — not resumed | same run: `docker restart agentstack-agent` during `propose` → `interrupted`, screen "중단됨"; `up.sh --check` all pass after |
 | 6 | `r_stage` ignored `workspace_root` (fixed `/ws`) | `r_stage` reads the setting; `validate` rejects any root outside `/ws` (the only directory the filesystem MCP serves) | `workspace_root: /ws/alt` → `research-r` ADMIT, every file incl. the model's MCP writes under `/ws/alt/189cd1a8`, candidate `829946630c89…`; `/data` rejected by validate; restored to `/ws` |
 
 The approval for check 4 was synthetic: one permission-check request with the adapter's own

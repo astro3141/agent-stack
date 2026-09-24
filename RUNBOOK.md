@@ -20,10 +20,10 @@ Windows 11 host
    │    console    :3000  web UI + nginx proxy for /api and /mcp
    │    postgres, nats, worker, scheduler, flow-worker
    │    (scheduler and flow-worker ship in the stock compose and are unused; Flow is a #278 non-goal)
-   └─ PoC project `cadp278`       compose file D:/Work/poc-278/docker/compose.poc.yaml
-        cadp278-agent    governed runtime: Conductor + Claude Code + Preloop CLI + /opt/venv
-        cadp278-mlflow   MLflow 3.16.1
-        cadp278-toolsvc  disposable MCP tool service (write_marker / list_markers)
+   └─ PoC project `agentstack`       compose file D:/Work/poc-278/docker/compose.poc.yaml
+        agentstack-agent    governed runtime: Conductor + Claude Code + Preloop CLI + /opt/venv
+        agentstack-mlflow   MLflow 3.16.1
+        agentstack-toolsvc  disposable MCP tool service (write_marker / list_markers)
 ```
 
 ### Versions (measured 2026-09-21)
@@ -34,7 +34,7 @@ Windows 11 host
 | Claude Code | 2.1.278 | agent container |
 | Preloop CLI | 0.15.0 | agent container and host `C:\Users\astro\.local\bin` |
 | Preloop server | 0.15.0 (`ghcr.io/preloop/preloop:0.15.0`) | preloop-oss compose |
-| MLflow | 3.16.1 | cadp278-mlflow |
+| MLflow | 3.16.1 | agentstack-mlflow |
 | SymPy | 1.14.0 | agent container `/opt/venv` |
 | node | 22.14.0 | agent container `/opt/node` |
 | acpx / claude-agent-acp / codex-acp | 0.18.0 / 0.79.0 / 1.12.0 | agent container `/opt/npm-global` |
@@ -45,20 +45,20 @@ Windows 11 host
 
 | Image | ID (short) |
 |---|---|
-| cadp278/governed-runtime:local | `72d6e4cb395e` (was `0da188833195` before #281) |
-| cadp278/mlflow:3.16.1 | `57a342f2b725` |
-| cadp278/toolsvc:local | `38b87dca3845` |
+| agentstack/governed-runtime:local | `72d6e4cb395e` (was `0da188833195` before #281) |
+| agentstack/mlflow:3.16.1 | `57a342f2b725` |
+| agentstack/toolsvc:local | `38b87dca3845` |
 | ghcr.io/preloop/preloop:0.15.0 | `82728945c4b6` |
 
 ### Networks — this is the isolation, check it before trusting any result
 
 | Container | Networks |
 |---|---|
-| cadp278-agent | `cadp278-governed` **only** — internal, no default route, no egress |
-| cadp278-mlflow | `cadp278-governed`, `cadp278-observe` (inbound-only path for the host browser) |
-| cadp278-toolsvc | `cadp278-toolnet` only — the agent cannot reach it directly |
-| preloop api | `cadp278-governed`, `cadp278-toolnet`, `preloop-oss_default` |
-| preloop gateway, console | `cadp278-governed`, `preloop-oss_default` |
+| agentstack-agent | `agentstack-governed` **only** — internal, no default route, no egress |
+| agentstack-mlflow | `agentstack-governed`, `agentstack-observe` (inbound-only path for the host browser) |
+| agentstack-toolsvc | `agentstack-toolnet` only — the agent cannot reach it directly |
+| preloop api | `agentstack-governed`, `agentstack-toolnet`, `preloop-oss_default` |
+| preloop gateway, console | `agentstack-governed`, `preloop-oss_default` |
 
 The Preloop containers are attached to the PoC networks **out of band**, with aliases, and the
 attachment does not survive a container restart. See §3.
@@ -67,7 +67,7 @@ attachment does not survive a container restart. See §3.
 
 | Volume | Holds | Losing it means |
 |---|---|---|
-| `cadp278-agent-home` | the agent's own Claude login, Preloop CLI login, onboarding state | re-login inside the container, re-onboard |
+| `agentstack-agent-home` | the agent's own Claude login, Preloop CLI login, onboarding state | re-login inside the container, re-onboard |
 | `preloop-oss_postgres-data` | Preloop account, policies, approval history, usage rows | re-bootstrap Preloop from scratch |
 
 ### Workspaces
@@ -109,10 +109,10 @@ Both compose projects restart on their own. What does **not** come back:
 
 ```bash
 # Re-attach Preloop to the PoC networks, with the aliases the agent resolves.
-docker network connect --alias api     cadp278-governed preloop-oss-api-1
-docker network connect --alias console cadp278-governed preloop-oss-console-1
-docker network connect --alias gateway cadp278-governed preloop-oss-gateway-1
-docker network connect --alias api     cadp278-toolnet  preloop-oss-api-1
+docker network connect --alias api     agentstack-governed preloop-oss-api-1
+docker network connect --alias console agentstack-governed preloop-oss-console-1
+docker network connect --alias gateway agentstack-governed preloop-oss-gateway-1
+docker network connect --alias api     agentstack-toolnet  preloop-oss-api-1
 ```
 
 Without the aliases the agent cannot resolve `console`, `api` or `gateway` and every governed
@@ -124,19 +124,19 @@ call fails. `docker network connect` on an already-attached container errors har
 cd D:/Work/poc-278/docker
 POC_HOST_DIR=D:/Work/poc-278 RESEARCH_HOST_DIR=D:/Work/research-280 \
   docker compose -f compose.poc.yaml up -d --build agent
-# then re-run the network-connect lines above for `api` on cadp278-governed
+# then re-run the network-connect lines above for `api` on agentstack-governed
 ```
 
-The `cadp278-agent-home` volume survives a rebuild, so the container's login and onboarding
+The `agentstack-agent-home` volume survives a rebuild, so the container's login and onboarding
 are kept. Anything that must change with the image goes in `/opt`, not `$HOME`.
 
 ### Verify the isolation before running anything
 
 ```bash
-docker exec cadp278-agent sh -c 'ip route'                       # must show NO default route
-docker exec cadp278-agent sh -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://pypi.org; echo " exit=$?"'
+docker exec agentstack-agent sh -c 'ip route'                       # must show NO default route
+docker exec agentstack-agent sh -c 'curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://pypi.org; echo " exit=$?"'
 #   expected: 000 exit=6   (cannot resolve — no egress)
-docker exec cadp278-agent sh -c 'curl -s -o /dev/null -w "%{http_code}\n" http://console/mcp/v1'
+docker exec agentstack-agent sh -c 'curl -s -o /dev/null -w "%{http_code}\n" http://console/mcp/v1'
 #   expected: 401          (reachable, auth required)
 ```
 
@@ -146,13 +146,13 @@ A login or a package install inside the agent needs the internet. Attach, do the
 detach, and re-verify:
 
 ```bash
-docker network connect    cadp278-provision cadp278-agent
+docker network connect    agentstack-provision agentstack-agent
 # ... one provisioning action ...
-docker network disconnect cadp278-provision cadp278-agent
-docker exec cadp278-agent sh -c 'ip route'                       # default route must be gone again
+docker network disconnect agentstack-provision agentstack-agent
+docker exec agentstack-agent sh -c 'ip route'                       # default route must be gone again
 ```
 
-If `cadp278-provision` does not exist: `docker network create cadp278-provision`.
+If `agentstack-provision` does not exist: `docker network create agentstack-provision`.
 
 ---
 
@@ -161,7 +161,7 @@ If `cadp278-provision` does not exist: `docker network create cadp278-provision`
 Every run needs the MCP bearer taken from the container's own config, never written to a file:
 
 ```bash
-docker exec cadp278-agent sh -c '
+docker exec agentstack-agent sh -c '
 export PRELOOP_MCP_TOKEN=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser(\"~/.claude.json\")))[\"mcpServers\"][\"preloop\"][\"headers\"][\"Authorization\"].split()[-1])")
 cd /work && conductor run workflows/slice.yaml'
 ```
@@ -242,7 +242,7 @@ Public record: #278 (receipt, corrections, findings log F1–F25), #279 (CADP TD
   Preloop **inside the container** (`preloop agents onboard codex --yes --skip-live-validate`,
   no `--approvals`). Undo: `preloop agents offboard "Codex CLI"`. `discover` only sees Codex once
   `~/.codex/config.toml` exists.
-- **cadp278-fsmcp** (filesystem MCP, toolnet only) and volume **cadp278-ws** at `/ws` in the agent
+- **agentstack-fsmcp** (filesystem MCP, toolnet only) and volume **agentstack-ws** at `/ws` in the agent
   and fsmcp. Option-B workspaces must live under `/ws`.
 - Active policy: **`policy/b-fsmcp.yaml`** (superset of `allow.yaml`: toolsvc tools unchanged, plus
   fsmcp path rules). After re-applying on a fresh Preloop, call
@@ -254,25 +254,25 @@ Public record: #278 (receipt, corrections, findings log F1–F25), #279 (CADP TD
 - **Docker Desktop won't start, "rename …sock … The file cannot be accessed by the system"**: stop
   Docker Desktop and `wsl --shutdown`, rename `%LOCALAPPDATA%\Docker\run` and
   `%LOCALAPPDATA%\docker-secrets-engine` aside, start again. Never "Reset to factory defaults"
-  (erases `cadp278-agent-home` and Preloop's database). PoC containers then need `docker start`
+  (erases `agentstack-agent-home` and Preloop's database). PoC containers then need `docker start`
   and the network re-attach.
 - **Idle sleep**: `tools/keep-awake.ps1` (start/stop commands in its header) blocks idle sleep while
   it runs; no power settings are changed.
 - **#281 routing workflow**: `conductor run p281/workflows/route.yaml -i provider=claude|codex`
   (optional `-i file_name=… -i content=…`); records to MLflow experiment `p281-routing`.
-- **Quota observer `cadp278-quota`** (egress on `cadp278-quotanet` only; own logins in
-  `cadp278-quota-home`; writes `cadp278-quota-obs`, mounted read-only in the agent at `/obs`).
+- **Quota observer `agentstack-quota`** (egress on `agentstack-quotanet` only; own logins in
+  `agentstack-quota-home`; writes `agentstack-quota-obs`, mounted read-only in the agent at `/obs`).
   Codex logged in by device code (`codex login --device-auth`). After any restart, restart the
-  loop: `docker cp p281/observer_loop.sh cadp278-quota:/tmp/ && docker exec -d cadp278-quota sh /tmp/observer_loop.sh`
+  loop: `docker cp p281/observer_loop.sh agentstack-quota:/tmp/ && docker exec -d agentstack-quota sh /tmp/observer_loop.sh`
   (until then the router sees `stale` and holds).
 - **#281 auto-routing**: `conductor run p281/workflows/auto.yaml`; policy `p281/routing-policy.json`
   (override with `ROUTING_POLICY=`); controls `python3 p281/router_controls.py <obs-dir>`.
-- **Routing-layer logins** (volume `cadp278-route-creds`, `/route`): Claude `CLAUDE_CONFIG_DIR=/route/claude`,
+- **Routing-layer logins** (volume `agentstack-route-creds`, `/route`): Claude `CLAUDE_CONFIG_DIR=/route/claude`,
   Codex `CODEX_HOME=/route/codex`, Grok `GROK_HOME=/route/grok` + `HOME=/route/grok/home` (Grok
   permission rules live in `/route/grok/config.toml`). All log in through the allowlist proxy
-  (`cadp278-egress`, list in `docker/egress/allow`); e.g. Claude:
-  `docker exec -it -e CLAUDE_CONFIG_DIR=/route/claude -e HTTPS_PROXY=http://egress:8888 -e NO_PROXY=console,api,mlflow,localhost cadp278-agent claude auth login --claudeai`.
+  (`agentstack-egress`, list in `docker/egress/allow`); e.g. Claude:
+  `docker exec -it -e CLAUDE_CONFIG_DIR=/route/claude -e HTTPS_PROXY=http://egress:8888 -e NO_PROXY=console,api,mlflow,localhost agentstack-agent claude auth login --claudeai`.
 - **Policy** `p281/routing-policy.json`: `model_route` direct for claude, codex, grok.
 - **One command bring-up** (2026-09-22): `scripts/up.sh` (PoC stack → Preloop with
-  `docker/preloop.cadp.yaml` → 13 checks). `--check` only checks; `--recreate` forces recreation.
+  `docker/preloop.agentstack.yaml` → 13 checks). `--check` only checks; `--recreate` forces recreation.
   Replaces the manual `docker network connect` and observer-loop steps above.

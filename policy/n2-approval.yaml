@@ -1,10 +1,10 @@
 # N2 negative control: write_marker requires human approval before it may execute.
 version: '1.0'
 metadata:
-  name: cadp278-n2-approval
+  name: agentstack-n2-approval
   description: Require approval for write_marker to exercise the approval branch
 mcp_servers:
-- name: cadp278-toolsvc
+- name: agentstack-toolsvc
   url: http://toolsvc:8000/mcp
   transport: http-streaming
   auth_type: none
@@ -20,7 +20,7 @@ approval_workflows:
   async_approval: false
 tools:
 - name: write_marker
-  source: cadp278-toolsvc
+  source: agentstack-toolsvc
   enabled: true
   approval_workflow: Default Approval Workflow
   conditions:
@@ -28,7 +28,7 @@ tools:
     action: require_approval
     description: N2 control — every write_marker call needs human approval
 - name: list_markers
-  source: cadp278-toolsvc
+  source: agentstack-toolsvc
   enabled: true
 defaults:
   unknown_tools: allow

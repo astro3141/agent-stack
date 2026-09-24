@@ -9,8 +9,8 @@ Two rules for reading this list:
   network (OPERATIONS §21).
 
 ```bash
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/<script>.py …    # reads, runs, MCP
-docker exec cadp278-admin /opt/venv/bin/python /work/p281/<script>.py …    # writes to Preloop
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/<script>.py …    # reads, runs, MCP
+docker exec agentstack-admin /opt/venv/bin/python /work/p281/<script>.py …    # writes to Preloop
 ```
 
 ## The stack

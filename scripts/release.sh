@@ -26,7 +26,7 @@ HERE="${RELEASE_SH_HOME:-$(cd "$(dirname "$0")/.." && pwd)}"
 # script. A shell reads a script as it goes, so replacing the file underneath a running one can
 # change behaviour halfway or break it outright. Run from a copy instead.
 if [ -z "${RELEASE_SH_PINNED:-}" ]; then
-  SELF_COPY="${TMPDIR:-/tmp}/cadp-release-$$.sh"
+  SELF_COPY="${TMPDIR:-/tmp}/agentstack-release-$$.sh"
   cp "$0" "$SELF_COPY"
   RELEASE_SH_PINNED=1 RELEASE_SH_HOME="$HERE" RELEASE_SH_COPY="$SELF_COPY" \
     exec bash "$SELF_COPY" "$@"
@@ -37,10 +37,10 @@ cleanup_all() {
 }
 trap cleanup_all EXIT
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
-STACK="${STACK:-cadp278}"
+STACK="${STACK:-agentstack}"
 AGENT="$STACK-agent"
 PY_IN_AGENT="/opt/venv/bin/python"
-RELEASES="${RELEASE_DIR:-$HOME/cadp-releases}"
+RELEASES="${RELEASE_DIR:-$HOME/agentstack-releases}"
 RELEASESU="$(u "$RELEASES")"; RELEASES="$(m "$RELEASESU")"
 # services of this stack (the agent and the observer share one image)
 SERVICES="agent mlflow toolsvc fsmcp egress ops hub"
@@ -257,8 +257,8 @@ cmd_update() {
   # only be told by building the target revision — so that happens in a throw-away worktree with
   # its own image tag. Until this passes, /work and the `:local` tags are exactly as they were.
   echo "== candidate $TO"
-  CAND_DIR="$(u "${TMPDIR:-/tmp}")/cadp-candidate-$$"
-  CAND_IMAGE="cadp278/governed-runtime:cand-$(git_here rev-parse --short "$TO")"
+  CAND_DIR="$(u "${TMPDIR:-/tmp}")/agentstack-candidate-$$"
+  CAND_IMAGE="agentstack/governed-runtime:cand-$(git_here rev-parse --short "$TO")"
   git_here worktree add --quiet --detach "$(m "$CAND_DIR")" "$TO" || fail "could not prepare a candidate worktree"
   # A worktree is the whole repository, and this stack may sit below its root (it does in the
   # repository layout, poc/281-routing/). The candidate's docker/ is therefore under the same

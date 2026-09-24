@@ -55,7 +55,7 @@ def sources():
 
 
 # ---------------------------------------------------------------------------- validate
-FSMCP_ROOT = "/ws"   # what cadp278-fsmcp serves (docker/fsmcp.Dockerfile); the agents can write only there
+FSMCP_ROOT = "/ws"   # what agentstack-fsmcp serves (docker/fsmcp.Dockerfile); the agents can write only there
 
 
 def validate_env(env):

@@ -45,7 +45,7 @@ services:
 networks:
   poc-admin:
     external: true
-    name: ${STACK:-cadp278}-adminnet
+    name: ${STACK:-agentstack}-adminnet
   poc-toolnet:
     external: true
-    name: ${STACK:-cadp278}-toolnet
+    name: ${STACK:-agentstack}-toolnet

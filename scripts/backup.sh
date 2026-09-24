@@ -27,11 +27,14 @@ m() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
-STACK="${STACK:-cadp278}"
+STACK="${STACK:-agentstack}"
 PRELOOP_PROJECT="${PRELOOP_PROJECT:-preloop-oss}"
 PRELOOP_DIR="${PRELOOP_DIR:-$HOME/.preloop-oss}"
-OUT="${BACKUP_DIR:-$HOME/cadp-backups}"
-KEY="${BACKUP_KEY:-$HOME/.cadp-backup.key}"
+OUT="${BACKUP_DIR:-$HOME/agentstack-backups}"
+KEY="${BACKUP_KEY:-$HOME/.agentstack-backup.key}"
+# A machine that made archives under the old name keeps decrypting them: the key is the
+# secret, and renaming its file would have minted a new one and orphaned every archive.
+[ -f "$KEY" ] || [ ! -f "$HOME/.cadp-backup.key" ] || KEY="$HOME/.cadp-backup.key"
 STOP=1; ALLOW_MISSING=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -85,7 +88,7 @@ mkdir -p "$OUTU"
 WORKU="$OUTU/.staging-$TS"; WORK="$(m "$WORKU")"
 (umask 077; mkdir -p "$WORKU/volumes" "$WORKU/host")
 chmod 700 "$WORKU" 2>/dev/null || true
-ARCHIVE="$OUT/cadp-backup-$TS.tar.gz.enc"
+ARCHIVE="$OUT/agentstack-backup-$TS.tar.gz.enc"
 
 STOPPED=""
 cleanup() {
@@ -238,10 +241,10 @@ docker run --rm -v "$WORK:/w:ro" -v "$OUT:/out" -v "$KEY:/key:ro" alpine sh -c '
   apk add --no-cache openssl >/dev/null 2>&1
   tar czf - -C /w . | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass file:/key \
     -out "/out/'"$(basename "$ARCHIVE")"'"' || fail "packing failed"
-cp "$WORKU/manifest.txt" "$OUTU/cadp-backup-$TS.manifest.txt"
-cp "$WORKU/release.json" "$OUTU/cadp-backup-$TS.release.json"
+cp "$WORKU/manifest.txt" "$OUTU/agentstack-backup-$TS.manifest.txt"
+cp "$WORKU/release.json" "$OUTU/agentstack-backup-$TS.release.json"
 
 echo
 echo "archive : $ARCHIVE  ($(du -h "$OUTU/$(basename "$ARCHIVE")" | cut -f1))"
-echo "manifest: $OUT/cadp-backup-$TS.manifest.txt"
+echo "manifest: $OUT/agentstack-backup-$TS.manifest.txt"
 echo "key     : $KEY  (not in the archive — keep it somewhere else too)"

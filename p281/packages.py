@@ -26,6 +26,11 @@ import json, os, re, sys
 
 ROOT = os.environ.get("P281_PACKAGES", "/work/packages")
 DECL = os.environ.get("P281_PACKAGES_YAML", "/work/config/packages.yaml")
+# Declarations this instance adds and this repository does not carry: a package in a private
+# repository, a client's workflow, anything a clone of this repository could not fetch. Same shape,
+# git-ignored, merged over the tracked file — so the tracked one stays a declaration a stranger can
+# actually run (docs/packages.md).
+LOCAL_DECL = os.environ.get("P281_PACKAGES_LOCAL", "/work/config/packages.local.yaml")
 NAME = re.compile(r"[a-z][a-z0-9-]{1,39}")
 
 
@@ -95,10 +100,13 @@ def declared():
     the panel and given identities, and the declaration was a note the loader never read. Removing
     a package from config/packages.yaml did not remove it from the running stack.
     """
-    try:
-        return {str(k) for k in ((_yaml(DECL) or {}).get("packages") or {})}
-    except Exception:
-        return set()          # unreadable declaration: nothing is declared, and every row says so
+    out = set()
+    for path in (DECL, LOCAL_DECL):
+        try:
+            out |= {str(k) for k in ((_yaml(path) or {}).get("packages") or {})}
+        except Exception:
+            pass              # unreadable or absent: it declares nothing, and every row says so
+    return out
 
 
 def installed():

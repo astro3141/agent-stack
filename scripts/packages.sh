@@ -30,31 +30,53 @@ ONLY="${2:-}"
 # this script never guesses at YAML: "<name> <from> <ref>"
 declared() {
   docker exec -i "$STACK-agent" /opt/venv/bin/python -c '
-import sys, yaml
-d = (yaml.safe_load(open("/work/config/packages.yaml", encoding="utf-8")) or {}).get("packages") or {}
+import os, yaml
+d = {}
+for p in ("/work/config/packages.yaml", "/work/config/packages.local.yaml"):
+    if os.path.isfile(p):
+        d.update((yaml.safe_load(open(p, encoding="utf-8")) or {}).get("packages") or {})
 for name, spec in sorted(d.items()):
     spec = spec or {}
     print(name, spec.get("from", "local"), spec.get("ref", "main"))
 ' 2>/dev/null
 }
-STACK="${STACK:-cadp278}"
+
+# A package this repository does not carry is declared in config/packages.local.yaml and pinned in
+# config/packages.local.lock — both git-ignored, so the tracked declaration stays one a stranger
+# who clones this repository can actually run (OPERATIONS §41).
+LOCAL_LOCK="$HERE/config/packages.local.lock"
+
+lock_file_for() {   # name — which lock this package's pin belongs in
+  if grep -qE "^  $1:" "$HERE/config/packages.local.yaml" 2>/dev/null; then
+    echo "$LOCAL_LOCK"
+  else
+    echo "$LOCK"
+  fi
+}
+STACK="${STACK:-agentstack}"
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
 
 locked_commit() {   # name
-  grep -E "^$1 " "$LOCK" 2>/dev/null | awk '{print $2}'
+  cat "$LOCK" "$LOCAL_LOCK" 2>/dev/null | grep -E "^$1 " | awk '{print $2}' | head -1
 }
 
 write_lock() {      # name commit ref url
-  touch "$LOCK"
-  grep -vE "^$1 " "$LOCK" > "$LOCK.tmp" 2>/dev/null || true
-  printf '%s %s %s %s\n' "$1" "$2" "$3" "$4" >> "$LOCK.tmp"
-  sort -o "$LOCK" "$LOCK.tmp" && rm -f "$LOCK.tmp"
+  f="$(lock_file_for "$1")"
+  touch "$f"
+  grep -vE "^$1 " "$f" > "$f.tmp" 2>/dev/null || true
+  printf '%s %s %s %s\n' "$1" "$2" "$3" "$4" >> "$f.tmp"
+  sort -o "$f" "$f.tmp" && rm -f "$f.tmp"
 }
 
 ignore_fetched() {  # name — a fetched package is not this repository's content
-  grep -qx "packages/$1/" "$HERE/.gitignore" 2>/dev/null && return
-  printf '\n# fetched package, pinned in config/packages.lock and installed by scripts/packages.sh\npackages/%s/\n' "$1" >> "$HERE/.gitignore"
+  # In .git/info/exclude, not .gitignore: *which* packages this machine fetched is this machine's
+  # business, and a tracked .gitignore would publish the names of private ones (OPERATIONS §41).
+  ex="$HERE/.git/info/exclude"
+  [ -f "$ex" ] || return 0
+  grep -qx "packages/$1/" "$ex" 2>/dev/null && return 0
+  printf '\n# fetched package, pinned by scripts/packages.sh\npackages/%s/\n' "$1" >> "$ex"
 }
+
 
 state_of() {        # name from — prints one line
   local name="$1" from="$2" ref="$3" dir="$PKGDIR/$1"

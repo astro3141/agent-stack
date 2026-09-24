@@ -12,10 +12,10 @@ containers, not from the compose files.
 |---|---|
 | this tree (`D:\Work\poc-278`, mounted as `/work`) — the repository, and what runs | `main` of `astro3141/agent-stack` |
 | research workspace (`D:\Work\research-280`, mounted as `/research`) | not a git tree; 49 MB of data |
-| `cadp` | no longer part of what runs here: it keeps issue #281, the history up to #292, and `poc/278-composition/` |
+| the repository this work came from | no longer part of what runs here: it keeps the issue this became, the history up to the split, and the composition work under `poc/278-composition/` |
 
 **This tree is the repository** (`astro3141/agent-stack`, private), and that is a change: the
-measurements used to be made here and mirrored into `cadp` under `poc/281-routing/`. Two trees
+measurements used to be made here and mirrored into that repository under `poc/281-routing/`. Two trees
 produced exactly one class of bug, and review found it rather than we did: `novel_reviews.py`
 was published calling `fanout.run_all(..., ledger=…)` against a `run_all(jobs)`
 published without that parameter, so the copy that ran was the other one and "measured on the
@@ -23,12 +23,12 @@ running stack" described code no reader could execute. A mirror check was writte
 twice as it kept finding what it did not compare (fixtures and policy; deletions; the root
 documents). None of that is needed now: there is one tree, and it is the one that runs.
 
-What the move did **not** carry: the composition's own history, which stays in `cadp` under
+What the move did **not** carry: the composition's own history, which stays in that repository under
 `poc/278-composition/`. This history starts at `9cce003`, the snapshot taken when that work ended.
 
 One difference from the published copy survived the move and is worth keeping in mind:
 
-| file | this tree (running) | the copy in `cadp` history |
+| file | this tree (running) | the copy in the earlier repository's history |
 |---|---|---|
 | `docker/agent.Dockerfile` | unpinned installs; copies one host CA file | Claude 2.1.278, Conductor `87f7788e`, Preloop CLI 0.15.0 pinned; `ca/` directory, certificates unversioned |
 
@@ -92,14 +92,14 @@ MLflow instead of the run pretending to have been recorded.
 
 | container | image | image id | restart |
 |---|---|---|---|
-| cadp278-agent | cadp278/governed-runtime:local | `3e8bd6e7acaf` | unless-stopped |
-| cadp278-quota | cadp278/governed-runtime:local | `3e8bd6e7acaf` | unless-stopped |
-| cadp278-mlflow | cadp278/mlflow:3.16.1 | `57a342f2b725` | unless-stopped |
-| cadp278-toolsvc | cadp278/toolsvc:local | `38b87dca3845` | unless-stopped |
-| cadp278-fsmcp | cadp278/fsmcp:local | `f57433a16a90` | unless-stopped |
-| cadp278-egress | cadp278/egress:local | `c458342cf3e7` | unless-stopped |
-| cadp278-ops | cadp278/ops:local | `9e0c9a20f6f6` | unless-stopped |
-| cadp278-hub | cadp278/hub:local | `5242dbd198af` | unless-stopped |
+| agentstack-agent | agentstack/governed-runtime:local | `3e8bd6e7acaf` | unless-stopped |
+| agentstack-quota | agentstack/governed-runtime:local | `3e8bd6e7acaf` | unless-stopped |
+| agentstack-mlflow | agentstack/mlflow:3.16.1 | `57a342f2b725` | unless-stopped |
+| agentstack-toolsvc | agentstack/toolsvc:local | `38b87dca3845` | unless-stopped |
+| agentstack-fsmcp | agentstack/fsmcp:local | `f57433a16a90` | unless-stopped |
+| agentstack-egress | agentstack/egress:local | `c458342cf3e7` | unless-stopped |
+| agentstack-ops | agentstack/ops:local | `9e0c9a20f6f6` | unless-stopped |
+| agentstack-hub | agentstack/hub:local | `5242dbd198af` | unless-stopped |
 | preloop-oss api / worker / flow-worker / scheduler / gateway | ghcr.io/preloop/preloop:0.15.0 | `82728945c4b6` | unless-stopped |
 | preloop-oss console | ghcr.io/preloop/console:0.15.0 | `d53da2640ace` | unless-stopped |
 | preloop-oss postgres | pgvector/pgvector:pg16 | `ccc6e83d6e35` | unless-stopped |
@@ -110,7 +110,7 @@ is no release history to go back to.
 
 ## 3. Tool versions — and where they live
 
-Read inside `cadp278-agent`:
+Read inside `agentstack-agent`:
 
 | tool | path | version in use | same path inside the image |
 |---|---|---|---|
@@ -122,7 +122,7 @@ Read inside `cadp278-agent`:
 | node / python | image | v22.14.0 / 3.13.15 | — |
 | acpx, claude-agent-acp, codex-acp | `/opt/npm-global` | 0.18.0, 0.79.0, 1.12.0 | same |
 
-**`/home/agent` is a volume (`cadp278-agent-home`), and it masks the image's copy of that
+**`/home/agent` is a volume (`agentstack-agent-home`), and it masks the image's copy of that
 directory.** Claude, Conductor and the Preloop CLI are installed there. Today the two copies agree,
 but nothing keeps them in step: after a rebuild the container still runs the volume's binaries, and
 after `claude update` inside the container the image's copy is stale. Consequences:
@@ -135,9 +135,9 @@ after `claude update` inside the container the image's copy is stale. Consequenc
 
 | data | location | size | class | why |
 |---|---|---|---|---|
-| provider logins (Claude, Codex, Grok) + Codex session ledger | volume `cadp278-route-creds` → `/route` | 66 MB | **restore required** | only the operator can recreate them, interactively, per provider |
-| Preloop agent enrolment, CLI config, the agent's own `~/.codex`, `~/.claude` | volume `cadp278-agent-home` → `/home/agent` | 771 MB | **restore required** | enrolment token and client id; re-enrolling is a manual Preloop operation |
-| observer's Codex login (+ caches) | volume `cadp278-quota-home` → `/home/agent` (quota) | 1.3 GB | **restore required** (login part) | operator login; the caches inside are disposable |
+| provider logins (Claude, Codex, Grok) + Codex session ledger | volume `agentstack-route-creds` → `/route` | 66 MB | **restore required** | only the operator can recreate them, interactively, per provider |
+| Preloop agent enrolment, CLI config, the agent's own `~/.codex`, `~/.claude` | volume `agentstack-agent-home` → `/home/agent` | 771 MB | **restore required** | enrolment token and client id; re-enrolling is a manual Preloop operation |
+| observer's Codex login (+ caches) | volume `agentstack-quota-home` → `/home/agent` (quota) | 1.3 GB | **restore required** (login part) | operator login; the caches inside are disposable |
 | Preloop account, policies, MCP servers, approval history, custodied credentials | volume `preloop-oss_postgres-data` | 22 MB | **restore required** | registration closes after the first user; re-creating it is a manual bootstrap |
 | Preloop secrets/config | `~/.preloop-oss/.env` (21 lines) | 1 KB | **restore required** | the database is bound to these keys; without it a restored DB is not usable |
 | research data | bind `D:\Work\research-280` → `/research` | 49 MB | **restore required** | the actual subject of the #280 work |
@@ -146,8 +146,8 @@ after `claude update` inside the container the image's copy is stale. Consequenc
 | settings sources: `config/environment.yaml`, `config/profiles/*`, `policy/*` | workspace (versioned) | small | **restore required** if edited locally | the repository holds them, but operator edits live here first |
 | apply state `config/generated/state.json` | workspace (git-ignored) | small | **special** | derived in form, but it records which policy this tool made active on the account. It pairs with the Preloop database: restore both from the same snapshot, or reset it and apply again. Never restore it against a different Preloop database |
 | generated settings `config/generated/*.json` | workspace | small | regenerate | `cfg.py generate` |
-| quota observations | volume `cadp278-quota-obs` → `/obs` | 12 KB | regenerate | the observer rewrites them within minutes |
-| per-run workspaces | volume `cadp278-ws` → `/ws` | 700 KB | regenerate / discard | scratch for a run; keep only while the run is open |
+| quota observations | volume `agentstack-quota-obs` → `/obs` | 12 KB | regenerate | the observer rewrites them within minutes |
+| per-run workspaces | volume `agentstack-ws` → `/ws` | 700 KB | regenerate / discard | scratch for a run; keep only while the run is open |
 | images | Docker | — | rebuild | but see §3: a rebuild does not restore tool versions held in the volume |
 | host CA file `docker/ca/*.crt` | workspace | 1 KB | site-specific | needed on this host (TLS interception); deliberately unversioned |
 
@@ -212,7 +212,7 @@ copy of the key, and of the archive, on separate media.** Nothing is written ins
 or the repository.
 
 **Restoring never touches the instance in use.** The restored copy gets its own instance name
-(`STACK`, default `cadp278r`), its own volumes, its own Preloop project and its own ports (hub
+(`STACK`, default `agentstackr`), its own volumes, its own Preloop project and its own ports (hub
 8790, ops 8791, MLflow 5010, Preloop 8010/8011/3010). Both copies hold the *same* credentials, so
 they must not run at once: the script refuses to start while the live instance is up, and prints
 how to stop it.
@@ -222,7 +222,7 @@ how to stop it.
 | criterion | result |
 |---|---|
 | archive readable and unchanged | 14/14 members match their SHA-256 |
-| restored into a fresh clone (`poc/281-ops`), new volumes, new ports | instance `cadp278r` came up; live volumes and workspace untouched |
+| restored into a fresh clone (`poc/281-ops`), new volumes, new ports | instance `agentstackr` came up; live volumes and workspace untouched |
 | authentication | all three provider logins usable without logging in again; observer login too |
 | policy | `cfg.py status` → `applied`; Preloop MCP still requires authentication; fsmcp tools exposed |
 | records | the run history and the MLflow experiments from the backup were there |
@@ -238,7 +238,7 @@ how to stop it.
    workspace. The restore script now refuses a revision that has no `STACK` support, and checks
    after start-up that the containers carry its own name.
 3. **The Preloop policy addressed the tool servers by instance-specific host names**
-   (`cadp278-toolsvc`, `cadp278-fsmcp`), so in the restored copy the model could not reach them and
+   (`agentstack-toolsvc`, `agentstack-fsmcp`), so in the restored copy the model could not reach them and
    the task ended `BLOCK`. The services now carry the instance-independent aliases `toolsvc` and
    `fsmcp`, and every policy file uses those. Re-applied and verified on both instances (live task:
    PASS).
@@ -255,7 +255,7 @@ against the running stack.
 
 | # | was | is now | checked |
 |---|---|---|---|
-| 1 | the teardown command printed after a restore carried no instance name, so in a new shell it resolved to the live project | the restore writes `config/instance.env` (instance name, Preloop project, paths, ports) and `docker/.env`; `up.sh` and the new `down.sh` in that workspace read it | in the restored workspace, `up.sh --check` used ports 8791/8790 and `down.sh --volumes` removed only `cadp278r-*` and `preloop-restore_*`; the six live volumes were untouched |
+| 1 | the teardown command printed after a restore carried no instance name, so in a new shell it resolved to the live project | the restore writes `config/instance.env` (instance name, Preloop project, paths, ports) and `docker/.env`; `up.sh` and the new `down.sh` in that workspace read it | in the restored workspace, `up.sh --check` used ports 8791/8790 and `down.sh --volumes` removed only `agentstackr-*` and `preloop-restore_*`; the six live volumes were untouched |
 | 2 | an existing workspace could be overwritten, and a stray `PRELOOP_PROJECT` could point the `DROP DATABASE` at the live database | every target — workspace, Preloop project and install directory, volumes, container names — is checked **before the first write**; the live instance's own mounts are compared against the target both ways | refused: the live workspace (with and without `--into-existing`), the live Preloop project, the live Preloop directory, the live stack name, an existing clone target, a missing workspace. Nothing was unpacked in any of them |
 | 3 | `pg_restore … \|\| true` discarded errors and the restore continued on a table count | `--exit-on-error`, the output kept, and the row counts of `account`, `user`, `api_key`, `mcp_server` and `approval_request` must match the numbers recorded in the backup | a truncated dump: `pg_restore: error: could not read from input file: end of file` → stopped, **no containers started**. A good archive: "80 tables, key counts match" |
 | 4 | the backup copied from wherever the script happened to live, and a missing source was just "skipped" | sources come from the running containers' mounts (`/work`, `/research`, `/mlflow`, normalised from Docker's internal form), and a missing **required** member fails the run (`--allow-missing` to override) | with `evidence/mlflow` moved aside: `backup failed: required members missing: mlflow`, and the staging directory removed |
@@ -269,7 +269,7 @@ now refuses a revision whose `compose.poc.yaml`, `up.sh` or `down.sh` lacks inst
 anything is started, and still verifies the names afterwards.
 
 **Second exercise, end to end** (archive `20260923-004642`): restored into a fresh clone →
-`cadp278r` on its own ports → 16/16 checks → Preloop counts match → run history and MLflow
+`agentstackr` on its own ports → 16/16 checks → Preloop counts match → run history and MLflow
 experiments present → `auto` workflow **PASS** → `down.sh --volumes` removed only the restored
 instance → the live instance came back with 16/16 checks.
 
@@ -278,11 +278,11 @@ instance → the live instance came back with 16/16 checks.
 | # | was | is now | checked |
 |---|---|---|---|
 | 1 | the restore compared its Preloop directory with the live one for equality only, and split the live mount list on spaces, so a parent directory of the live install (later `rm -rf`'d) and a path with spaces slipped through | every directory the restore writes to or deletes — its workspace and its Preloop install — is compared **both ways** against every directory the live instance uses, on normalised paths, read line by line. Docker's internal mount form (`/run/desktop/mnt/host/d/…`) is normalised first; unnormalised it matched nothing and the check passed silently | refused: workspace equal to, inside, or containing the live workspace; workspace equal to the live research directory; Preloop directory equal to, above, or inside a live directory; the restore's own two directories overlapping each other; and the same with spaces in the path. A separate target still passes |
-| 2 | `down.sh --volumes` selected by name prefix, so with `STACK=cadp278r` a volume named `cadp278r-second-…` was selected too | the five volumes of the instance and its Preloop data volume are named exactly | with `cadp278r-second-route-creds` and `cadp278r-second-agent-home` present, only `cadp278r-route-creds` was removed; the lookalikes survived |
+| 2 | `down.sh --volumes` selected by name prefix, so with `STACK=agentstackr` a volume named `agentstackr-second-…` was selected too | the five volumes of the instance and its Preloop data volume are named exactly | with `agentstackr-second-route-creds` and `agentstackr-second-agent-home` present, only `agentstackr-route-creds` was removed; the lookalikes survived |
 | 3 | `up.sh` defaulted `POC_HOST_DIR`/`RESEARCH_HOST_DIR` to its own directory and exported them, and a shell variable wins over `docker/.env` — so the live agent had ended up mounting the wrong research directory | no path is defaulted in `up.sh`/`down.sh`; one is exported only when the environment or a restored workspace's `instance.env` set it. Compose then reads `docker/.env`, and falls back to the relative defaults | after the fix the live agent mounts `D:/Work/research-280` again (it had been mounting `…/poc-278/evidence/research`), and the restored copy mounts its own |
 | 4 | the row counts were read before the writers were stopped and the dump taken after, so an approval arriving in between made a good dump look wrong | the counts are read after the stop and immediately before `pg_dump`, from the same quiesced state | a fresh backup and restore: "80 tables, key counts match" |
 
-Third exercise, end to end (archive `20260923-011845`): fresh clone → `cadp278r` on its own ports →
+Third exercise, end to end (archive `20260923-011845`): fresh clone → `agentstackr` on its own ports →
 16/16 checks → counts match → `auto` workflow **PASS** → the research data restored (48 MB of the
 49 MB directory, the difference being files the backup excludes) → `down.sh --volumes` removed only
 this instance's six volumes → the live instance came back with 16/16 checks and its correct mounts.
@@ -335,7 +335,7 @@ image rollback either — that would need a restore from a backup taken before t
 |---|---|---|---|
 | 1 | the release carried `config/generated/state.json`, so a rollback claimed a policy the account did not have (A kept → B applied → back to A left the account on B, reported `applied`) | generated settings are not part of a release; after an update or a rollback the restored policy is **applied again** and the resulting state is printed | kept `polA` (policy `b-fsmcp`) → switched the profiles to a variant and applied it (account: variant) → rolled back: the account is on `b-fsmcp` again, `state: applied`, `active_on_account: policy/b-fsmcp.yaml` |
 | 2 | the rollback deleted `/home/agent/.local` and then unpacked; a damaged archive left the agent with no toolchain | images, both archives and the unpacked toolchain are verified **before** anything changes, and the running one is swapped only for a staged copy that looks usable | a truncated toolchain archive: "the release's archives do not verify — nothing was changed", and Claude and Conductor still ran |
-| 3 | the revision and configuration were read from wherever the script sat, the images from the running containers — they could describe different checkouts | every command first checks that this workspace is the one the agent mounts as `/work` (Docker's internal mount form normalised) | running `record` from the repository checkout: "this script is in … but cadp278-agent runs D:/Work/poc-278" |
+| 3 | the revision and configuration were read from wherever the script sat, the images from the running containers — they could describe different checkouts | every command first checks that this workspace is the one the agent mounts as `/work` (Docker's internal mount form normalised) | running `record` from the repository checkout: "this script is in … but agentstack-agent runs D:/Work/poc-278" |
 | 4 | an update rebuilt images but left the volume's toolchain in place, so a Dockerfile version bump changed nothing | the update compares the running tool versions with the new image's and **refuses** when they differ, unless `--replace-toolchain` is given, which stages the image's `/home/agent/.local` and swaps it in | with a deliberately different version in the volume the update refused and named the difference; with `--replace-toolchain` it replaced the toolchain and the intended version ran |
 | 5 | `record` accepted uncommitted changes to tracked files while keeping only the revision | `record` refuses them too (untracked run evidence is still fine) | refused with an edited tracked file |
 
@@ -865,7 +865,7 @@ so that name must not be set in the container for unrelated purposes.
 event log — `conductor replay` serves the same React dashboard in replay mode — and the class
 behind it takes its bind address as a parameter (`ReplayDashboard(..., host=…)`; only the CLI
 leaves it on loopback). The package is MIT. So the dashboard now runs **in a container that is not
-the agent**: `cadp278-replay`, on the ops network, with the workspace mounted **read-only**, no
+the agent**: `agentstack-replay`, on the ops network, with the workspace mounted **read-only**, no
 credentials and no Docker access. The agent keeps its single internal network and gains nothing.
 
 **It publishes no port.** A person reaches it at the panel's own address — the hub forwards exactly
@@ -1185,7 +1185,7 @@ agent:  Error: failed to apply policy: API error (status 403):
 admin:  ✓ Policy applied successfully   MCP servers 2 updated, Tools 6 updated
 ```
 
-**Where they run now.** `cadp278-admin` — the same image as the agent (it carries the Preloop CLI
+**Where they run now.** `agentstack-admin` — the same image as the agent (it carries the Preloop CLI
 and this tree's toolchain), on the admin network only, with `/work` and the Preloop home, no
 workspace and no provider logins. The agent cannot reach it. Preloop answers to `api`, `console` and
 `gateway` there as well as to `preloop-*`, so the toolchain needed no reconfiguration.
@@ -1528,7 +1528,7 @@ Two corrections, both measured on the live install directory:
    ports to `${PRELOOP_API_PORT:-8000}` and friends — the same numbers by default, this instance's
    when `config/instance.env` says otherwise. It keeps a `.before-agent-stack` copy, is idempotent,
    and runs on every install because their installer re-downloads that file.
-2. **`preloop.cadp.yaml` no longer publishes anything.** It did, and with the base file also
+2. **`preloop.agentstack.yaml` no longer publishes anything.** It did, and with the base file also
    publishing, the two lists **merged instead of replacing**: the same port bound twice, and the
    second bind failed. One owner for a published port, and it is Preloop's own file.
 
@@ -1649,7 +1649,7 @@ server. Measured, from the same reproduction:
 ```
 == the runtime cannot see the tool servers — applying the policy again, then scanning
    "preloop-policy:policy/b-fsmcp.yaml": "applied"
-   {"ok": true, "scanned": ["cadp278-toolsvc", "cadp278-fsmcp"], "not_registered": []}
+   {"ok": true, "scanned": ["agentstack-toolsvc", "agentstack-fsmcp"], "not_registered": []}
   ok    fsmcp tools exposed via Preloop              yes
 ```
 

@@ -24,7 +24,7 @@ export MSYS_NO_PATHCONV=1
 CYCLES="${1:-5}"
 WORKFLOW="${2:-trading-b}"
 PROFILE="${3:-research-default}"
-STACK="${STACK:-cadp278}"
+STACK="${STACK:-agentstack}"
 PY=/opt/venv/bin/python
 
 mkdir -p "$HERE/evidence/soak"

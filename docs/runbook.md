@@ -37,7 +37,7 @@ a button for it, that is the signal to write it down in `config/`, not in a scre
 
 ```bash
 scripts/up.sh --check                                    # about twenty questions, and the capabilities
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/ops_health.py
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/ops_health.py
 ```
 
 `up.sh --check` changes nothing. Read it in three parts: **isolation** (the agent has no route out
@@ -83,7 +83,7 @@ does, because every run needing that provider will hold while the login file sti
 **Most often:** the OAuth token behind the login expired. Confirm:
 
 ```bash
-docker exec cadp278-agent sh -c 'CLAUDE_CONFIG_DIR=/route/claude HTTPS_PROXY=http://egress:8888 \
+docker exec agentstack-agent sh -c 'CLAUDE_CONFIG_DIR=/route/claude HTTPS_PROXY=http://egress:8888 \
   codexbar usage --provider claude --source oauth --json'
 # → "Claude OAuth token expired. … Run `claude login`, then retry."
 ```
@@ -136,14 +136,14 @@ logins do. It is the one human step of a fresh install that only exists as a com
 **Look:** `run_workflow.py show <id>` says `running`, and the step has not changed for a long time.
 
 ```bash
-docker exec cadp278-agent sh -c 'ps -eo pid,etime,args | grep "[r]un_workflow\|[c]onductor-cli"'
+docker exec agentstack-agent sh -c 'ps -eo pid,etime,args | grep "[r]un_workflow\|[c]onductor-cli"'
 ```
 
 **Do:** stop it the way a person would, so it keeps a checkpoint, then continue it when you want:
 
 ```bash
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/run_workflow.py stop <id>
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/run_workflow.py resume <id>
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py stop <id>
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/run_workflow.py resume <id>
 ```
 
 or use **중지** / **재개** in the panel. Resume re-enters the step that did not finish; the steps
@@ -180,13 +180,13 @@ If you brought containers up with `docker compose` by hand, you skipped that.
 because a file under it changed. `up.sh` reloads it on every bring-up; by hand:
 
 ```bash
-docker exec cadp278-apiguard nginx -t && docker exec cadp278-apiguard nginx -s reload
+docker exec agentstack-apiguard nginx -t && docker exec agentstack-apiguard nginx -s reload
 ```
 
 Verify from the position the rule constrains — inside the agent, not from the host:
 
 ```bash
-docker exec cadp278-agent sh -c 'curl -s -o /dev/null -w %{http_code} -X POST \
+docker exec agentstack-agent sh -c 'curl -s -o /dev/null -w %{http_code} -X POST \
   -H "Content-Type: application/json" -d "{\"approved\":true}" \
   http://api:8000/api/v1/approval-requests/00000000-0000-0000-0000-000000000000/approve'
 # 403 = the guard is in the path.  404 = it is not.
@@ -209,7 +209,7 @@ working, calling does not. Applying the policy and rescanning do **not** clear i
 **Do:**
 
 ```bash
-docker exec cadp278-agent python3 /work/p281/mcp_list.py claude --probe   # PROBE OK / PROBE FAIL
+docker exec agentstack-agent python3 /work/p281/mcp_list.py claude --probe   # PROBE OK / PROBE FAIL
 docker restart preloop-oss-api-1                                          # what actually clears it
 ```
 
@@ -221,7 +221,7 @@ only if a call still fails, restart Preloop's api (OPERATIONS §28).
 **Look:** `up.sh --check` → `fsmcp tools exposed via Preloop` fails, and:
 
 ```bash
-docker exec cadp278-agent python3 /work/p281/mcp_list.py claude
+docker exec agentstack-agent python3 /work/p281/mcp_list.py claude
 # → only ask_user, get_approval_status, permission_prompt, request_approval …
 ```
 
@@ -237,7 +237,7 @@ instances, and the check passes on the ones where the scan landed.
 **Do:**
 
 ```bash
-docker exec cadp278-admin /opt/venv/bin/python /work/p281/cfg.py rescan
+docker exec agentstack-admin /opt/venv/bin/python /work/p281/cfg.py rescan
 # {"ok": true, "policy": "policy/b-fsmcp.yaml", "scanned": ["…-toolsvc", "…-fsmcp"]}
 ```
 
@@ -247,8 +247,8 @@ account does not have. If you are doing it by hand and `rescan` says `not_regist
 case — apply first:
 
 ```bash
-docker exec cadp278-admin /opt/venv/bin/python /work/p281/cfg.py apply    # --force ignores our record
-docker exec cadp278-admin /opt/venv/bin/python /work/p281/cfg.py rescan
+docker exec agentstack-admin /opt/venv/bin/python /work/p281/cfg.py apply    # --force ignores our record
+docker exec agentstack-admin /opt/venv/bin/python /work/p281/cfg.py rescan
 ```
 
 `apply` no longer trusts its own record: it skips only when the account still has every server the
@@ -259,7 +259,7 @@ policy declares. On another machine the record said the work was done while the 
 **Look:** the panel's 승인 대기 card, or:
 
 ```bash
-docker exec cadp278-ops python3 /work/p281/approvals.py
+docker exec agentstack-ops python3 /work/p281/approvals.py
 ```
 
 **Do:** decide it in the panel. The agent may *read* what is waiting and cannot decide it — that is
@@ -300,8 +300,8 @@ stale is the **identity**: onboarding again leaves the previous managed agent in
 credential, and the previous hook file in the home.
 
 ```bash
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/ops_health.py   # risks name it
-docker exec cadp278-admin /opt/venv/bin/python /work/p281/principals.py list
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/ops_health.py   # risks name it
+docker exec agentstack-admin /opt/venv/bin/python /work/p281/principals.py list
 ```
 
 The adapter presents the **newest** matching hook, so runs use the current identity. Removing the

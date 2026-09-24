@@ -245,7 +245,7 @@ settings trick of F6 (F6's analysis stands but is no longer the isolation mechan
 
 ```
 Windows host                         Docker
-  Claude Desktop / Claude Code         cadp278-governed  (internal: true — NO egress)
+  Claude Desktop / Claude Code         agentstack-governed  (internal: true — NO egress)
   ~/.claude  ← never onboarded           ├─ agent      : Conductor + Claude Code + fixture
                                          ├─ mlflow     : traces (port published inbound only)
                                          └─ preloop api / console / gateway (attached out of band)
@@ -262,12 +262,12 @@ Rationale and honest scoping:
   is losing provider-native in-process instrumentation, which is a different and smaller
   claim than the one made earlier in this session.
 - **No Anthropic credential in the image.** Credentials are minted inside the container
-  and live in the `cadp278-agent-home` volume. The host's `~/.claude` is never mounted.
+  and live in the `agentstack-agent-home` volume. The host's `~/.claude` is never mounted.
   This is the specific thing that went wrong in F8 (Preloop read the *host's* credential
   file); a container-minted login is a separate token lineage.
 - **Two-phase credential handling.** `claude auth login` needs egress to claude.ai, which
   the governed network forbids by design. So the agent is attached to a throwaway bridge
-  network (`cadp278-provision`) for the login step only, then disconnected. Provisioning
+  network (`agentstack-provision`) for the login step only, then disconnected. Provisioning
   path and governed runtime path are deliberately distinct, and the receipt records both.
 - **N7 evidence upgrade.** Because the agent's only network is `internal: true`, a direct
   `api.anthropic.com` call is refused at the network layer rather than merely absent from
@@ -565,13 +565,13 @@ gating evidence on this version.
 
 ### Setup
 
-A disposable MCP tool service (`cadp278-toolsvc`, FastMCP streamable-HTTP) exposing
+A disposable MCP tool service (`agentstack-toolsvc`, FastMCP streamable-HTTP) exposing
 `write_marker` — a tool whose effect is externally observable as a file — and a read-only
-`list_markers`. It sits on `cadp278-toolnet` (`internal: true`); **the agent container is not
+`list_markers`. It sits on `agentstack-toolnet` (`internal: true`); **the agent container is not
 a member**, so the only route from agent to tool is through Preloop:
 
 ```
-agent (cadp278-governed) --/mcp/v1--> preloop api --> toolsvc (cadp278-toolnet)
+agent (agentstack-governed) --/mcp/v1--> preloop api --> toolsvc (agentstack-toolnet)
 agent -> toolsvc directly: http=000, curl_exit=6   (cannot resolve)
 ```
 
@@ -787,7 +787,7 @@ invoke_workflow cadp-278-vertical-slice
 | **N1** deny | `policy/n1-deny.yaml` applied; tests passing, evidence complete | `BLOCK`, `governance_status=DENIED`, **0 marker files** | `governance denied the governed action` |
 | **N3** missing evidence | `artifact.sha256` removed from `collect_evidence`; tests passing, governance APPROVED | `BLOCK` | `required evidence missing or wrong-typed: artifact.sha256` |
 | **N4** failed test | implement told not to fix the code; governance APPROVED | `RETRY` (never PASS) | `tests did not pass` |
-| **N5** MLflow down | `cadp278-mlflow` stopped mid-PoC | `PASS` — **identical to the baseline** | `required evidence satisfied` |
+| **N5** MLflow down | `agentstack-mlflow` stopped mid-PoC | `PASS` — **identical to the baseline** | `required evidence satisfied` |
 
 Each control isolates one variable. N1 and N3 both BLOCK while tests are green, and N4
 withholds PASS while governance is fine, so the Gate's reason is attributable in every case
@@ -833,7 +833,7 @@ a weak proof, so it was followed by the real one.
 
 ### N6b — bypass deliberately made possible
 
-The agent was attached to the throwaway `cadp278-provision` network **while the gateway
+The agent was attached to the throwaway `agentstack-provision` network **while the gateway
 stayed down**, so a direct path existed:
 
 | Precondition | State |

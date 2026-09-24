@@ -22,7 +22,7 @@ fi
 PRELOOP_DIR="${PRELOOP_DIR:-$HOME/.preloop-oss}"
 command -v cygpath >/dev/null && { PRELOOP_DIR="$(cygpath -m "$PRELOOP_DIR")"; HERE="$(cygpath -m "$HERE")"; }
 export MSYS_NO_PATHCONV=1
-STACK="${STACK:-cadp278}"
+STACK="${STACK:-agentstack}"
 PRELOOP_PROJECT="${PRELOOP_PROJECT:-preloop-oss}"
 # as in up.sh: never default a path here, or it would win over docker/.env
 export STACK
@@ -73,7 +73,7 @@ docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
 
 if [ "$VOLUMES" = 1 ]; then
   # Exact names only. A prefix match would also take another instance's volumes: with
-  # STACK=cadp278r, "cadp278r-second-route-creds" starts with "cadp278r-" too.
+  # STACK=agentstackr, "agentstackr-second-route-creds" starts with "agentstackr-" too.
   VOLS=""
   for n in "$STACK-agent-home" "$STACK-ws" "$STACK-quota-home" "$STACK-route-creds" \
            "$STACK-quota-obs" "${PRELOOP_PROJECT}_postgres-data"; do

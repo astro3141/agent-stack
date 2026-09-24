@@ -96,7 +96,7 @@ Choices worth making before installing, none of which the script decides for you
 scripts/up.sh                        # everything, then check it
 scripts/up.sh --composition no-record   # without MLflow, and be told what that costs
 scripts/cycle.sh trading-b           # one unattended cycle, for a scheduler to call
-docker exec cadp278-agent /opt/venv/bin/python /work/p281/ops_health.py
+docker exec agentstack-agent /opt/venv/bin/python /work/p281/ops_health.py
 ```
 
 `scripts/up.sh --check` answers about twenty questions about isolation, services, logins and quota
@@ -104,12 +104,12 @@ observation, and prints which capabilities the running composition has.
 
 ## How this repository came to be
 
-The measurements were made in a working tree that lived beside the `cadp` repository and was
+The measurements were made in a working tree that lived beside an earlier repository and was
 mirrored into it under `poc/281-routing/`. Keeping two trees produced exactly one class of bug —
 code that was published but could not run, because the copy that ran was the other one — so the
 tree that runs is now the repository. Its history starts at `9cce003`, the snapshot taken when the
-composition work (`cadp` issue #278) ended and the routing layer (#281) began; the composition's
-own history stays in `cadp` under `poc/278-composition/`.
+composition work (issue #278 there) ended and the routing layer (#281) began; the composition's
+own history stays in that repository under `poc/278-composition/`.
 
 Nothing here is a product. It is a proof of concept with its measurements attached, including the
 ones that corrected earlier claims.

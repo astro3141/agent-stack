@@ -1,4 +1,4 @@
-"""cadp278-hub — the UI. Serves one page, forwards /api/* to the ops API, and puts Conductor's own
+"""agentstack-hub — the UI. Serves one page, forwards /api/* to the ops API, and puts Conductor's own
 run dashboard on the same address. No Docker access, no credentials, no mounts.
 
 Published on 127.0.0.1:8780, and that is the only address a person needs. Everything the page can
@@ -18,7 +18,7 @@ rather than mounted under a prefix; none of them collide with this panel's own r
 import os, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-OPS = os.environ.get("HUB_OPS_URL", "http://cadp278-ops:8781")
+OPS = os.environ.get("HUB_OPS_URL", "http://agentstack-ops:8781")
 REPLAY = os.environ.get("HUB_REPLAY_URL", "")          # empty: the dashboard is not in this composition
 PAGE = open(os.path.join(os.path.dirname(__file__), "index.html"), "rb").read()
 
