@@ -109,6 +109,20 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
         print(json.dumps({"error": "invalid workflow, profile or id"})); return 2
     caps = capabilities.probe()
     gone = capabilities.missing(caps, need_record=not allow_unrecorded)
+    # and what this workflow's own package says it needs — declared in its manifest, refused here
+    try:
+        import packages
+        needs, pkg_name = packages.requires_of(workflow)
+    except Exception:
+        needs, pkg_name = [], ""
+    for c in needs:
+        if c not in caps:
+            gone.append(c)
+            caps[c] = {"available": False, "without_it": f"{pkg_name} declares it; this stack has "
+                                                         "no probe for a capability by that name",
+                       "detail": "unknown capability"}
+        elif not caps[c]["available"] and c not in gone:
+            gone.append(c)
     if gone:
         print(json.dumps({"error": "the stack cannot run this now: " + ", ".join(gone),
                           "why": {k: caps[k]["without_it"] for k in gone},
@@ -124,7 +138,15 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
         inputs[k] = v
     d = run_dir(ui)
     tmp = d / "tmp"
-    (tmp / "conductor").mkdir(parents=True, exist_ok=False)     # a fresh id only
+    # A run id is used once: its directory holds that run's event log, checkpoints and meta, and a
+    # second run under the same id would read as one run with two of everything. Refused as an
+    # answer, not as a traceback — the caller is a panel or a script, and both read JSON.
+    try:
+        (tmp / "conductor").mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        print(json.dumps({"error": f"the run id {ui!r} has been used already",
+                          "hint": "ids are used once; `resume` continues that run"}))
+        return 2
     meta = {"ui_id": ui, "workflow": workflow, "profile": profile, "inputs": inputs,
             # labels only: they group runs and name the case a run was started for, and change
             # nothing about what runs. What a case *means* is the dataset's, and this carries it

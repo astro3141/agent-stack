@@ -261,7 +261,11 @@ echo "== logins (routing layer)"
 check "claude /route login"              true "$(in_agent 'CLAUDE_CONFIG_DIR=/route/claude claude auth status 2>/dev/null | python3 -c "import json,sys;print(str(json.load(sys.stdin).get(\"loggedIn\")).lower())"')"
 check "codex /route login"               yes "$(in_agent 'CODEX_HOME=/route/codex codex login status 2>&1 | grep -q "Logged in" && echo yes || echo no')"
 check "grok /route login"                yes "$(in_agent 'test -s /route/grok/auth.json && echo yes || echo no')"
-check "observer codex login"             yes "$(docker exec "$STACK-quota" sh -c 'codex login status 2>&1 | grep -q "Logged in" && echo yes || echo no' 2>/dev/null)"
+# The observer's own login is a second source, not a requirement: codex is read with the login that
+# executes (OPERATIONS §29). Reported, not failed — a check that fails on something optional teaches
+# an operator to ignore checks.
+printf '  --    %-44s %s
+' "observer codex login (optional)"   "$(docker exec "$STACK-quota" sh -c 'codex login status 2>&1 | grep -q "Logged in" && echo yes || echo no' 2>/dev/null)"
 echo "== quota observer"
 # A login file can exist while its token is dead: the router then reports the provider as
 # ineligible for an *unknown* reason, and every run that needs it holds. Being at a limit or
@@ -273,10 +277,13 @@ bad = ops_health.unknowable()
 print(len(bad))
 for e in bad: print(\"        \" + e[\"provider\"] + \": \" + str(e[\"why\"]), file=sys.stderr)" 2>/tmp/unknowable')"
 in_agent 'cat /tmp/unknowable 2>/dev/null' | head -4
-check "observation fresh (< 10 min)"     yes "$(in_agent 'python3 -c "
-import json,datetime as d
-r=json.load(open(\"/obs/codex.raw.json\")); t=d.datetime.fromisoformat(r[\"collected_at\"].replace(\"Z\",\"+00:00\"))
-print(\"yes\" if r.get(\"exit\")==0 and (d.datetime.now(d.timezone.utc)-t).total_seconds()<600 else \"no\")"')"
+# What the run will meet: the router's own answer, not one source's file. The freshness of the
+# observer's file stopped being the model when codex became readable with the login that
+# executes — the router said ROUTE while this said no (OPERATIONS §31).
+check "the router can choose a provider"  yes "$(in_agent '/opt/venv/bin/python -c "
+import sys; sys.path.insert(0, \"/work/p281\")
+import capabilities
+print(\"yes\" if capabilities.probe()[\"admission\"][\"available\"] else \"no\")"')"
 # what only the host can see (backups, kept releases) — written down with the time it was looked at
 bash "$HERE/scripts/host-state.sh" >/dev/null 2>&1 || true
 echo "== capabilities in this composition"

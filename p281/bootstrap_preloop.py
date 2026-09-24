@@ -2,7 +2,7 @@
 
 usage:
   bootstrap_preloop.py --unclaimed [--api URL] [--username U] [--email E]
-                       [--secrets-file PATH] [--agent-kind claude-code] [--no-onboard]
+                       [--secrets-file PATH] [--agent-kinds claude-code,codex] [--no-onboard]
   (the bootstrap token is read from stdin)
 
 Preloop is *ours* — a container this stack starts. Its first user is created against localhost
@@ -104,13 +104,20 @@ def claim(api, username, email, bootstrap_token, secrets_file):
     return api_key, None
 
 
-def onboard(api, api_key, agent_kind):
-    """Let the Preloop CLI create the managed agent, its credential and the permission hook.
+def onboard(api, api_key, agent_kinds):
+    """Let the Preloop CLI create each agent's managed identity, credential and permission hook.
 
     The CLI reads `$HOME/.claude/settings.json` and fails outright if it is not there. The image
     ships none and the home is a volume, so on a fresh machine it is not there — measured, both
     ways round. An empty object is enough for onboarding to proceed; what goes in it afterwards is
     the agent's own configuration, not this step's business.
+
+    **Every vendor this stack routes to, not only Claude.** On the second machine a fresh install
+    onboarded claude-code and nothing else, so `~/.codex/config.toml` had no Preloop entry and
+    every codex lane died in under a second — silently, because the step dropped the reason
+    (OPERATIONS §31). Onboarding here also means it happens on the admin side, which is the only
+    side allowed to create an agent at all: from the governed network the guard answers 403, and
+    that is the boundary working, not a problem to route around.
     """
     cfg_dir = os.path.join(os.path.expanduser("~"), ".claude")
     cfg = os.path.join(cfg_dir, "settings.json")
@@ -118,16 +125,21 @@ def onboard(api, api_key, agent_kind):
         os.makedirs(cfg_dir, exist_ok=True)
         with open(cfg, "w", encoding="utf-8") as f:
             json.dump({}, f)
-    steps = [["preloop", "auth", "login", "--token", api_key, "--url", api, "--force"],
-             ["preloop", "agents", "onboard", agent_kind, "--approvals", "--yes",
-              "--live-validate=false"]]
-    for argv in steps:
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=300)
+    r = subprocess.run(["preloop", "auth", "login", "--token", api_key, "--url", api, "--force"],
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode:
+        # never echo the argv: it carries the credential
+        return {"ok": False, "stage": "auth login", "detail": (r.stderr or r.stdout).strip()[-300:]}
+    failed = {}
+    for kind in agent_kinds:
+        r = subprocess.run(["preloop", "agents", "onboard", kind, "--approvals", "--yes",
+                            "--live-validate=false"], capture_output=True, text=True, timeout=300)
         if r.returncode:
-            # never echo the argv: it carries the credential
-            return {"ok": False, "stage": argv[1] + " " + argv[2],
-                    "detail": (r.stderr or r.stdout).strip()[-300:]}
-    return None
+            # one vendor's CLI missing must not stop the others: a composition may not have it
+            failed[kind] = (r.stderr or r.stdout).strip()[-200:]
+    if len(failed) == len(agent_kinds):
+        return {"ok": False, "stage": "agents onboard", "detail": failed}
+    return {"partial": failed} if failed else None
 
 
 def main(argv):
@@ -159,7 +171,11 @@ def main(argv):
         return 0 if problem.get("ok") else 1
     out = {"ok": True, "user": username, "secrets_file": secrets_file, "onboarded": False}
     if "--no-onboard" not in argv:
-        problem = onboard(api, api_key, opt("--agent-kind", "claude-code"))
+        kinds = [k for k in opt("--agent-kinds", "claude-code,codex").split(",") if k]
+        problem = onboard(api, api_key, kinds)
+        if problem and "partial" in problem:
+            out["onboarded_partially"] = problem["partial"]
+            problem = None
         if problem:
             problem["user_created"] = username
             problem["secrets_file"] = secrets_file

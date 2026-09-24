@@ -1911,3 +1911,57 @@ controls    361/361 · the trading package's own 18/18 · up.sh --check all pass
    `arch_port.py` and `packet_bridge.py` declare what a repeat of them does.
 2. The trading package's own controls still called `trade_stage.py` at the platform's address. It
    is the package's own step now, and they call it there.
+
+## 31. What a second machine's pilot found
+
+The trading package was run in pilot mode on the arm64 machine, twice, and finished. Five findings
+came back from it; four were defects here and one is a property of a model. Each is listed with what
+it cost and what was changed.
+
+**1. The approval path was cut two seconds before Preloop answered.** A Grok lane asked to run a
+shell command that would sweep the filesystem, `/route` included; the approval channel held it, as
+designed. Nobody answered, and at ~300 s the request died as `control_unavailable` — an
+infrastructure error — instead of `approval_expired`, which is a policy outcome. The adapter goes
+**direct** to the api precisely to avoid the console proxy's 300 s
+(`run-agent.mjs`: *"nginx cuts the held-open approval at 300 s … turning approval expired into
+control unavailable"*), and §20's guard put that proxy back in the path. The guard now gives
+`/api/v1/agents/permission-check` its own location with a 900 s read timeout — longer than
+Preloop's own wait, deliberately. Nothing else in this stack holds a request open on purpose.
+
+**2. A step that failed said only FAILED.** `agent_task.py` received `failure.message`
+(`ENOENT: ~/.codex/config.toml`) and dropped it from its output, so a lane that died in 0.44 s gave
+a reader nothing and the cause was found by replaying the request by hand. The step now carries a
+`failure` line. Measured: `{"status": "FAILED", …, "failure": "unknown provider nosuchprovider"}`.
+
+**3. A fresh install onboarded Claude and nothing else.** `~/.codex/config.toml` had no Preloop
+entry, so every codex lane died — silently, because of (2). The bootstrap now onboards each vendor
+this stack routes to (`--agent-kinds claude-code,codex`), and one vendor's CLI being absent no
+longer stops the others. Worth recording: onboarding from the **agent** container answered 403.
+That is §21 working — creating an agent is a control-plane write — and the fix is to do it on the
+admin side, which is where the bootstrap already runs.
+
+**4. The screen contradicted the run.** `capabilities.py` still read the observer's own
+`/obs/codex.raw.json` to decide *admission*, which stopped being the model when codex became
+readable with the login that executes (§29). The router said ROUTE while the panel said
+`admission: no`. Admission is now the router's own answer — *"the router would take claude"* — and
+`scripts/up.sh` asks the same probe. The observer's login, being optional now, is **reported**
+rather than failed: a check that fails on something optional teaches an operator to ignore checks.
+
+**5. Grok is not deterministic, and the boundary held both times.** On one machine the lane produced
+its file; on the other it once called the tool by the wrong name and once tried to read the
+credential directory. Both were stopped — by the tool rules and by the approval channel. That is
+evidence, not a defect. What *is* a defect is that a denied lane cannot recover, which is (1)'s
+neighbour and is left open deliberately: a retry policy for "denied" would be a workflow's decision
+about its own lanes, not the platform's.
+
+Two smaller ones from the same report, both fixed: a package's `requires.capabilities` was declared
+and read by nobody — the runner now refuses a run whose package asks for a capability this stack
+does not have, including one it has no probe for; and a run id used twice raised a `FileExistsError`
+traceback where a caller expected JSON, which now answers
+`{"error": "the run id … has been used already", "hint": "ids are used once; resume continues that run"}`.
+
+**And one thing to state rather than fix:** putting a directory in `packages/` is a decision to give
+that workflow rights. `up.sh` applies its `principals.yaml` — creating the principals it declares
+and minting their credentials — because that is what makes a workflow governed the same way on
+every machine (§27). A package is therefore trusted code, not sandboxed content: read it before
+installing it, exactly as you would a dependency.

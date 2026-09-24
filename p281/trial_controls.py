@@ -1224,6 +1224,27 @@ def controls_packages():
               os.path.exists("/work/packages/trading/steps/trade_stage.py")
               and "/work/p281/steps/trade_stage.py" not in text, True)
 
+    # what a second machine's pilot found, each one pinned where it was fixed
+    rw_src = open("/work/p281/run_workflow.py", encoding="utf-8").read()
+    at_src = open("/work/p281/steps/agent_task.py", encoding="utf-8").read()
+    guard = open("/work/docker/apiguard.conf", encoding="utf-8").read()
+    boot = open("/work/p281/bootstrap_preloop.py", encoding="utf-8").read()
+    capsrc = open("/work/p281/capabilities.py", encoding="utf-8").read()
+    pk_src = open("/work/p281/packages.py", encoding="utf-8").read()
+    check("a failed step carries the reason it failed", '"failure": ((r.get("failure")' in at_src, True)
+    check("the approval path is not cut before Preloop answers",
+          "location = /api/v1/agents/permission-check" in guard
+          and "proxy_read_timeout 900s" in guard, True)
+    check("a fresh install onboards every vendor it routes to",
+          '"--agent-kinds", "claude-code,codex"' in boot, True)
+    check("admission is the router's answer, not one source's file",
+          'json.load(open("/obs/codex.raw.json"' not in capsrc
+          and "would take" in capsrc and "router.py" in capsrc, True)
+    check("a package's declared capabilities are read by the runner",
+          "def requires_of(" in pk_src and "packages.requires_of(workflow)" in rw_src, True)
+    check("a run id used twice is an answer, not a traceback",
+          "has been used already" in rw_src, True)
+
     # a step's imports work wherever the step lives
     compose = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
     check("the step library is importable from a package's steps",

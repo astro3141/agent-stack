@@ -13,7 +13,7 @@ on it. What to do about a missing one is not decided here (CONTRACT.md): `run_wo
 to start a run without the capabilities a run cannot be honest without, and takes an explicit
 opt-in for recording, which a run can do without as long as someone says so.
 """
-import json, sys, urllib.error, urllib.request
+import json, os, sys, urllib.error, urllib.request
 
 sys.path.insert(0, "/work/p281")
 import settings
@@ -69,15 +69,33 @@ def probe():
     # The screen is deliberately not probed here: it is reached from the host, not from inside
     # this network, and no run needs it. scripts/up.sh reports it from where it is reachable.
 
+    # Admission is whether the router can choose a provider — asked of the router, not of one
+    # source's file. It used to read the observer's own /obs/codex.raw.json, which stopped being
+    # the model when codex became readable with the login that executes (§29): the router said
+    # ROUTE while this said admission=no, and a screen that contradicts the run is worse than a
+    # screen that says nothing.
     try:
-        import datetime as d
-        r = json.load(open("/obs/codex.raw.json", encoding="utf-8"))
-        age = (d.datetime.now(d.timezone.utc)
-               - d.datetime.fromisoformat(r["collected_at"].replace("Z", "+00:00"))).total_seconds()
-        fresh = r.get("exit") == 0 and age < 600
-        detail = f"last observation {round(age)}s old"
+        import subprocess, tempfile
+        prof = settings.profile("research-default") or {}
+        pol = prof.get("routing") or {}
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(f"{tmp}/obs", exist_ok=True)
+            json.dump(pol, open(f"{tmp}/policy.json", "w"))
+            env = {**os.environ, "P281_MODEL_ROUTES": json.dumps(pol.get("model_route") or {}),
+                   "P281_LOGINS": json.dumps(pol.get("login") or {})}
+            subprocess.run([sys.executable, "/work/p281/collect_obs.py", f"{tmp}/obs"],
+                           capture_output=True, env=env, timeout=180)
+            out = subprocess.run([sys.executable, "/work/p281/router.py",
+                                  f"{tmp}/policy.json", f"{tmp}/obs"],
+                                 capture_output=True, text=True, timeout=60).stdout
+        d = json.loads(out)
+        usable = [e["provider"] for e in d.get("evaluated") or [] if e.get("eligible")]
+        fresh = bool(usable)
+        detail = (f"the router would take {usable[0]}" if fresh
+                  else "no eligible provider: " + "; ".join(
+                      f"{e['provider']}={e.get('why')}" for e in (d.get("evaluated") or []))[:160])
     except Exception as e:
-        fresh, detail = False, f"no observation ({type(e).__name__})"
+        fresh, detail = False, f"could not ask the router ({type(e).__name__})"
     caps["admission"] = {
         "available": fresh, "detail": detail,
         "without_it": "the router sees no quota, calls every provider unknown, and holds the run",

@@ -111,6 +111,11 @@ packages/<name>/
   principals.yaml the identities its steps run as, and what each may do
 ```
 
+**Installing a package is a decision to trust it.** `scripts/up.sh` applies its `principals.yaml` —
+creating the identities it declares and minting their credentials — which is what makes a workflow
+governed the same way on every machine. Read a package before installing it, as you would a
+dependency.
+
 Install one by putting it there and running `scripts/up.sh`: the runner and the panel both learn it
 from the loader (`p281/packages.py`), and `principals.py apply` creates the identities it declares
 with the rights it declares. Nothing in the platform is edited, which is the point — a workflow

@@ -107,6 +107,19 @@ def workflows():
     return out
 
 
+def requires_of(workflow_name):
+    """What the package carrying this workflow says it needs of the stack.
+
+    A manifest that declares `requires.capabilities` and is read by nobody is a comment. The runner
+    reads this and refuses a run the stack cannot govern the way that package expects — the same
+    refusal a missing global capability gets (OPERATIONS §31).
+    """
+    for p in installed().values():
+        if p["usable"] and workflow_name in (p.get("entries") or {}):
+            return list(((p.get("requires") or {}).get("capabilities")) or []), p["name"]
+    return [], ""
+
+
 def principals():
     """Every principal the installed packages declare, with the package that declared it.
 

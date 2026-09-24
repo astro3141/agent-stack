@@ -76,6 +76,14 @@ print(json.dumps({
     "evidence_dir": evid,
     "profile": prof_name,
     "attempts": attempts,
+    # Why it failed, in the line a reader of this step's output sees. Without it a step that died
+    # in 0.4 seconds said only FAILED, and finding "ENOENT: ~/.codex/config.toml" meant replaying
+    # the request by hand on another machine (reported from the second install).
+    "failure": ((r.get("failure") or {}).get("message")
+                or (r.get("turn", {}).get("error") or {}).get("message")
+                or ("" if r.get("status") == "COMPLETED" else json.dumps(
+                    r.get("turn", {}).get("error") or r.get("failure") or {},
+                    ensure_ascii=False)[:300]))[:300],
     "ledger_error": r.get("ledger_error") or "",
     # missing measurements are omitted, never 0
     "measurements": {k: v for k, v in meas.items() if isinstance(v, (int, float)) and not isinstance(v, bool)},
