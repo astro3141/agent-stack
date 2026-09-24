@@ -1259,6 +1259,10 @@ def controls_package_sources():
           "git clone" in sh and "docker exec" not in sh.split("case \"$CMD\"")[1], True)
     check("a bring-up says when what is on disk is not what the lock names",
           "packages.sh\" verify" in up_sh or "packages.sh verify" in up_sh, True)
+    check("a pin check that fails says which files it means",
+          "edited on disk: $changed" in sh, True)
+    check("and where a file the runtime writes belongs",
+          "__pycache__) belongs in that repository" in sh, True)
     check("the reason a package is pinned is stated where it is declared",
           "decision to trust it" in open("/work/config/packages.yaml", encoding="utf-8").read(), True)
 

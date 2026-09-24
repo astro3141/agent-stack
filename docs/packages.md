@@ -28,6 +28,10 @@ Domain content belongs in its own repository: a platform repository should say w
 runs, not carry them. The fetch happens on the host, so no git credential is ever inside the
 governed runtime.
 
+That repository ignores what the runtime writes — `__pycache__/` and `*.pyc` at least. `verify`
+compares the working tree against the pinned commit, so a compiled step that is tracked makes every
+run report the package as edited.
+
 ## The layout
 
 ```

@@ -2298,6 +2298,23 @@ What was **not** done: a registry. Naming a git URL and a commit is what dbt, He
 before anyone builds an index, and an index is worth its cost when there are more packages than a
 person can name — which is not yet true here.
 
+**Afterwards, the pin check was wrong about the thing it exists to answer.** `verify` reported the
+trading package as `CHANGED on disk` after any run, and it was right about the bytes: three
+`__pycache__/*.pyc` files had been committed when the repository was split out, and the agent
+rewrites them the moment a step is imported. A pin check whose normal answer is "someone edited
+this" is a pin check nobody reads. Fixed where it belonged — the package repository now ignores
+compiled steps (`c5af2a8`) and is re-locked here — and `verify` now **names the files** it is
+talking about instead of saying only `CHANGED`:
+
+```
+  CHANGED  trading — edited on disk: README.md
+           commit it in its own repository, or re-install. A file the runtime writes
+           (__pycache__) belongs in that repository's .gitignore, not in the pin.
+```
+
+Measured: re-installed at `c5af2a8`, `verify` clean, a `trading-shapes` run from the fetched
+package, and `verify` still clean afterwards with the `.pyc` files regenerated on disk.
+
 ## 38. Three answers to a question nobody asked
 
 A reading of the common code at `8e46fb1` — not a run, a reading — named three places where the

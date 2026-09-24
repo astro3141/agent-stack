@@ -97,8 +97,13 @@ case "$CMD" in
       [ -d "$dir/.git" ] || { echo "  MISSING  $name — declared, not installed" >&2; exit 1; }
       head="$(git -C "$dir" rev-parse HEAD)"
       locked="$(locked_commit "$name")"
-      [ -n "$(git -C "$dir" status --porcelain)" ] && {
-        echo "  CHANGED  $name — edited on disk; commit it in its own repository, or re-install" >&2; exit 1; }
+      changed="$(git -C "$dir" status --porcelain | awk '{print $2}' | head -3)"
+      changed="$(echo $changed)"        # one line, whatever the shell splits it into
+      [ -n "$changed" ] && {
+        echo "  CHANGED  $name — edited on disk: $changed" >&2
+        echo "           commit it in its own repository, or re-install. A file the runtime writes" >&2
+        echo "           (__pycache__) belongs in that repository's .gitignore, not in the pin." >&2
+        exit 1; }
       [ "$head" = "$locked" ] || {
         echo "  DRIFT    $name — at ${head:0:8}, locked ${locked:0:8}" >&2; exit 1; }
     done || fail=1
