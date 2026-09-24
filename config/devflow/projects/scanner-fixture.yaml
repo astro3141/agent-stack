@@ -1,0 +1,10 @@
+# A fixture of the infra scanner: the same policy and hook (a snapshot under
+# packages/devflow/fixtures/scanner-policy/, taken from infra-scanner-io's devflow branch) on a
+# remote that is one JSON file. For the controls and for fixture runs through the real runner —
+# never evidence about the real repository.
+name: scanner-fixture
+repository: fixture/infra-scanner
+canonical_branch: recovery/phase-5.3-b1
+policy_path: .devflow/project.yaml
+remote: fixture
+fixture: scanner-pass

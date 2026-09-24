@@ -2381,3 +2381,60 @@ may not be the one that wrote it. That is the CONTRACT.md line, not an omission:
 the platform's, the decision is the workflow's.
 
 **Measured**: 425/425 controls, fifteen of them new and pinning exactly the four behaviours above.
+
+## 39. A development workflow that every project configures, and none is built into
+
+`packages/devflow` is the development workflow of 개발 범용 워크플로 v0.1 — 준비 → 구현 → 검증·리뷰 →
+통합·출시 → 완료 — as one package. It is a workflow, so it lives where §27 says workflows live; the
+platform was not edited (`p281/` has no change). What is one project's is not in the package: a
+project is **registered** (`config/devflow/projects/<name>.yaml`: repository, canonical branch,
+where its policy is) and brings its **policy and hook** in its own repository (`.devflow/`), read at
+the canonical commit a run evaluates. The execution profile stays what it was — which provider may
+run a model call, under which quota — and says nothing about the work.
+
+**The state of a task is GitHub's.** A run is one pass: it reads the task (an issue's ```devflow
+block), the pull request, the checks on exactly its head, the reviews written against that head, the
+approvals given for it; decides; publishes one state comment on the issue and `devflow/verdict` on
+the head; ends. Resuming a task is running it again. Four things are kept apart: the phase (with
+progress active / waiting / stopped, and a wait's reason, need, owner and resume condition), the
+execution status (`OK` / `TOOL_FAILURE`), the review status, and the verdict (`PASS`,
+`REQUEST_CHANGES`, `CONTRACT_GAP`, `NEEDS_DECISION`, or undecided). A cancelled CI job, a crashed
+hook or an unreachable API is `TOOL_FAILURE` with no verdict.
+
+**What makes evidence current.** Every verdict has a frame — repository, base and head, canonical
+head, the workflow's digest, the policy's digest and ref, the blobs of the official criteria and
+contracts. A review counts for the head GitHub attaches it to and the head and policy it names; a
+model review counts only when this attempt produced it with the hash its receipt recorded (§38's
+`produced`, used as the reason it was made). The candidate's own edits to its rules are judged by
+the canonical rules and flagged with the policy-change lens.
+
+**External effects** — the state comment, the status, the shared-artifact lock (a ref created
+atomically), the merge — are `guarded`: each asks the remote first, so an effect whose answer was lost
+is found, not repeated (§38's rule, applied).
+
+**Measured** (fixture remotes; no GitHub):
+
+* `packages/devflow/controls.py`: **87/87**, the real steps as subprocesses, one risk per scenario —
+  every verdict's return, wait and resume; failed / pending / skipped / unreviewed heads never
+  integrated; stale reviews after a new head, a policy change or a criterion change; Foundation
+  independence (the implementer's review, and a different vendor under the implementer's principal,
+  do not count); a failed or stale attempt's output never evidence; the shared Plan (canonical moved,
+  unexpected operations, a count moved to match output, the lock, a lock handed to the same change's
+  new head); lost answers for comment, status, lock and merge; the rework limit.
+* `p281/trial_controls.py`: **430/430** with the package declared in `config/packages.yaml`.
+* Through `run_workflow.py` and Conductor, on a shared fixture in the hand-in directory:
+  `devflow-demo-2` PASS → waiting for the merge owner, lock taken; a person merges;
+  `devflow-demo-3` verifies the merge commit and ends **done**, lock released, one state comment —
+  each run recorded in MLflow as `NO_EXECUTION` with its decision.
+* **One real model review** (`devflow-model-1`, claude, as `devflow-reviewer` — created by
+  `principals.py apply`, 0 tool denials, 333 s): the reviewer read the frozen materials and returned
+  four blocking findings, each with a basis, and declared what it could not verify instead of
+  asserting it. The run concluded `REQUEST_CHANGES` with the review counted as independent and its
+  unverified lenses held open. It exposed one defect, fixed after the run: the reviewer's identity was
+  read from the fan-out member rather than from the chain step inside it, so the published state named
+  the adapter instead of `devflow-reviewer`; re-adjudicating the same receipt now names the principal
+  and the call.
+
+**Not measured**: any run against GitHub. It needs `DEVFLOW_GITHUB_TOKEN` in `docker/package.env`,
+`^api\.github\.com$` in `docker/egress/allow`, and the project's `.devflow/` merged to its canonical
+branch — the first two are the operator's to give, the third a person's to merge.
