@@ -39,6 +39,8 @@ docker exec cadp278-admin /opt/venv/bin/python /work/p281/<script>.py …    # w
 | `trajectory.py <id> [--json]` / `--suite <name>` | what a run did, and the four assertions |
 | `suite.py run <suite> <workflow> <profile> <cases.jsonl> [--concurrency N]` | one run per case |
 | `suite.py read <suite> [--json]` | the set, with its execution facts |
+| `packages.py list [--json]` / `show <name>` | the installed workflow packages, and why an unusable one is unusable |
+| `run_workflow.py workflows` | what may be started — built-ins and packages, the one answer the panel uses too |
 
 ## Governance
 

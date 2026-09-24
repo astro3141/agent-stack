@@ -1134,6 +1134,78 @@ def controls_approval_boundary():
           "This probe runs wherever it is run from, which is the point" in ops, True)
 
 
+def controls_packages():
+    print("")
+    print("a workflow that arrives as a directory — installing one is not editing this stack")
+    import importlib.util as il, os as _os, pathlib, tempfile
+    spec = il.spec_from_file_location("pkg_ctl", "/work/p281/packages.py")
+    pk = il.module_from_spec(spec); sys.modules["pkg_ctl"] = pk; spec.loader.exec_module(pk)
+    rw = open("/work/p281/run_workflow.py", encoding="utf-8").read()
+    ops_server = open("/work/ops/server.py", encoding="utf-8").read()
+
+    # the example package is real, and it is what a second machine would copy in
+    here = pk.installed()
+    check("the example package is installed and usable",
+          (here.get("hello-lane") or {}).get("usable"), True)
+    check("and it brings its own principals",
+          bool((here.get("hello-lane") or {}).get("principals_file")), True)
+    check("its steps live in the package, not in the platform",
+          "/work/packages/hello-lane/steps/write.py"
+          in open("/work/packages/hello-lane/workflow.yaml", encoding="utf-8").read(), True)
+
+    # what a bad package does: it is refused with a reason, never half-loaded
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "no-manifest").mkdir()
+        (root / "wrong-name").mkdir()
+        (root / "wrong-name" / "manifest.yaml").write_text("name: something-else")
+        (root / "no-entry").mkdir()
+        (root / "no-entry" / "manifest.yaml").write_text("name: no-entry")
+        (root / "escape").mkdir()
+        (root / "escape" / "manifest.yaml").write_text("name: escape" + chr(10) + "entry: ../../etc/passwd")
+        old_root = pk.ROOT
+        try:
+            pk.ROOT = str(root)
+            got = {n: p["why"] for n, p in pk.installed().items()}
+        finally:
+            pk.ROOT = old_root
+        check("a directory without a manifest is not a package", got["no-manifest"], "no manifest.yaml")
+        check("a manifest that names another package is refused",
+              "manifest says" in got["wrong-name"], True)
+        check("a missing entry is named", "is not there" in got["no-entry"], True)
+        check("an entry that points outside the package is refused",
+              got["escape"], "entry points outside the package")
+
+    # two packages may not disagree about an identity in silence
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        for name, rule in (("one", "allow"), ("two", "deny")):
+            d = root / name
+            (d).mkdir()
+            (d / "manifest.yaml").write_text(f"name: {name}")
+            (d / "workflow.yaml").write_text("workflow: {}")
+            (d / "principals.yaml").write_text(
+                "principals:" + chr(10) + "  shared:" + chr(10) + f"    tool_rules: {{write_file: [{{action: {rule}}}]}}")
+        old_root = pk.ROOT
+        try:
+            pk.ROOT = str(root)
+            who, conflicts = pk.principals()
+        finally:
+            pk.ROOT = old_root
+        check("a principal two packages declare differently is a conflict, not a merge",
+              [c.get("principal") for c in conflicts], ["shared"])
+
+    # and the three places that used to keep their own list
+    check("the runner asks the loader", "import packages" in rw and "packages.workflows()" in rw, True)
+    check("a package may not take a built-in's name",
+          "{**packages.workflows(), **BUILT_IN}" in rw, True)
+    check("the panel asks the runner rather than keeping a second list",
+          '"/work/p281/run_workflow.py", "workflows"' in ops_server
+          and '"auto", "research-r", "novel-a"' not in ops_server, True)
+    check("and the principals a bring-up applies include the packages'",
+          "packages.principals()" in open("/work/p281/principals.py", encoding="utf-8").read(), True)
+
+
 def controls_docs():
     print("")
     print("the documents — what they promise is what the tree does")
@@ -1483,6 +1555,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_packages()
     controls_docs()
     controls_template()
     controls_suite()

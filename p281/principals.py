@@ -122,12 +122,30 @@ def credential_name(aid, name):
 
 
 def declared():
-    """config/principals.yaml, or nothing if it is not there (a stack may declare none)."""
+    """What this stack declares, plus what each installed package brings with it.
+
+    A package that names a principal in its steps also declares what that principal may do, in its
+    own principals.yaml — so installing a workflow is enough for its identities to exist with
+    rights of their own (p281/packages.py, OPERATIONS §27). The stack's own declarations win a
+    name clash, and a clash between two packages is reported rather than resolved silently.
+    """
     import yaml
     path = "/work/config/principals.yaml"
-    if not os.path.exists(path):
-        return {}
-    return (yaml.safe_load(open(path, encoding="utf-8")) or {}).get("principals") or {}
+    own = {}
+    if os.path.exists(path):
+        own = (yaml.safe_load(open(path, encoding="utf-8")) or {}).get("principals") or {}
+    try:
+        sys.path.insert(0, "/work/p281")
+        import packages
+        from_packages, conflicts = packages.principals()
+    except Exception:
+        from_packages, conflicts = {}, []
+    merged = {who: spec["spec"] for who, spec in from_packages.items() if who not in own}
+    merged.update(own)
+    if conflicts:
+        print(json.dumps({"warning": "packages disagree about a principal", "conflicts": conflicts},
+                         ensure_ascii=False), file=sys.stderr)
+    return merged
 
 
 def cmd_apply(dry_run=False):

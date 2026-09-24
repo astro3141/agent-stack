@@ -1,0 +1,43 @@
+# A package's own graph. Its steps are named by absolute path under the package root, which is
+# where the package is mounted in every container of this stack.
+workflow:
+  name: pkg-hello-lane
+  description: Prove that a workflow package runs without the platform knowing it
+  entry_point: write
+  input:
+    profile:
+      type: string
+      required: false
+      default: research-default
+      description: execution profile — taken and recorded, not used by this package
+    text:
+      type: string
+      required: false
+      default: "hello from a package"
+      description: what the deterministic step writes
+  limits:
+    max_iterations: 6
+    timeout_seconds: 300
+
+agents:
+  - name: write
+    type: script
+    description: Write the given text into the run's workspace and report what it wrote
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/packages/hello-lane/steps/write.py", "{{ workflow.input.text }}"]
+    output:
+      path: {type: string}
+      sha256: {type: string}
+      chars: {type: string}
+    routes:
+      - to: done
+
+  - name: done
+    type: terminate
+    status: success
+    reason: "wrote {{ write.output.chars }} chars to {{ write.output.path }}"
+
+output:
+  path: "{{ write.output.path }}"
+  sha256: "{{ write.output.sha256 }}"
+  chars: "{{ write.output.chars }}"

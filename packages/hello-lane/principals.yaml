@@ -1,0 +1,19 @@
+# The identities this package's steps run as, in the same shape as config/principals.yaml.
+# `principals.py apply` merges these with the stack's own, so installing a package is enough for
+# its steps to have rights of their own. This one declares a principal it does not use, so that
+# the merging is visible without the package needing a model call.
+principals:
+  hello-writer:
+    description: >
+      A principal a package brought with it. It may write its own hello_* files and nothing else —
+      the same shape of rule the novel reviewer has, declared by the package rather than the stack.
+    tool_rules:
+      write_file:
+        - action: allow
+          condition_type: simple
+          condition_expression: "args.path.contains('hello_')"
+          rule_description: its own files
+        - action: deny
+          condition_type: simple
+          condition_expression: ""
+          rule_description: and nothing else

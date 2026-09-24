@@ -99,6 +99,26 @@ because a button for that is a second place for the truth to live.
 There is no accuracy and no score anywhere in that. Whether a judgement was right needs labelled
 cases from whoever knows the domain — the workflow's, not the platform's.
 
+## A workflow is a package
+
+A workflow is not an edit to this stack. It is a directory under `packages/`:
+
+```
+packages/<name>/
+  manifest.yaml   name, version, entry, what it needs of the stack
+  workflow.yaml   the graph; its steps by absolute path under the package root
+  steps/ prompts/ fixtures/ cases/
+  principals.yaml the identities its steps run as, and what each may do
+```
+
+Install one by putting it there and running `scripts/up.sh`: the runner and the panel both learn it
+from the loader (`p281/packages.py`), and `principals.py apply` creates the identities it declares
+with the rights it declares. Nothing in the platform is edited, which is the point — a workflow
+that cannot be given to someone is not a workflow, it is a modification.
+
+The five built-in workflows (`novel-a`, `trading-b`, …) predate this and still live in `p281/`;
+they are capability trials, not the shape to copy. `packages/hello-lane` is the shape to copy.
+
 ## Compositions
 
 A composition is which parts are running: `full`, `no-record` (no MLflow), `runtime` (no panel).

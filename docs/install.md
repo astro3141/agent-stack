@@ -81,6 +81,18 @@ tree fails on Linux, and the failure once left an account whose password nobody 
 - **The instance's name and ports** — `config/instance.env`: `STACK`, `HUB_PORT`, `OPS_PORT`,
   `MLFLOW_PORT`, `PRELOOP_*_PORT`, `PRELOOP_PROJECT`, `PRELOOP_DIR`, `POC_HOST_DIR`.
 
+## Installing a workflow
+
+```bash
+cp -r <somewhere>/trading-port packages/     # or git clone it into packages/
+scripts/up.sh                                # its principals are created with their rights
+docker exec cadp278-agent /opt/venv/bin/python /work/p281/packages.py
+docker exec cadp278-agent /opt/venv/bin/python /work/p281/run_workflow.py start r1 trading-port research-default
+```
+
+Nothing in the platform is edited. `packages/hello-lane` is a working example of the shape
+(concepts.md, OPERATIONS §27).
+
 ## A second instance on the same machine
 
 Give it its own `config/instance.env` (name, ports, Preloop project and directory) and it runs

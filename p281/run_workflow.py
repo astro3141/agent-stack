@@ -8,6 +8,7 @@ usage:
   run_workflow.py stop   <ui-id>                                      stop a run that is going
   run_workflow.py show  <ui-id>                                       JSON view of one run
   run_workflow.py list                                                JSON list, newest first
+  run_workflow.py workflows                                           what may be started, and from where
 
 Only workflows in WORKFLOWS may be started; arguments reach Conductor as an argv list, never
 through a shell.
@@ -35,10 +36,25 @@ sys.path.insert(0, "/work/p281")
 import settings
 import capabilities
 
-WORKFLOWS = {"auto": "p281/workflows/auto.yaml", "research-r": "p281/workflows/research-r.yaml",
-             "novel-a": "p281/workflows/novel-a.yaml",
-             "trading-b": "p281/workflows/trading-b.yaml",
-             "trading-shapes": "p281/workflows/trading-shapes.yaml"}
+# The workflows this stack was built with, and then whatever is installed as a package. A package
+# is a directory under packages/ (p281/packages.py); installing one must not mean editing this
+# file, or a workflow could never be given to anyone (CONTRACT.md, OPERATIONS §27).
+BUILT_IN = {"auto": "p281/workflows/auto.yaml", "research-r": "p281/workflows/research-r.yaml",
+            "novel-a": "p281/workflows/novel-a.yaml",
+            "trading-b": "p281/workflows/trading-b.yaml",
+            "trading-shapes": "p281/workflows/trading-shapes.yaml"}
+
+
+def known():
+    """Built-ins first: a package may not take a name this stack already answers to."""
+    try:
+        import packages
+        return {**packages.workflows(), **BUILT_IN}
+    except Exception:
+        return dict(BUILT_IN)
+
+
+WORKFLOWS = known()
 RUNS = Path("/work/evidence/ui-runs")
 SAFE = re.compile(r"[A-Za-z0-9._\- ]{0,200}")
 
@@ -366,4 +382,6 @@ if __name__ == "__main__":
                                          "--allow-unrecorded" in argv, suite, case),
               "resume": lambda: cmd_resume(sys.argv[2]),
               "stop": lambda: cmd_stop(sys.argv[2]),
-              "show": lambda: cmd_show(sys.argv[2]), "list": cmd_list}[a]())
+              "show": lambda: cmd_show(sys.argv[2]), "list": cmd_list,
+              # the one answer both this and the panel use, so neither keeps its own list
+              "workflows": lambda: (print(json.dumps(known(), ensure_ascii=False)), 0)[1]}[a]())

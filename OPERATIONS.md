@@ -1661,3 +1661,55 @@ account's own answer — `[]` — rather than any reasoning about what should ha
 The version difference is still worth what it cost: that machine was running **0.16.0**, where
 `preloop policy list` answers 404, and everything here is measured against **0.15.0**.
 `scripts/install.sh` pins it.
+
+## 27. A workflow that arrives as a directory
+
+Until now a workflow was three things at once: a file under `p281/workflows/`, steps and prompts
+scattered through `p281/`, and **its name written into a list inside `run_workflow.py` and a second
+list inside `ops/server.py`**. So a workflow could not be given to anyone — installing one meant
+editing the platform, which is the one thing CONTRACT.md says a workflow must never have to do. The
+question that exposed it was practical: *can a workflow be a package, so another machine installs
+the stack, drops the directory in, and runs it?* It could not.
+
+A package is a directory under `packages/`:
+
+```
+packages/<name>/
+  manifest.yaml     name, version, entry, and what it needs of the stack
+  workflow.yaml     the graph; its steps by absolute path under the package root
+  steps/ prompts/ fixtures/ cases/
+  principals.yaml   the identities its steps run as, in the shape of config/principals.yaml
+```
+
+`p281/packages.py` answers three questions and no others — what is installed, where is its entry
+point, and what does it declare that the stack must set up. It does not interpret the graph.
+
+**What changed in the platform, once:**
+
+| | |
+|---|---|
+| `run_workflow.py` | `BUILT_IN` ∪ the loader's packages; `run_workflow.py workflows` is the one answer |
+| `ops/server.py` | asks the runner instead of keeping a second list — a package is startable from the panel the moment it is there |
+| `principals.py apply` | merges each package's `principals.yaml`, so installing a workflow gives its identities rights of their own |
+
+**Measured**, with `packages/hello-lane` — one deterministic step, no model call, nothing the
+platform knows:
+
+```
+run_workflow.py workflows   {"hello-lane": "packages/hello-lane/workflow.yaml", "auto": …}
+start pkgtest01 hello-lane  steps [write, done]  → finished at done
+output                      {"path": "/ws/50113cc1/hello.txt", "sha256": "6d16868e…", "chars": 20}
+up.sh                       principals: hello-writer created, rules set, credential minted
+panel /api/workflows        hello-lane is startable
+```
+
+A package that is wrong is refused with the reason, never half-loaded: no manifest, a manifest
+naming a different package, a missing entry, an entry pointing outside the package. Two packages
+that declare the same principal **differently** are a reported conflict rather than a silent merge
+— two workflows quietly sharing an identity is how rights nobody meant get discovered later.
+
+**What a package may not do yet**, and is honest to say: it cannot add to the account's tool policy
+(`policy/` is still the stack's), it cannot ship its own controls into `trial_controls.py`, and its
+steps address themselves by absolute path (`/work/packages/<name>/steps/…`) rather than a variable.
+None of those stop a workflow from being installed and run; all three are worth doing when a second
+package asks for them.

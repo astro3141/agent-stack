@@ -1,0 +1,11 @@
+# The smallest thing that proves a workflow can arrive as a directory: one deterministic step and
+# a terminal one. It exists to be run on a machine whose stack has never heard of it — if this
+# runs without an edit to p281/, a real workflow can arrive the same way (OPERATIONS §27).
+name: hello-lane
+version: 0.1.0
+description: A package that proves the loader — one script step, no model calls, no logins
+entry: workflow.yaml
+requires:
+  # what the stack must be able to do for this package to be worth starting. Recording is not
+  # needed: this one writes a file and says what it wrote.
+  capabilities: []

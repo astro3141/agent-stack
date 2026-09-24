@@ -10,7 +10,7 @@ who can reach it, not what it can do: whoever reaches it controls these actions.
 Routes
   GET  /api/health
   GET  /api/config/status                 POST /api/config/generate   POST /api/config/apply
-  GET  /api/profiles
+  GET  /api/profiles                      GET /api/workflows   what may be started
   GET  /api/accounts?profile=<name>       per provider: login state, quota, account match, eligibility
   POST /api/accounts/<provider>/login     body {"login": optional}     start the official login
   GET  /api/accounts/<provider>/login?login=<name>
@@ -130,6 +130,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "agent": AGENT})
         if p == "/api/config/status":
             return self._send(200, jexec([PY, "/work/p281/cfg.py", "status"]))
+        if p == "/api/workflows":
+            return self._send(200, jexec([PY, "/work/p281/run_workflow.py", "workflows"]))
         if p == "/api/profiles":
             rc, out, _ = dexec(["sh", "-c", "ls /work/config/generated/profiles/"])
             names = [x[:-5] for x in out.split() if x.endswith(".json")]
@@ -267,7 +269,12 @@ class H(BaseHTTPRequestHandler):
             return self._send(200 if out.get("ok") else 502, out)
         if p == "/api/runs":
             wf, prof, inputs = b.get("workflow"), b.get("profile") or "research-default", b.get("inputs") or {}
-            if wf not in ("auto", "research-r", "novel-a", "trading-b", "trading-shapes") or not NAME.fullmatch(prof) or not isinstance(inputs, dict):
+            # what may be started is the runner's answer, not a second list kept here: a package
+            # installed under packages/ is startable from the panel the moment it is there
+            allowed = jexec([PY, "/work/p281/run_workflow.py", "workflows"])
+            if not isinstance(allowed, dict) or "error" in allowed:
+                return self._send(502, {"error": "could not read which workflows may be started"})
+            if wf not in allowed or not NAME.fullmatch(prof) or not isinstance(inputs, dict):
                 return self._send(400, {"error": "invalid workflow, profile or inputs"})
             # The run is started detached, so what the stack cannot do has to be found out before
             # that: a refusal after detaching would look like a run that never reported anything.
