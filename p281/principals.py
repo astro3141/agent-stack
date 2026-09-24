@@ -183,7 +183,13 @@ def cmd_apply(dry_run=False):
             "never versioned." + chr(10))
         with open(path, "a", encoding="utf-8", newline=chr(10)) as f:
             f.write(head + chr(10).join(env_lines) + chr(10))
-        os.chmod(path, 0o600)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            # a bind mount from a Windows host refuses the mode (measured: "Operation not
+            # permitted"); the file's protection is that host's, and losing a credential that
+            # Preloop has already issued over a failed chmod is the worse outcome
+            pass
     print(json.dumps({"ok": True, "declared": len(want), "changes": changes,
                       "restart_needed": bool(env_lines),
                       "note": ("new credentials are in docker/principals.env — scripts/up.sh again "

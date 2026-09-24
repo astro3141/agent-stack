@@ -132,6 +132,16 @@ if docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
     *'"ok": true'*) echo "$out" | grep -q '"changes": \[\]' || echo "== principals: $out";;
     *) echo "  WARN  the declared principals could not be applied: $out" >&2;;
   esac
+  # A credential just minted is a line in docker/principals.env, which the agent reads as
+  # environment when it starts. Without this, a fresh machine has the principals and their rules
+  # but the steps that run as them can present nothing until someone runs up.sh a second time —
+  # measured on the cold start, where the first bring-up ended with the credentials unread.
+  case "$out" in
+    *'"restart_needed": true'*)
+      echo "   new credentials — restarting the agent so it reads them"
+      (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --force-recreate agent >/dev/null 2>&1) \
+        || echo "  WARN  the agent did not restart; run scripts/up.sh again" >&2;;
+  esac
 fi
 
 # The guard's rules are a bind-mounted file, and compose does not restart a container because a

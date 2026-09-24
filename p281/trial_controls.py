@@ -1181,6 +1181,18 @@ def controls_template():
     check("signing in to a provider is not one of the script's jobs",
           "sign in to any provider" in inst, True)
 
+    # What the cold start found, each one a thing that only shows up on a second machine.
+    check("the installer reads the instance it belongs to",
+          "config/instance.env" in inst, True)
+    check("and tells Preloop's installer where to install",
+          "INSTALL_DIR=\"$PRELOOP_DIR\"" in inst, True)
+    check("and does not let it create an admin this stack will create itself",
+          "PRELOOP_SKIP_ADMIN=1" in inst, True)
+    check("a credential already issued is not lost to a failed chmod",
+          "except OSError" in src and "chmod" in src, True)
+    check("and a minted credential reaches the agent in the same bring-up",
+          "restart_needed" in up and "force-recreate agent" in up, True)
+
 
 def controls_bootstrap():
     print("")

@@ -1450,7 +1450,52 @@ and failed on the duplicate name. It now asks Preloop whether a live credential 
 env file whether a line for it exists — either missing and the pair is unusable — and it picks a
 name Preloop will accept. A control pins that the environment is not consulted.
 
-**Still not verified**: a cold start on a machine that has none of this. What is verified is each
-part — the host check here, the Preloop claim against a throwaway instance (§22), the policy and
-principals applied on every bring-up above. The whole thing end to end wants either a second
-instance beside this one or a Linux runner, and neither has been run yet.
+### The cold start, run
+
+A second instance was brought up from a **clone** — its own name (`agst2`), ports, volumes, Preloop
+install (`~/.preloop-cold`) and Preloop project, declared in its own `config/instance.env`. One
+command, `scripts/install.sh`, and this is what came out:
+
+```
+{"ok": true, "user": "owner", "secrets_file": "…/preloop-owner.env", "onboarded": true}
+== applying this stack's policy to the new instance
+  "preloop-policy:policy/b-fsmcp.yaml": "applied"
+== principals: novel-author created, credential minted; novel-reviewer created, rules set,
+               credential minted
+== services
+  ok    Preloop MCP (auth required) 401      ok    fsmcp tools exposed via Preloop  yes
+  ok    runtime may not decide approvals 403 ok    runtime may not rewrite them     403
+== logins (routing layer)
+  FAIL  claude /route login   expected true, got false      (and codex, grok, the observer)
+```
+
+Everything this stack owns came up on a machine that had none of it, including the governance: the
+reviewer on the new instance is denied the draft by the same rule, because the rule is a file.
+**The only failures are the provider logins**, which are a person's — and the stack says so instead
+of pretending.
+
+Four things it found, none of which could have been found by reasoning:
+
+1. **`install.sh` did not read `config/instance.env`.** It checked — and would have installed over
+   — the *live* instance's Preloop directory while running in the second instance's tree.
+2. **The install directory was not passed to Preloop's installer.** `--preloop-dir` was honoured by
+   the check and ignored by the install, whose own default is `~/.preloop-oss`. Both are now read
+   and passed, with `PRELOOP_SKIP_ADMIN=1` because claiming the instance is this stack's own step.
+3. **A failed `chmod` lost a credential.** Writing `docker/principals.env` on a bind mount from a
+   Windows host answers "Operation not permitted" to the mode change, and the exception came after
+   the token was written and before it was reported. The mode is now best-effort: the file's
+   protection is the host's, and losing a credential Preloop has already issued is the worse
+   outcome.
+4. **A minted credential did not reach the agent.** It is a line in an `env_file`, read when the
+   container starts, so the first bring-up ended with principals whose steps could present nothing.
+   Compose does recreate the agent when that file's contents change, and `up.sh` now also asks for
+   it explicitly when `apply` reports a mint.
+
+**Also true, and a constraint rather than a defect:** a second instance cannot be *installed* while
+the first one is running, because Preloop's own compose publishes 8000 / 8001 / 3000 with those
+numbers written in, and its installer starts the stack before any override of ours applies. The
+cold start was run with the live instance stopped (`scripts/down.sh`, then `up.sh` afterwards — all
+checks passed again). On a real second machine the question does not arise.
+
+Not verified here: Linux or macOS. Every image this stack pulls is multi-arch and the scripts guard
+their one Windows-specific call, but "guards it" is not "was run there".

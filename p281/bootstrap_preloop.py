@@ -79,7 +79,10 @@ def claim(api, username, email, bootstrap_token, secrets_file):
         f.write(f"PRELOOP_OWNER_USERNAME={username}\n")
         f.write(f"PRELOOP_OWNER_EMAIL={email}\n")
         f.write(f"PRELOOP_OWNER_PASSWORD={password}\n")
-    os.chmod(secrets_file, 0o600)
+    try:
+        os.chmod(secrets_file, 0o600)
+    except OSError:
+        pass          # a bind mount from a Windows host refuses the mode; see principals.py
     return api_key, None
 
 

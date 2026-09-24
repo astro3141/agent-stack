@@ -23,6 +23,15 @@ export MSYS_NO_PATHCONV=1
 
 CHECK_ONLY=0
 NO_PRELOOP=0
+# An instance says what it is in config/instance.env — its name, ports, and where its Preloop
+# lives. up.sh reads it; this must too, or a second instance's install would check, and then
+# install over, the live one's directory. Values already in the environment win, as there.
+if [ -f "$HERE/config/instance.env" ]; then
+  while IFS='=' read -r k v; do
+    case "$k" in ''|'#'*) continue;; esac
+    eval "[ -n \"\${$k:-}\" ]" || eval "$k=\$v"
+  done < "$HERE/config/instance.env"
+fi
 PRELOOP_DIR="${PRELOOP_DIR:-$HOME/.preloop-oss}"
 while [ $# -gt 0 ]; do
   case "$1" in
