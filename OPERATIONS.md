@@ -1798,3 +1798,39 @@ tport02  trading-port  done_cycle     7 model calls {claude 3, codex 3, grok 1}
 Lane F came back invalid, and that is the boundary doing its job: the desk lane produced no
 targets, the stack validated every lane identically and reported it. Whether an empty desk is a
 reasonable answer is the workflow's question, not this stack's.
+
+## 29. Two login lineages, and only one of them has a screen
+
+A fresh install on another machine was signed in through the panel — all three providers 연결됨 —
+and codex was still refused:
+
+```
+codex   account_mismatch: observed=None executing='email:4d34b3335abfc261'
+```
+
+Read as written, that says two different accounts. There was only ever one: **nothing had observed
+it**, because the quota observer's own codex login had not been done. The router requires that the
+account observed is the account that will execute, and an absent observation failed that test
+through the branch meant for a genuine mismatch.
+
+Two defects, both this stack's:
+
+1. **Absent was reported as mismatched.** `router.evaluate` now separates them — an observation
+   whose account is missing answers *"unknown: nothing has observed this account yet … the quota
+   observer has no login for it"*, which is also what makes the bring-up's *every provider's state
+   is knowable* catch it. The same lesson as §24: at a limit is ordinary, **not being able to tell
+   is not**, and the two must not share a sentence.
+2. **The remedy named the wrong hand.** The standing risk said "sign in again for this provider",
+   meaning the routing login, when the login that was missing lives in another container and
+   another account lineage. `ops_health.fix_for` now answers per case, with the command.
+
+**Why there are two lineages at all**, since it surprises everyone once: the routing logins under
+`/route` are what execute, and the observer has its own login so that reading quota does not share
+a credential with spending it. Claude and Grok are usually observed through the same credential
+that executes, so they survive an unconfigured observer; codex is read through it, so codex is the
+one that shows.
+
+**And a gap that stays open:** the routing logins have a path through the panel; the observer's
+does not. It is the one human step of a fresh install that exists only as a command
+(`docker exec -it $STACK-quota codex login`), which contradicts this stack's own rule that a
+decision only a person can make belongs on the screen. Written down rather than quietly tolerated.

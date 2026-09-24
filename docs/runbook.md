@@ -91,6 +91,41 @@ docker exec cadp278-agent sh -c 'CLAUDE_CONFIG_DIR=/route/claude HTTPS_PROXY=htt
 **Do:** sign in again from the panel's 계정 tab. That is a person's job — the stack will not do it
 and cannot. Then `up.sh --check` should show `0` again (OPERATIONS §24).
 
+## A fresh install: logged in, and one provider still unusable
+
+**Look:** the accounts view shows all three providers 연결됨, and one of them is refused:
+
+```
+codex   불일치   unknown: nothing has observed this account yet (executing='email:4d34…')
+                 — the quota observer has no login for it
+```
+
+**What it means.** There are **two** login lineages here, deliberately: the **routing** logins under
+`/route` that actually execute, and the **quota observer's** own login in its own container, which
+reads the provider's remaining quota. The router uses a provider only when the account that was
+observed is the account that will execute — so an observer with no login leaves that provider with
+no usable observation, however well the routing login works.
+
+Claude and Grok usually survive this because their observation comes from the same credential that
+executes. Codex is read through the observer, so it is the one that shows.
+
+**Do:**
+
+```bash
+docker exec -it "$STACK-quota" codex login      # the SAME account the routing login uses
+scripts/up.sh --check
+```
+
+A *different* account there answers `account_mismatch`, which is exactly what that check is for:
+reading one account's remaining quota and spending another's is the mistake it exists to prevent.
+
+**Not a fix:** running a workflow. The other path to a valid observation is a session the routing
+login itself leaves behind, and that needs a call the router will not admit while the provider has
+no observation — so it never happens by itself.
+
+**Still missing, and known:** the observer's login has no path through the panel, while the routing
+logins do. It is the one human step of a fresh install that only exists as a command.
+
 ## A run is going and will not end
 
 **Look:** `run_workflow.py show <id>` says `running`, and the step has not changed for a long time.

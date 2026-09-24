@@ -110,6 +110,24 @@ def soaks():
     return out[-3:]
 
 
+def fix_for(e):
+    """What to do about this particular provider, not advice in general.
+
+    A fresh install hits one of these on the first day and the two need different hands: a login
+    that expired is the operator's own provider login, and an account nobody has observed is the
+    *quota observer's* login — a separate lineage, in its own container, with no path through the
+    panel (OPERATIONS §29).
+    """
+    why = str(e.get("why") or "")
+    who = e.get("provider") or "the provider"
+    if "nothing has observed this account" in why:
+        return (f"the quota observer has no {who} login: "
+                f"`docker exec -it $STACK-quota {who} login`, with the SAME account the routing "
+                f"login uses — a different one answers account_mismatch, which is the point of it")
+    return (f"sign in again for {who} (the panel's 계정 tab, or the provider's own login "
+            f"under /route)")
+
+
 def unknowable(profile="research-default"):
     """Run the router the way a run's first step does, and report what it could not determine.
 
@@ -163,8 +181,7 @@ def risks():
                     "detail": e.get("why"),
                     "why_it_matters": "a run that needs this provider will hold, and the login "
                                       "check will still say the login is there",
-                    "what_would_fix_it": "sign in again for this provider "
-                                         "(the panel's 계정 tab, or `claude auth login` in /route)"})
+                    "what_would_fix_it": fix_for(e)})
     try:
         tok = json.load(open(glob.glob(os.path.expanduser(
             "~/.preloop/agents/*/permission_hook.json"))[0], encoding="utf-8"))["token"]

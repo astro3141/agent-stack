@@ -43,7 +43,19 @@ def evaluate(cand, obs, policy, now):
     r.update(source=obs.get("source"), observed_at=obs.get("observed_at"),
              identity_basis=obs.get("identity_basis"))
     oa, ea = obs.get("observed_account"), obs.get("executing_account")
-    if not oa or not ea or oa != ea:
+    # Absent is not mismatched. Two accounts that differ is a refusal an operator should act on;
+    # nobody having observed this account yet is a state the stack cannot determine, and saying
+    # "account_mismatch: observed=None" for it sent one reader looking for a second account that
+    # never existed. The two are separated so the bring-up's "every provider's state is knowable"
+    # catches the second (measured on a fresh install: the observer had no login yet).
+    if not oa:
+        return {**r, "eligible": False,
+                "why": "unknown: nothing has observed this account yet "
+                       f"(executing={ea!r}) — the quota observer has no login for it"}
+    if not ea:
+        return {**r, "eligible": False,
+                "why": f"unknown: no executing account for this provider (observed={oa!r})"}
+    if oa != ea:
         return {**r, "eligible": False,
                 "why": f"account_mismatch: observed={oa!r} executing={ea!r}"}
     try:

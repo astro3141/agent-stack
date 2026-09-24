@@ -1301,6 +1301,31 @@ def controls_docs():
           'PRELOOP_VERSION="${PRELOOP_VERSION:-0.15.0}"'
           in open("/work/scripts/install.sh", encoding="utf-8").read(), True)
 
+    # An observation nobody made is not two accounts disagreeing, and the remedy is a different
+    # person's hand: the observer's login, not the routing one (measured on a fresh install).
+    import importlib.util as _il
+    _spec = _il.spec_from_file_location("router_ctl", "/work/p281/router.py")
+    _r = _il.module_from_spec(_spec); sys.modules["router_ctl"] = _r; _spec.loader.exec_module(_r)
+    from datetime import datetime, timezone
+    _now = datetime.now(timezone.utc)
+    _pol = {"max_age_s": 600, "candidates": ["codex"], "limits": {}}
+    absent = _r.evaluate("codex", {"observed_account": None, "executing_account": "email:abc",
+                                   "observed_at": _now.isoformat()}, _pol, _now)["why"]
+    differ = _r.evaluate("codex", {"observed_account": "email:xyz", "executing_account": "email:abc",
+                                   "observed_at": _now.isoformat()}, _pol, _now)["why"]
+    check("an observation nobody made is unknown, not a mismatch",
+          absent.startswith("unknown:"), True)
+    check("and it says which login is missing", "quota observer" in absent, True)
+    check("two accounts that really differ are still a mismatch",
+          differ.startswith("account_mismatch:"), True)
+    oh_src = open("/work/p281/ops_health.py", encoding="utf-8").read()
+    check("the remedy is per case, with the command",
+          "def fix_for(" in oh_src and "$STACK-quota" in oh_src, True)
+    check("the runbook tells a fresh install what to do",
+          "A fresh install: logged in, and one provider still unusable" in rb
+          and '"$STACK-quota" codex login' in rb, True)
+    check("and says what does not fix it", "**Not a fix:** running a workflow" in rb, True)
+
     # The standing rules are stated where an operator will read them
     for rule in ("preloop agents onboard", "~/.claude", "0600", "in the panel, as a person"):
         check(f"the runbook states the rule about {rule}", rule in rb, True)
