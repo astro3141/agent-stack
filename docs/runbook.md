@@ -292,6 +292,25 @@ installs the permission hook (OPERATIONS §22). The console account it created i
 **It claims; it does not restore.** Approval history, principals and custodied credentials come
 back only from a backup.
 
+## After a reinstall: is anything stale?
+
+A reinstall keeps every volume — the provider logins, the agent's home, the workspace, Preloop's
+database. That is deliberate (a login is a person's, and this stack cannot redo it). What can go
+stale is the **identity**: onboarding again leaves the previous managed agent in Preloop with a live
+credential, and the previous hook file in the home.
+
+```bash
+docker exec cadp278-agent /opt/venv/bin/python /work/p281/ops_health.py   # risks name it
+docker exec cadp278-admin /opt/venv/bin/python /work/p281/principals.py list
+```
+
+The adapter presents the **newest** matching hook, so runs use the current identity. Removing the
+old one is your call: read it in the Preloop console first, and delete it there when nothing
+presents it.
+
+If you meant to start from nothing instead, that is `scripts/down.sh --volumes` — it prints exactly
+which volumes it will remove, and a person has to sign in to the providers again afterwards.
+
 ## Disk keeps growing
 
 ```bash

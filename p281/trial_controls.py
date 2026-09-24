@@ -1293,6 +1293,13 @@ def controls_packages():
     check("and which one it was is in the run's own record",
           '"hook":' in mjs.split("const out = {")[1][:400] or "hook: HOOK_FOR" in mjs, True)
     co_src = open("/work/p281/collect_obs.py", encoding="utf-8").read()
+    check("the newest identity is the one presented, not the first listed",
+          "Newest first" in mjs and "mtimeMs" in mjs, True)
+    oh2 = open("/work/p281/ops_health.py", encoding="utf-8").read()
+    check("identities that accumulate are reported, not deleted",
+          "more than one identity per agent" in oh2 and "an operator's decision" in oh2, True)
+    check("and a declared role principal is not counted as an accumulation",
+          'name.startswith("Role: ")' in oh2, True)
     check("a reading with numbers and no vendor timestamp is dated by when it was taken",
           'u.get("updatedAt") or (taken_at if wins else None)' in co_src, True)
     check("and a reading with no numbers stays undated",

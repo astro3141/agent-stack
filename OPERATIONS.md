@@ -2128,3 +2128,48 @@ lands. A workflow that wants a screen for its own decisions builds that screen.
 The pair is worth keeping side by side, because they look like the same kind of item and are not:
 one was a capability we had not provided while calling the gap a boundary; the other was a readout
 that would have pulled a domain into the platform.
+
+## 35. What a reinstall keeps, and what it quietly accumulates
+
+*"Provider logins survive a reinstall — is that a problem? And it feels as though the containers
+are not being cleaned up."* Both halves were worth measuring, and the answers are different.
+
+**The logins surviving is the design, and it is right.** A reinstall runs `install.sh` → `up.sh`,
+which never removes a volume. The provider logins (`<stack>-route-creds`), the agent's home, the
+workspace and Preloop's database are named volumes and they stay. That is deliberate: a login is a
+person's account at a third party, expensive to redo and impossible for this stack to redo at all.
+`scripts/down.sh --volumes` is the one way to remove them, it prints exactly what it will remove,
+and `backup.sh` is what carries them to another machine.
+
+**The containers are clean.** Measured on this host: eleven of ours, nine of Preloop's, one
+`preloop-oss-migrate-1` in `Exited (0)` — that is Preloop's own one-shot migration job and it is
+supposed to end. Six volumes, all named for this instance, none orphaned. `up.sh` already removes
+the services a smaller composition drops.
+
+**What does accumulate is in Preloop, and it is the interesting part.** Onboarding an agent creates
+a managed agent *and a credential for it*. Onboarding again — a reinstall, a repaired install, the
+codex onboarding §31 added — creates another and leaves the first:
+
+```
+Claude Code  7c31cb52  live credentials: 1
+Claude Code  b28ac2bb  live credentials: 1      ← same agent, two identities
+Codex CLI    f7996c80  live credentials: 1
+```
+
+Nothing breaks, and a live credential nobody knows about is exactly the kind of thing this stack
+exists to not have. Two changes:
+
+1. **The newest identity is the one presented.** A home outlives a Preloop database: claim a fresh
+   control plane with the old home in place and the agent is onboarded again, leaving the previous
+   hook beside the new one — same `source`, and a credential for an account that no longer exists.
+   §32 picked the first match by directory order, which could be the dead one. It now sorts by
+   modification time and takes the newest.
+2. **Accumulation is reported, not cleaned.** `ops_health.py` counts identities per agent and says
+   so in the panel's risk line, with what to do. Deleting an identity that something may still
+   present is an operator's decision, not a script's — and the declared role principals
+   (`Role: …`) are excluded, because one of each is exactly right for those.
+
+The pattern worth naming, since it is the third time: **a fix that adds something leaves its
+predecessor behind.** Onboarding a second vendor left two hook files (§32); claiming a fresh control
+plane leaves a stale identity; every apply of a policy that recreates a server leaves the old id in
+a cache (§28). The stack is good at adding and had no habit of asking what the previous one was for.

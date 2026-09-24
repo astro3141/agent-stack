@@ -14,7 +14,7 @@
 // (unreachable, bad response, exception) is a rejection. The acpx fallback policy is
 // deny-all, so a handler that throws or returns undefined still cannot allow.
 
-import { readFileSync, writeFileSync, mkdirSync, appendFileSync, globSync } from "node:fs";
+import { statSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, globSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import http from "node:http";
@@ -214,13 +214,20 @@ function preloopHook(provider) {
   const files = globSync(join(homedir(), ".preloop/agents/*/permission_hook.json"));
   if (!files.length) throw new Error("no Preloop permission hook in this home");
   const want = provider ? PROVIDERS[provider]?.preloopSource : null;
-  for (const f of files) {
+  // Newest first. A home outlives a Preloop database: reinstalling the control plane and claiming
+  // it again onboards the agent afresh and leaves the previous identity's hook beside the new one,
+  // with the same `source` and a credential of an account that no longer exists. Taking whichever
+  // the directory listed first would present the dead one (OPERATIONS §35).
+  const byNewest = files
+    .map((f) => { try { return { f, at: statSync(f).mtimeMs }; } catch { return null; } })
+    .filter(Boolean).sort((a, b) => b.at - a.at).map((x) => x.f);
+  for (const f of byNewest) {
     try {
       const h = JSON.parse(readFileSync(f, "utf8"));
       if (want && h.source === want) return { hook: h, file: f, matched: true };
     } catch { /* a hook that cannot be read is not the one to use */ }
   }
-  return { hook: JSON.parse(readFileSync(files[0], "utf8")), file: files[0], matched: false };
+  return { hook: JSON.parse(readFileSync(byNewest[0], "utf8")), file: byNewest[0], matched: false };
 }
 
 let HOOK_FOR = null;     // set once per run, in main(), from the provider being run

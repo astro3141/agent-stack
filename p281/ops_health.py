@@ -110,6 +110,18 @@ def soaks():
     return out[-3:]
 
 
+def _agents():
+    """Every managed agent this account has, asked of Preloop."""
+    import urllib.request as _u
+    tok = json.load(open(glob.glob(os.path.expanduser(
+        "~/.preloop/agents/*/permission_hook.json"))[0], encoding="utf-8"))["token"]
+    api = settings.runtime()["preloop"]["api_url"]
+    r = _u.Request(api + "/api/v1/agents", headers={"Authorization": "Bearer " + tok})
+    with _u.urlopen(r, timeout=20) as x:
+        d = json.loads(x.read())
+    return d if isinstance(d, list) else (d.get("items") or [])
+
+
 def fix_for(e):
     """What to do about this particular provider, not advice in general.
 
@@ -182,6 +194,30 @@ def risks():
                     "why_it_matters": "a run that needs this provider will hold, and the login "
                                       "check will still say the login is there",
                     "what_would_fix_it": fix_for(e)})
+    # Identities that accumulate. Onboarding an agent creates a managed agent in Preloop and a
+    # credential for it; doing it again — a reinstall, a repaired install — creates another and
+    # leaves the first, each with a live credential. Nothing breaks, and a credential nobody knows
+    # about is not something to discover later (OPERATIONS §35). Reported, not deleted: removing an
+    # identity that something may still present is an operator's decision.
+    try:
+        rows = _agents()
+        seen = {}
+        for a in rows:
+            name = str(a.get("display_name") or "")
+            if name.startswith("Role: "):
+                continue                     # a role principal is declared, and one of each
+            seen.setdefault(name, []).append(a)
+        extra = {n: len(v) for n, v in seen.items() if len(v) > 1}
+        if extra:
+            out.append({"risk": "more than one identity per agent in Preloop",
+                        "detail": ", ".join(f"{n}: {c}" for n, c in sorted(extra.items())),
+                        "why_it_matters": "each carries a live credential, and only the newest is "
+                                          "the one this stack presents",
+                        "what_would_fix_it": "read them with `principals.py list` and the Preloop "
+                                             "console, and delete the ones nothing uses"})
+    except Exception:
+        pass
+
     try:
         tok = json.load(open(glob.glob(os.path.expanduser(
             "~/.preloop/agents/*/permission_hook.json"))[0], encoding="utf-8"))["token"]
