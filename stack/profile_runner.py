@@ -64,9 +64,15 @@ class H(BaseHTTPRequestHandler):
         # evidence path carry it, so it is a filename-safe token, not a role name
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}", str(job.get("label") or "")):
             return self._send(400, {"error": "invalid label"})
-        for k in ("expected", "run_id", "profile_name"):
+        for k in ("run_id", "profile_name"):
             if not SAFE.fullmatch(str(job.get(k) or "")):
                 return self._send(400, {"error": f"invalid {k}"})
+        # `expected` is a path relative to the run's workspace, and a workflow may keep it in a
+        # subdirectory (devflow writes devflow/research.json — refused here as "invalid expected"
+        # until this allowed the separator). Relative, and never stepping out of the workspace.
+        exp = str(job.get("expected") or "")
+        if not re.fullmatch(r"[A-Za-z0-9._\- /]{1,200}", exp) or exp.startswith("/") or ".." in exp:
+            return self._send(400, {"error": "invalid expected"})
         prompt = str(job.get("prompt") or "")
         if not prompt or len(prompt) > 200000:
             return self._send(400, {"error": "prompt text is required (and bounded)"})
