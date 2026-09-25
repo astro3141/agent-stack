@@ -2982,3 +2982,41 @@ ACP-handed path needs a real run, not a handshake.
 **What is worth keeping from this beyond grok**: a vendor limitation recorded once is an assumption
 from then on, and this one survived three months and two rewrites of the thing it constrained. The
 adapter says it in a comment, the docs repeat it, and nothing re-asked the CLI until someone did.
+
+## 50. Grok takes a principal, and a confined role needs a login of its own
+
+§49 ended with "not built": if grok can be handed an MCP server over ACP, it can take a principal,
+and per-role rights and egress reach it. Built now, and measured on real calls.
+
+**Grok takes a principal.** The adapter hands the server over ACP — under the same name its own
+configuration uses — with that principal's credential, instead of refusing the request:
+
+```
+grok, principal novel-reviewer, "write {WS}/review_r7.json"     COMPLETED, produced: true,
+                                                                approvals_requested: 0
+grok, principal novel-reviewer, "write {WS}/zz_not_allowed.json"  DENIED, mcp_rule_denials: 1
+```
+
+The second line is the one that matters: `novel-reviewer` may write `review_r*` and nothing else, and
+that is the rule set that decided. Had grok been using the credential in its own config file — the
+reason a principal was refused for three months — a different rule set would have answered.
+
+**And a confined role needs a login of its own.** §48 made this a codex-specific rule on the strength
+of a codex-specific error. It is not about the vendor:
+
+| | what the CLI does with its credential file |
+|---|---|
+| codex | sets its mode when it starts — `chmod` on a file you do not own is EPERM |
+| grok | reads an `auth.json` it keeps at `0600`, so a role cannot even read it |
+| all three | **rewrite it when the token refreshes** |
+
+That last row is the finding. An operator can grant the roles group access to a shared login, and it
+works — until the vendor refreshes the token and writes the file back at `0600`, owned by whoever
+ran it. Measured exactly that way: grok's `auth.json` had group access in the morning and came back
+`-rw-------` in the afternoon, and the role's step failed with `Permission denied.` So the rule in
+the runner is now general — a step that would run as a role's uid is allowed when that role owns the
+login, and refused otherwise, with the fix in the refusal.
+
+Sharing is the trap, because it works at first. Owning is the arrangement.
+
+**508/508 controls.**

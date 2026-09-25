@@ -65,12 +65,14 @@ if principal and not os.environ.get("AGENTSTACK_ROLE"):
                     if principal in role_egress.declared() else None)
     except Exception:
         role_uid = None
-    # Whether a role may run this step is a fact about the login, not about the vendor
-    # (OPERATIONS §48). The Codex CLI sets the mode of its own credential file on startup, and
-    # chmod on a file you do not own is EPERM — which is the whole of "codex cannot run as a role".
-    # A role that has a login of its own runs codex exactly like anything else: measured, COMPLETED.
-    # Claude does not chmod, so it runs on a shared login. The check is on the file, not the name.
-    if role_uid and provider == "codex":
+    # A confined role needs a **login of its own**, and this is not a rule about one vendor
+    # (OPERATIONS §50). Every one of these CLIs owns its credential file: codex sets its mode when
+    # it starts (chmod on a file you do not own is EPERM), grok reads an auth.json it keeps at 0600,
+    # and all of them rewrite it when the token refreshes — which resets whatever group access an
+    # operator granted. Measured: grok's auth.json came back 0600 owned by the launcher after a
+    # refresh, so a role sharing that login works until the next one and then stops. Sharing is the
+    # trap; owning is the arrangement.
+    if role_uid:
         login_dir = f"{RT['paths']['logins_root']}/{login}"
         try:
             owner = os.stat(login_dir).st_uid
@@ -82,12 +84,12 @@ if principal and not os.environ.get("AGENTSTACK_ROLE"):
                 "run_id": run_id, "workspace": ws, "produced": False, "produced_stale": False,
                 "evidence_dir": evid, "profile": prof_name, "attempts": 0,
                 "failure": f"{principal} declares egress of its own, so this step runs as that "
-                           f"role's uid — and the codex login {login!r} belongs to "
+                           f"role's uid — and the login {login!r} belongs to "
                            f"{'uid ' + str(owner) if owner is not None else 'nobody: it is not there'}. "
-                           "The Codex CLI sets the mode of its credential file when it starts, and "
-                           "chmod on a file you do not own is refused. Give this role a login of "
-                           f"its own — connect one named for it and run this step on it — or drop "
-                           "the role's egress declaration (OPERATIONS §48).",
+                           "These CLIs own their credential files: they set the mode, and they "
+                           "rewrite it on every token refresh, so group access granted by hand "
+                           "lasts until the next one. Connect a login named for this role and run "
+                           "the step on it, or drop the role's egress declaration (§50).",
                 "measurements": {}}))
             raise SystemExit(0)
     if role_uid and os.path.exists("/usr/local/bin/role-exec"):

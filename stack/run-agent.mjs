@@ -198,6 +198,8 @@ const PROVIDERS = {
     // /route/grok/config.toml (docs/record/OPERATIONS.md), which is also why `mcp_principal` cannot apply
     // here: Grok reads the credential from that file, not from what the adapter passes.
     mcpAuthFromFile: true,
+    // Without a principal this is still true: the server it uses is the one in its config file.
+    // With one, the adapter hands it a server over ACP instead (§49), and this is not reached.
     mcpAuth() { throw new Error("grok reads its Preloop credential from its own config file"); },
     disableNative() { return {}; },
     // Grok did not connect an MCP server handed over ACP (no connection attempt in its log;
@@ -343,12 +345,13 @@ async function main() {
   // Preloop rules decide; the vendor's native write/shell tools are removed where the vendor
   // allows it, and whatever remains still escalates to Preloop approval.
   const mcpOnly = req.native_tools === false;
-  // A role may present a principal of its own. Refused where the vendor reads its credential
-  // from its own config file (Grok), because the adapter cannot substitute it for one call.
+  // A role may present a principal of its own. A vendor that keeps its Preloop credential in its own
+  // config file cannot have that file rewritten per call — but it can be *handed* a server over ACP
+  // with the principal's credential, which is a different thing and was refused here for three
+  // months on the strength of a measurement that had gone stale (OPERATIONS §49): grok 1.0.40
+  // advertises `mcpCapabilities: {http: true}`, connects to a server handed to it, and completes the
+  // Preloop handshake. So a principal is allowed, and the server travels with the call.
   PRINCIPAL = req.mcp_principal || null;
-  if (PRINCIPAL && prof.mcpAuthFromFile) {
-    throw new Error(`mcp_principal is not supported for ${req.provider}: its Preloop credential comes from its own config file`);
-  }
   if (PRINCIPAL && !mcpOnly) {
     throw new Error("mcp_principal requires native_tools=false: without it the run does not go through the Preloop MCP server");
   }
@@ -358,9 +361,14 @@ async function main() {
   const direct = req.model_route === "direct" || !!prof.directOnly;
   if (direct && !prof.directEnv) throw new Error(`no direct route for ${req.provider}`);
   const routeEnv = direct ? prof.directEnv() : {};
-  const mcpServers = mcpOnly && !prof.mcpViaConfig ? [{
+  // Handed over ACP when the vendor takes it that way, and *also* when a principal is named and the
+  // vendor would otherwise read its own file: that is the only way this call's rights differ from
+  // the login's. The name is the same one its configuration uses, so a vendor that has both sees one
+  // server under one name rather than two answering for the same thing.
+  const handOver = mcpOnly && (!prof.mcpViaConfig || (PRINCIPAL && prof.mcpAuthFromFile));
+  const mcpServers = handOver ? [{
     type: "http", name: "preloop", url: PRELOOP_MCP_URL,
-    headers: [{ name: "Authorization", value: prof.mcpAuth() }],
+    headers: [{ name: "Authorization", value: PRINCIPAL ? principalAuth(PRINCIPAL) : prof.mcpAuth() }],
   }] : undefined;
 
   const runtime = createAcpRuntime({

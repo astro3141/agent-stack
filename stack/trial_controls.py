@@ -1343,13 +1343,22 @@ def controls_role_egress():
     # vendor: that CLI sets the mode of its own credential file, and chmod on a file you do not own
     # is refused. A role with a login of its own runs it; a role on the shared login is told so.
     at6 = open("/work/stack/steps/agent_task.py", encoding="utf-8").read()
-    check("the rule is the login's owner, not the provider's name",
-          ('if role_uid and provider == "codex"' in at6
+    check("the rule is the login's owner, and it is not about one vendor",
+          ("if role_uid:" in at6 and 'provider == "codex"' not in at6
            and "os.stat(login_dir).st_uid" in at6 and "owner != role_uid" in at6), True)
+    check("and it says why sharing a login is not an option",
+          "rewrite it on every token refresh" in at6, True)
     check("and a step it refuses is refused, not quietly run on the shared allowlist",
           "raise SystemExit(0)" in at6.split('owner != role_uid')[1][:1400], True)
     check("the refusal says how to fix it, not only that it failed",
-          "Give this role a login of" in at6, True)
+          "Connect a login named for this role" in at6, True)
+    # a principal may now travel with the call even where the vendor keeps its own credential file
+    ra = open("/work/stack/run-agent.mjs", encoding="utf-8").read()
+    check("a principal is no longer refused for a vendor that reads its own config file",
+          "mcp_principal is not supported for" in ra, False)
+    check("its credential is handed over ACP instead, under the same server name",
+          ("PRINCIPAL && prof.mcpAuthFromFile" in ra
+           and "PRINCIPAL ? principalAuth(PRINCIPAL) : prof.mcpAuth()" in ra), True)
 
     src5 = open("/work/docker/agent.Dockerfile", encoding="utf-8").read()
     check("only one program may change user, and only for the roles group",
