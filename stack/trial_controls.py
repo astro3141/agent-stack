@@ -1328,6 +1328,16 @@ def controls_role_egress():
         re_.declared = reader
     check("a role that declares nothing at all is not given a uid",
           "zz-none" in re_.plan()["roles"], False)
+    # a role whose declaration was taken back out keeps its uid in the map — so that a uid never
+    # moves — and must stop being treated as confined, or every step of it is refused
+    check("the map keeps a role whose declaration was withdrawn",
+          set(re_.assignment(persist=False)) >= set(re_.declared()), True)
+    at7 = open("/work/stack/steps/agent_task.py", encoding="utf-8").read()
+    check("but what a role declares now is what decides the step",
+          "if principal in role_egress.declared() else None" in at7, True)
+    check("and asking for the plan never writes the map",
+          "assignment(persist=False)" in open("/work/stack/role_egress.py", encoding="utf-8").read(),
+          True)
 
     # a step that would be confined and cannot be is refused by name, not left to a vendor error
     at6 = open("/work/stack/steps/agent_task.py", encoding="utf-8").read()

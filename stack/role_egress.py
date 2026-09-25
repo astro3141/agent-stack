@@ -70,8 +70,11 @@ def declared():
     return out
 
 
-def assignment():
+def assignment(persist=True):
     """{role: {uid, port}} — stable across bring-ups, because it is written down once.
+
+    `persist=False` computes what the assignment would be without recording it: only a bring-up
+    (`write`) records, so asking never changes the answer.
 
     Assigning by position in a sorted list would move a role's uid the day another role is added,
     and every file that role owns would stop being its own. So the map is persisted and only ever
@@ -94,7 +97,7 @@ def assignment():
         used_uid.add(uid)
         used_port.add(port)
         changed = True
-    if changed:
+    if changed and persist:
         os.makedirs(GEN, exist_ok=True)
         with open(path, "w", encoding="utf-8", newline=chr(10)) as f:
             json.dump(cur, f, indent=1, sort_keys=True)
@@ -102,7 +105,9 @@ def assignment():
 
 
 def plan():
-    d, a = declared(), assignment()
+    # a question, not a change: `plan` never writes the map. A control that asks what the plan would
+    # be for a made-up role wrote that role into this instance's real assignment (measured).
+    d, a = declared(), assignment(persist=False)
     rows = {}
     for role, hosts in sorted(d.items()):
         m = a.get(role) or {}

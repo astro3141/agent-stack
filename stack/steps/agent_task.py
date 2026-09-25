@@ -57,7 +57,12 @@ if principal and not os.environ.get("AGENTSTACK_ROLE"):
     try:
         sys.path.insert(0, "/work/stack")
         import role_egress
-        role_uid = (role_egress.assignment().get(principal) or {}).get("uid")
+        # what this role declares *now*. The uid map is kept across bring-ups on purpose — a role's
+        # uid must not move — so it still holds roles that have since dropped their declaration, and
+        # reading it as "is this role confined" refused every step of such a role (measured: a
+        # reviewer whose declaration had been taken back out).
+        role_uid = ((role_egress.assignment().get(principal) or {}).get("uid")
+                    if principal in role_egress.declared() else None)
     except Exception:
         role_uid = None
     # Measured per vendor (OPERATIONS §48): the Claude CLI runs as a role, the Codex CLI builds its
