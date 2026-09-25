@@ -1,0 +1,15 @@
+# H1 (OPERATIONS §51): one egress *profile*, served by its own proxy container on its own
+# network. Inside a profile's agent container, the name `egress` resolves to THIS proxy and
+# nothing else is routable — the network is the identity, no credential involved.
+# the providers, and nothing else
+^chatgpt\.com$
+^auth\.openai\.com$
+^api\.openai\.com$
+^api\.anthropic\.com$
+^platform\.claude\.com$
+^console\.anthropic\.com$
+^claude\.ai$
+^auth\.x\.ai$
+^accounts\.x\.ai$
+^api\.x\.ai$
+^cli-chat-proxy\.grok\.com$

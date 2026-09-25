@@ -3092,3 +3092,48 @@ not an assumption. And one boundary stays stated: if a compromised role must not
 role's *vendor* token, same-uid cannot deliver that — that requirement, if it arrives, is §47's
 container boundary, knowingly.
 
+## 52. H1 slice 1: the substrate holds
+
+Built and measured the same day §51 was written. Two egress profiles, each a Docker network with
+exactly two members: a tinyproxy carrying that profile's list, aliased `egress`, and a sibling
+agent container — same image, same volumes, same uid 1000, same HOME, no `principals.env`. Nothing
+in `stack/` changed: inside a profile, the name `egress` *is* the profile, so every step, CLI and
+adapter keeps today's configuration and lands on the profile's list.
+
+Measured from inside both siblings:
+
+```
+                              probe (example.com + providers)   closed (providers only)
+uid / user / HOME             1000 / agent / /home/agent         same
+example.com                   200                                000  denied
+api.github.com (shared list   000  denied                        000  denied
+ has it open)
+providers baseline            reached                            reached
+the shared proxy              no route                           no route
+direct internet               no route                           no route
+PRELOOP_MCP_* in env          0                                  0
+claude auth status            loggedIn: true                     —
+codex login status            Logged in using ChatGPT            —
+grok auth.json                readable                           —
+```
+
+Three §48-era problems are gone **by construction** rather than by rule: no chmod on another uid's
+file (there is no other uid), no 0600 auth file a role cannot read (same owner), no refresh
+rewriting permissions out from under anyone (the writer is the owner everywhere). The per-role
+proxy credential is gone too — the network is the identity, so there is nothing to steal and
+nothing for §46's environ-reading to take. And the isolation objects count as the *profiles* do:
+two policies, two networks, ~14 MB of proxies.
+
+**What slice 1 does not answer**, held for slice 2:
+
+* **Dispatch**: a step of profile A must not be able to start work in profile B's container. The
+  siblings have no Preloop and no docker socket, and nothing listens in them yet — dispatch does
+  not exist, so today this holds vacuously. The supervisor design (§51) is the real answer.
+* **Preloop from inside a profile**: tool calls need the MCP endpoint, which lives on the governed
+  network. A `services` network carrying Preloop-guard and MLflow — and *not* any egress proxy —
+  is the intended shape, so a profile's internet stays its own while its tools stay governed.
+* **A real model step end to end**, and refresh observed over days rather than asserted.
+
+`up.sh` integration, controls and the role→profile mapping in `principals.yaml` follow once slice 2
+confirms the shape. The uid-based mechanism from §48 keeps running beside this until then.
+
