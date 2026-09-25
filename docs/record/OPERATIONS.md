@@ -3020,3 +3020,75 @@ login, and refused otherwise, with the fix in the refusal.
 Sharing is the trap, because it works at first. Owning is the arrangement.
 
 **508/508 controls.**
+
+## 51. H1: network identity without file identity — the review that pulled a conclusion back
+
+A review of §46–§50 found the chain **egress isolation → uid separation → per-role vendor login**
+one arrow too long: the first arrow was never proven. The requirement was per-role *network*
+identity; the design reached for uid separation to protect a proxy credential, and the uid dragged
+the vendor's *file* identity — and therefore the login — along with it. What §48–§50 actually
+proved is narrower and still stands: **different uids cannot co-manage one vendor auth file**
+(codex chmods it, grok keeps it 0600, all three rewrite it on refresh). That is a fact about
+sharing auth across uids, not a fact about egress.
+
+**The three axes, separated properly** (the review's model, adopted):
+
+| axis | identity | held by |
+|---|---|---|
+| vendor | one shared OS login, uid 1000, one HOME | the login directory, as today |
+| Preloop | the logical role principal | a **trusted adapter/supervisor** — never the step's environment |
+| network | an egress *profile* | whatever namespaces the traffic |
+
+Two corollaries. Roles map to egress **profiles**, and the isolation objects number as the profiles
+do — twenty roles over three policies is three objects, not twenty. And the principal credential
+must stop travelling as container-wide environment: §46 already measured that same-uid processes
+read each other's environment, so possession of `PRELOOP_MCP_*` proves nothing about who a step is.
+Role identity should be **assigned at spawn** by the supervisor, not claimed by credential.
+
+**Constraints measured today, before adopting the implementation:**
+
+* **A netns cannot be made inside the governed container.** `unshare -n` is EPERM even as root:
+  the bounding set (`a80425fb`) carries neither `SYS_ADMIN` nor `NET_ADMIN`, deliberately. So
+  "`ip netns exec` per profile" translates, in this stack, to **a Docker network per profile with a
+  thin sibling agent container attached to it** — a Docker network *is* a netns, created by the
+  daemon's privilege rather than by a capability grant to the governed runtime. Same image, same
+  volumes, same uid, same HOME; only the network differs. The §47 costing ("a container per class")
+  was priced per role-class before the cardinality point; per profile it is two or three.
+* **`ptrace_scope` is 0** in this kernel — which is *why* the §46 environ measurement came out the
+  way it did. With Yama at 1, same-uid siblings cannot read each other's environment (descendants
+  only). A host-level knob for the whole WSL VM, so noted as hardening, not flipped in passing.
+* **The shipped codex binary supports `cli_auth_credentials_store`: `keyring`, `ephemeral`** (0.155.1,
+  measured by symbol presence). §48's "codex must own its login" was a fact about the `file`
+  backend, generalized too far. Headless usability of the other backends: unmeasured.
+
+**Retractions and freezes:**
+
+* *Retracted:* "separate logins give separate vendor sessions and separate quota" (§50). OAuth
+  sessions on one account share that account's allowance; separate quota needs a separate account
+  or budget identity, not a separate refresh token.
+* *Downgraded to unmeasured:* "copying a login invalidates the original via refresh-token
+  divergence" (§48) — a reasonable fear, asserted, never measured, and vendor-specific.
+* *Frozen, scoped:* the §48/§50 ownership rule and the §46–§47 "a route or a uid are the only real
+  arrangements" conclusions hold **for the uid-based design**, which is no longer the presumed
+  design. The uid mechanism stays in place and passing (508/508) until H1 replaces or confirms it.
+
+**H1, adopted as the next experiment.** Same uid and HOME and vendor login for every role; egress
+by profile-attached execution; principals held by the adapter, assigned at spawn. Acceptance:
+
+```
+same uid / same vendor auth                              PASS required
+author → its profile's hosts / anything else             PASS / DENY
+reviewer → its profile's hosts / anything else           PASS / DENY
+principal secret in step env or on shared filesystem     NONE
+reviewer claiming author's principal                     DENY
+codex / claude / grok token refresh under this shape     PASS
+```
+
+The open problem H1 must answer honestly: **dispatch authentication.** With one uid, "which profile
+does this step run in" is decided by whoever launches it, and a step must not be able to launch
+work into a wider profile than its own. Spawn-time binding (inherited descriptors, the supervisor
+choosing the target) is the shape; whether it holds at ptrace_scope 0 is part of the measurement,
+not an assumption. And one boundary stays stated: if a compromised role must not read another
+role's *vendor* token, same-uid cannot deliver that — that requirement, if it arrives, is §47's
+container boundary, knowingly.
+
