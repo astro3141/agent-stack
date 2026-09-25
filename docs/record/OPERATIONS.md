@@ -2741,3 +2741,58 @@ not trade a property away.
 is confined to it. Writing it down is the honest half: the allowlist is a property of the network, so
 until an isolation class has a network, "this workflow may reach only these domains" is a sentence
 about intent.
+
+## 47. Per-role domains: measured in miniature, not built
+
+§46 said per-workflow domains are a sentence about intent. The reply was the right instinct: make it
+**per role** — a workflow already names a role per step (`story=codex:novel-reviewer`), so the role's
+list is inherited by whatever workflow uses it, and the stack keeps one identity model instead of two.
+And the mechanism proposed was a uid per role. Almost: the uid is half of it, and not the half the
+proxy sees.
+
+**What the proxy can see, measured.** A second tinyproxy in the same egress container, its own port,
+its own filter file, its own `BasicAuth`:
+
+```
+role-a proxy, no credential        api.anthropic.com   000   refused
+role-a proxy, with its credential  api.anthropic.com   404   reached (the API answering)
+role-a proxy, with its credential  api.github.com      000   refused — not on role-a's list
+the shared proxy                   api.github.com      200   open to everything, as §45 says
+```
+
+So the unit the proxy understands is **a credential on a port**, not a uid: every process in the
+agent shares one container IP, and that is all a proxy learns from a connection. One tinyproxy per
+role, because a single instance has one global `Filter` and one global `BasicAuth` — it cannot give
+two users two lists.
+
+**What the uid is for, measured.** It is what makes that credential unstealable. §46's hole was that
+every step runs as uid 1000 and `/proc/<pid>/environ` is readable across processes. With a uid per
+role:
+
+```
+$ setpriv --reuid=1001 … env ROLEA_PROXY=… sleep 20      # a step running as role-a
+$ setpriv --reuid=1002 … head -c 60 /proc/<that pid>/environ
+head: cannot open '/proc/21/environ' for reading: Permission denied
+$ setpriv --reuid=1001 … head -c 24 /proc/<that pid>/environ
+HOSTNAME=… (its own)
+```
+
+Together they are enforcement: the proxy refuses what a role did not ask for, and no other role can
+take the credential that gets past the proxy.
+
+**The trade, stated plainly.** `setpriv` needs privilege to drop it, so the agent container would
+have to **start as root** — this image ends `USER agent` today and deliberately so. The mitigation is
+structural rather than promised: nothing runs as root but the launcher, every step is dropped to a
+role uid, and the **role→uid map is the platform's** (`config/principals.yaml`), so a package can
+only *name* a role and can never ask for root. Set against what exists now — one uid for every step,
+with every role's credential in one environment — the steps end up more confined, not less. But it is
+a property traded for a property, and that is the decision to make before building it.
+
+**What building it is.** Per-role `egress:` in `config/principals.yaml` beside `tool_rules`; a uid
+per declared role in the image; a root entrypoint that launches each step under `setpriv`; one
+tinyproxy per role generated from those lists, with the shared listener cut back to the provider
+baseline; the adapter injecting the role's proxy into that step's process environment; and controls
+that *measure* it — role A cannot reach role B's host, cannot read role B's credential, and a role
+with no list reaches nothing but the providers.
+
+Nothing above is installed. The two measurements are here so the design is not a guess.
