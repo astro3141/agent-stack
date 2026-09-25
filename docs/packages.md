@@ -220,6 +220,31 @@ takes care not to build. Declaring it does not make it a precondition either —
 and your step refuses at the point of use, because only it knows whether *this* run needs the
 credential at all (trading declares KIS's keys; `trading-b` never touches them).
 
+### When the credential has a login flow
+
+A value the operator holds — an app key, a personal token — goes in the file above. A credential you
+get by **authorising** something does not have to: declare the flow and the panel drives it exactly
+the way it drives a provider's login (OPERATIONS §44).
+
+```yaml
+login:
+  purpose: one line, shown on the screen
+  argv: [gh, auth, login, --hostname, github.com, --web]   # a program and its arguments
+  home_env: [GH_CONFIG_DIR]      # pointed at this login's own directory
+  done_when: {file: hosts.yml}   # connected when this is there
+```
+
+The platform runs that argv under a pseudo-terminal in the agent, through the allowlist proxy, reads
+the URL and the device code off its output, hands back the one-time code the operator pastes —
+through a FIFO, never to disk, never logged — and calls it connected when your file appears.
+**Nothing here ever opens that file**: whatever the flow mints is written by the thing that ran it,
+and read back only by your steps, through `home_env`.
+
+Two limits worth knowing. The program has to exist in the governed runtime image, so this is for a
+CLI the stack already carries or a step of your own (`packages/hello-lane/steps/login.py` is a worked
+example, and the reason the mechanism is measured rather than described). And `argv` is a list of
+plain arguments — a shell line is refused, not escaped.
+
 The stack does not hold them for you and does not ask for them: a composition without the file
 simply cannot run what needs it. Your step reads `os.environ`, and when the value is not there it
 **refuses with a hint that names the file** rather than failing halfway

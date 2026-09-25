@@ -79,6 +79,8 @@ def described():
     try:
         import packages
         needs = packages.needs_env()
+        logins = {p["name"]: packages.login_of(p["name"])
+                  for p in packages.installed().values() if p["usable"]}
         owner = {w: p["name"] for p in packages.installed().values() if p["usable"]
                  for w in (p.get("entries") or {})}
     except Exception:
@@ -88,7 +90,9 @@ def described():
         row = {"path": rel, "description": "", "inputs": [],
                # what the package this workflow belongs to needs in the environment, and whether it
                # is there. Names and presence only — the panel shows it and never offers entry.
-               "needs_env": needs.get(owner.get(name), [])}
+               "needs_env": needs.get(owner.get(name), []),
+               # the official login this workflow's package declares, if it has one (§44)
+               "login": (logins.get(owner.get(name)) or None)}
         try:
             d = yaml.safe_load(open(f"/work/{rel}", encoding="utf-8")) or {}
             w = d.get("workflow") or {}

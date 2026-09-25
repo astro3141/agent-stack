@@ -1,10 +1,16 @@
 """Account connection for the routing layer — run inside the agent container, driven by the ops API.
 
 usage:
-  login_helper.py start  <provider> [login-name]   start the provider's official login in the background
-  login_helper.py status <provider> [login-name]   JSON: state, url, user_code, needs_code, account
-  login_helper.py code   <provider> [login-name]   read an authorization code on stdin, hand it to the login
-  login_helper.py cancel <provider> [login-name]
+  login_helper.py start  <target> [login-name]   start the official login in the background
+  login_helper.py status <target> [login-name]   JSON: state, url, user_code, needs_code, account
+  login_helper.py code   <target> [login-name]   read an authorization code on stdin, hand it to the login
+  login_helper.py cancel <target> [login-name]
+
+  <target> is a provider (claude | codex | grok) or `pkg:<name>` — a package that declares an
+  official login of its own (OPERATIONS §44). The same guarantees either way: an argv list is
+  executed, never a shell; a one-time code goes through a FIFO and is never written to disk or
+  logged; and whatever credential the flow mints is written by the thing that ran it, into that
+  login's own directory, which nothing here reads.
 
 The provider's own CLI runs under a pseudo-terminal, through the allowlist proxy, into the
 routing layer's login directory (<logins_root>/<login-name>). Its output is parsed for the
@@ -23,9 +29,26 @@ STATE_DIR = LOGINS / ".logins"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
 
 
+def package_login(target):
+    """The declaration behind a `pkg:<name>` target, or None."""
+    if not str(target).startswith("pkg:"):
+        return None
+    sys.path.insert(0, "/work/stack")
+    import packages
+    return packages.login_of(target[4:]) or None
+
+
 def provider_cmd(provider, home):
-    """The provider's official login command and environment. Nothing else is ever executed."""
+    """The official login command and environment. Nothing else is ever executed."""
     env = {**os.environ, **settings.egress_env(RT)}
+    pkg = package_login(provider)
+    if pkg:
+        # the package's own argv, with the environment variables it named pointed at this login's
+        # directory. A shell is never involved and nothing is interpolated into the arguments.
+        env.update({k: str(home) for k in pkg["home_env"]})
+        env["HOME"] = str(home / "home")
+        (home / "home").mkdir(parents=True, exist_ok=True)
+        return list(pkg["argv"]), env
     if provider == "claude":
         env["CLAUDE_CONFIG_DIR"] = str(home)
         return ["claude", "auth", "login", "--claudeai"], env
@@ -42,6 +65,11 @@ def provider_cmd(provider, home):
 def account_status(provider, home):
     """Whether the login directory holds a working login, and a non-reversible account label."""
     env = {**os.environ, **settings.egress_env(RT)}
+    pkg = package_login(provider)
+    if pkg:
+        # what the package said it writes when the flow worked. Existence only: this never opens it.
+        f = home / pkg["done_when_file"]
+        return {"logged_in": f.is_file() and f.stat().st_size > 0, "plan": None}
     try:
         if provider == "claude":
             r = subprocess.run(["claude", "auth", "status"], env={**env, "CLAUDE_CONFIG_DIR": str(home)},
@@ -77,9 +105,11 @@ def parse(text, provider):
             url = u; break
     code = None
     m = re.search(r"\b([A-Z0-9]{4}-[A-Z0-9]{4,6})\b", t)
-    if m and provider in ("codex", "grok"):
+    pkg = str(provider).startswith("pkg:")
+    if m and (provider in ("codex", "grok") or pkg):
         code = m.group(1)
-    needs_code = provider == "claude" and bool(re.search(r"(?i)paste|enter.*code|authorization code", t))
+    asks = bool(re.search(r"(?i)paste|enter.*code|authorization code", t))
+    needs_code = asks and (provider == "claude" or pkg)
     ok = bool(re.search(r"(?i)successfully logged in|signed in as|login successful|logged in", t))
     return {"url": url, "user_code": code, "needs_code": needs_code, "success_text": ok}
 
@@ -184,9 +214,14 @@ def cmd_cancel(provider, login):
 if __name__ == "__main__":
     os.umask(0o077)   # login state and output: readable by the agent user only
     action, provider = sys.argv[1], sys.argv[2]
-    login = sys.argv[3] if len(sys.argv) > 3 else provider
-    if provider not in ("claude", "codex", "grok") or not re.fullmatch(r"[a-z0-9-]{1,40}", login):
-        print(json.dumps({"error": "invalid provider or login name"})); sys.exit(2)
+    login = sys.argv[3] if len(sys.argv) > 3 else provider.replace("pkg:", "pkg-")
+    ok_target = provider in ("claude", "codex", "grok") or (
+        re.fullmatch(r"pkg:[a-z][a-z0-9-]{1,39}", provider) and package_login(provider) is not None)
+    if not ok_target or not re.fullmatch(r"[a-z0-9-]{1,40}", login):
+        print(json.dumps({"error": "unknown login target",
+                          "rule": "a provider (claude | codex | grok), or pkg:<name> for an "
+                                  "installed package that declares `login:` in its manifest"}))
+        sys.exit(2)
     out = {"start": cmd_start, "status": cmd_status, "code": cmd_code, "cancel": cmd_cancel}[action](provider, login)
     if out is not None:
         print(json.dumps(out))

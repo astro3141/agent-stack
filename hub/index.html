@@ -504,17 +504,41 @@ function renderInputs() {
   // purpose: the value is the operator's, it goes in a git-ignored file on the host, and this panel
   // neither reads it nor offers a box to type it into (OPERATIONS §43).
   const needs = wf.needs_env || [];
+  const lg = wf.login || null;
   $("#wf-needs").innerHTML = needs.length === 0 ? "" :
     `<div>이 패키지가 환경에서 필요한 것 — 값은 호스트의 파일에, 이 화면은 유무만 봅니다</div>` +
     needs.map((n) =>
       `<div>${n.present ? "있음" : "<b>없음</b>"} <code>${esc(n.name)}</code> ` +
-      `<span class="muted">${esc(n.file)}${n.purpose ? " — " + esc(n.purpose) : ""}</span></div>`).join("");
+      `<span class="muted">${esc(n.file)}${n.purpose ? " — " + esc(n.purpose) : ""}</span></div>`).join("")
+    + (lg ? `<div>이 패키지는 자체 로그인을 선언합니다 <span class="muted">${esc(lg.purpose || "")}</span>
+         <button class="sub" id="pkg-login" data-pkg="${esc(lg.package)}">연결</button>
+         <span id="pkg-login-state" class="muted"></span></div>` : "");
+  if (lg) { pkgLoginState(lg.package); $("#pkg-login").onclick = () => pkgLogin(lg.package); }
   $("#wf-inputs").innerHTML = (wf.inputs || []).map((i) =>
       `<div class="row">${esc(i.name)} <input data-k="${esc(i.name)}" value="${esc(i.default)}">` +
       (i.description ? ` <span class="muted">${esc(i.description)}</span>` : "") + `</div>`).join("")
     || `<div class="muted">입력 없음</div>`;
   $("#start").disabled = true; $("#precheck-out").textContent = "";
 }
+// A package's own login, driven exactly like a provider's (OPERATIONS §44): start it, show the URL
+// and the code the flow issued, hand back the one-time code the operator got from the service. The
+// credential itself is written by the flow, in the agent, into a directory this page never reads.
+async function pkgLoginState(pkg) {
+  const el = $("#pkg-login-state"); if (!el) return;
+  const r = await fetch(`/api/packages/${pkg}/login`).then((x) => x.json()).catch(() => null);
+  if (!r) { el.textContent = ""; return; }
+  el.innerHTML = r.state === "connected" ? "연결됨"
+    : r.url ? `열기: <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>`
+              + (r.user_code ? ` · 코드 <code>${esc(r.user_code)}</code>` : "")
+    : esc(r.state || "");
+  if (r.needs_code) {
+    const code = prompt("서비스가 준 일회용 코드를 붙여넣으세요");
+    if (code) { await api(`/api/packages/${pkg}/code`, {code}); setTimeout(() => pkgLoginState(pkg), 1500); }
+  } else if (r.state && r.state !== "connected" && r.state !== "not_connected" && r.state !== "failed") {
+    setTimeout(() => pkgLoginState(pkg), 2000);
+  }
+}
+async function pkgLogin(pkg) { await api(`/api/packages/${pkg}/login`, {}); setTimeout(() => pkgLoginState(pkg), 1500); }
 $("#wf").onchange = renderInputs;
 $("#precheck").onclick = async () => {
   const out = $("#precheck-out"); out.textContent = "검사 중…";

@@ -88,7 +88,7 @@ def _read(directory):
     out.update(usable=True, entry=resolved.get(name) or sorted(resolved.values())[0],
                entries=resolved, version=str(m.get("version") or ""),
                description=str(m.get("description") or ""),
-               requires=(m.get("requires") or {}),
+               requires=(m.get("requires") or {}), login=(m.get("login") or {}),
                principals_file=(os.path.join(directory, "principals.yaml")
                                 if os.path.isfile(os.path.join(directory, "principals.yaml")) else ""))
     return out
@@ -212,6 +212,43 @@ def needs_env(name=None):
     return out
 
 
+SAFE_ARG = re.compile(r"[A-Za-z0-9 ./:_=@+-]{1,200}")
+
+
+def login_of(name):
+    """The official login a package declares, or {} — the same shape a provider's login has.
+
+    A credential with an authorisation flow does not have to be typed into a file: the panel can
+    drive the flow the way it drives a provider's (§44). The package says what to run; the platform
+    runs exactly that argv under a pseudo-terminal in the agent, points the named environment
+    variables at a login directory of its own, hands a one-time code through a FIFO if the flow asks
+    for one, and calls it connected when the file the package named is there.
+
+        login:
+          argv: [gh, auth, login, --hostname, github.com, --web]
+          home_env: [GH_CONFIG_DIR]
+          done_when: {file: hosts.yml}
+          purpose: one line for the screen
+
+    **The platform never sees the credential.** Whatever the flow mints is written by the thing that
+    ran it, into that directory, and read back only by the package's own steps. A shell is never
+    involved: argv is a list, each element of a narrow character set, and nothing is interpolated.
+    """
+    p = installed().get(name) or {}
+    if not p.get("usable"):
+        return {}
+    d = (p.get("login") or {})
+    argv = [str(x) for x in (d.get("argv") or [])]
+    if not argv or not all(SAFE_ARG.fullmatch(x) for x in argv):
+        return {}
+    done = (d.get("done_when") or {}).get("file") or ""
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", str(done)):
+        return {}
+    return {"package": name, "argv": argv,
+            "home_env": [str(x) for x in (d.get("home_env") or []) if re.fullmatch(r"[A-Z][A-Z0-9_]{1,40}", str(x))],
+            "done_when_file": str(done), "purpose": str(d.get("purpose") or "")}
+
+
 def principals():
     """Every principal the installed packages declare, with the package that declared it.
 
@@ -255,6 +292,15 @@ if __name__ == "__main__":
                                                 "why": "not installed"}), ensure_ascii=False))
         sys.exit(0)
     rows = installed()
+    if a[:1] == ["logins"]:
+        # one answer for the panel: what each package needs, and the login it declares
+        out = {}
+        for pkg in sorted(installed()):
+            row = {"needs_env": needs_env(pkg).get(pkg, []), "login": login_of(pkg)}
+            if row["needs_env"] or row["login"]:
+                out[pkg] = row
+        print(json.dumps(out, ensure_ascii=False))
+        sys.exit(0)
     if a[:1] == ["needs"]:
         rest = [x for x in a[1:] if not x.startswith("--")]
         needs = needs_env(rest[0] if rest else None)

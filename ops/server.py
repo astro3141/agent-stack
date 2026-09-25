@@ -19,6 +19,9 @@ Routes
   GET  /api/runs                          POST /api/runs  body {"workflow","profile","inputs":{}}
   GET  /api/runs/<ui-id>                  POST /api/runs/<ui-id>/stop   POST /api/runs/<ui-id>/resume
   GET  /api/approvals                     pending approval requests (read-only)
+  GET  /api/packages                      what each installed package needs, and the login it declares
+  GET  /api/packages/<name>/login         where that login stands: url, code, state
+  POST /api/packages/<name>/login         start it     POST …/code {"code": "..."}     POST …/cancel
 """
 import json, os, re, secrets, subprocess, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -133,6 +136,14 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/workflows":
             # with what each one says about itself, so the screen offers what exists
             return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "workflows", "--detail"]))
+        m = re.fullmatch(r"/api/packages/([a-z][a-z0-9-]{1,39})/login", p)
+        if m:
+            # a package may declare an official login of its own, driven exactly as a provider's
+            # (OPERATIONS §44). Read-only here: state, the URL to open, the code the flow issued.
+            return self._send(200, jexec([PY, "/work/stack/login_helper.py",
+                                          "status", "pkg:" + m.group(1)]))
+        if p == "/api/packages":
+            return self._send(200, jexec([PY, "/work/stack/packages.py", "logins", "--json"]))
         if p == "/api/profiles":
             rc, out, _ = dexec(["sh", "-c", "ls /work/config/generated/profiles/"])
             names = [x[:-5] for x in out.split() if x.endswith(".json")]
@@ -226,6 +237,22 @@ class H(BaseHTTPRequestHandler):
             if not isinstance(code, str) or not code.strip() or len(code) > 2000:
                 return self._send(400, {"error": "missing code"})
             return self._send(200, jexec([PY, "/work/stack/login_helper.py", "code", prov, login], stdin=code))
+        m = re.fullmatch(r"/api/packages/([a-z][a-z0-9-]{1,39})/(login|code|cancel)", p)
+        if m:
+            pkg, act = m.groups()
+            target = "pkg:" + pkg
+            if act == "login":
+                return self._send(200, jexec([PY, "/work/stack/login_helper.py", "start", target],
+                                             timeout=60))
+            if act == "cancel":
+                return self._send(200, jexec([PY, "/work/stack/login_helper.py", "cancel", target]))
+            code = b.get("code")
+            if not isinstance(code, str) or not code.strip() or len(code) > 2000:
+                return self._send(400, {"error": "missing code"})
+            # the one-time code the operator got from the service, handed to the flow through a
+            # FIFO inside the agent. It is not written down here and not logged.
+            return self._send(200, jexec([PY, "/work/stack/login_helper.py", "code", target],
+                                         stdin=code))
         if p == "/api/replay":
             # Not a control over the stack: it chooses which recorded run the read-only dashboard
             # shows. The name is written for the replay container to pick up; nothing is executed.

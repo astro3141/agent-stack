@@ -3,9 +3,21 @@
 # runs without an edit to stack/, a real workflow can arrive the same way (OPERATIONS §27).
 name: hello-lane
 version: 0.1.0
-description: A package that proves the loader — one script step, no model calls, no logins
+description: A package that proves the loader — one script step, and a login of its own
 entry: workflow.yaml
 requires:
   # what the stack must be able to do for this package to be worth starting. Recording is not
   # needed: this one writes a file and says what it wrote.
   capabilities: []
+
+# An official login of its own, driven by the panel the way a provider's is (OPERATIONS §44). There
+# is no service behind this one: it is here so the mechanism is measured by something a stranger can
+# run. `argv` is executed as given, never through a shell; HELLO_LOGIN_DIR is pointed at this
+# login's own directory; the flow is connected when the file named here is there, and the platform
+# never opens it.
+login:
+  purpose: the example flow — prints a URL and a code, writes its own token file
+  argv: [/opt/venv/bin/python, /work/packages/hello-lane/steps/login.py]
+  home_env: [HELLO_LOGIN_DIR]
+  done_when:
+    file: token.json
