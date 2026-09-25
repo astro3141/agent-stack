@@ -219,7 +219,14 @@ def cmd_apply(dry_run=False):
     # operator's to do, and a report that names one is what makes it their decision instead of
     # nobody's (OPERATIONS §35, §40).
     orphans = sorted(set(have) - set(want))
+    # §55: per-role hosts (`egress:`) belonged to the uid-based design, which H1 retired. The key
+    # still works — nothing breaks mid-migration — but every apply names who is still on it.
+    legacy_egress = sorted(r for r, sp in want.items() if (sp or {}).get("egress"))
     print(json.dumps({"ok": True, "declared": len(want), "changes": changes,
+                      "deprecated_egress": legacy_egress,
+                      "deprecated_note": ("these roles declare per-role hosts (`egress:`), the "
+                                          "uid-based design §51 retired — declare `egress_profile:` "
+                                          "instead (OPERATIONS §55)" if legacy_egress else ""),
                       "undeclared": orphans,
                       "undeclared_note": ("these identities exist in Preloop and no declaration "
                                           "names them — a package that was removed leaves them "

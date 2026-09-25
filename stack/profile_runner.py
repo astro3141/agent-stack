@@ -57,9 +57,13 @@ class H(BaseHTTPRequestHandler):
         if job.get("profile") != PROFILE:
             return self._send(409, {"error": f"this runner is profile {PROFILE!r}, "
                                              f"the job says {job.get('profile')!r}"})
-        for k in ("role", "provider", "label", "login"):
+        for k in ("role", "provider", "login"):
             if not NAME.fullmatch(str(job.get(k) or "")):
                 return self._send(400, {"error": f"invalid {k}"})
+        # a label is the workflow's word for its own lane (E1, story, m1-claude): the run id and
+        # evidence path carry it, so it is a filename-safe token, not a role name
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}", str(job.get("label") or "")):
+            return self._send(400, {"error": "invalid label"})
         for k in ("expected", "run_id", "profile_name"):
             if not SAFE.fullmatch(str(job.get(k) or "")):
                 return self._send(400, {"error": f"invalid {k}"})

@@ -87,13 +87,20 @@ if sys.argv[4:5] == ["--plan"]:
                      "steps_planned": len(m["steps"]),
                      "argv": [PY, "/work/stack/steps/task_chain.py", mp]})
 else:
+    # A member whose role declares an egress profile runs through the broker, in that profile's
+    # container, on that profile's network (§54). Same argv contract either way, so the receipt,
+    # the retry loop and the recorder cannot tell the doors apart — which is the point.
+    import role_egress
     for spec in sys.argv[4:]:
         parts = spec.split(":")
         label, provider, login, route, prompt, expected = parts[:6]
         principal = parts[6] if len(parts) > 6 else ""
+        entry = ("/work/stack/steps/broker_dispatch.py"
+                 if principal and role_egress.profile_of(principal)
+                 else "/work/stack/steps/agent_task.py")
         jobs.append({"key": label, "label": label, "provider": provider, "expected": expected,
                      "produces": f"{WS}/{expected}",
-                     "argv": [PY, "/work/stack/steps/agent_task.py", provider, route, label,
+                     "argv": [PY, entry, provider, route, label,
                               prompt, expected, prof, login, principal]})
 
 def outcome_of(res, produced):

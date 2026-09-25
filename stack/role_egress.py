@@ -70,6 +70,19 @@ def declared():
     return out
 
 
+def profile_of(role):
+    """The egress profile a role's declaration maps it to, or "" — the switch the fan-out and a
+    chain use to pick the door: a mapped role's model step goes through the broker (§54), an
+    unmapped one runs exactly as before. Read from the declarations, never from a caller."""
+    try:
+        import principals as pr
+        spec = (pr.declared() or {}).get(role) or {}
+        prof = str(spec.get("egress_profile") or "")
+        return prof if NAME.fullmatch(prof) else ""
+    except Exception:
+        return ""
+
+
 def assignment(persist=True):
     """{role: {uid, port}} — stable across bring-ups, because it is written down once.
 

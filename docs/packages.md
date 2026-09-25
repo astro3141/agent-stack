@@ -263,6 +263,18 @@ If a step should run as its own principal, name it in the workflow
 (`story=codex:my-reviewer`) and declare it in the package's `principals.yaml`, in the same shape as
 `config/principals.yaml`. `scripts/up.sh` creates it and mints its credential.
 
+A role that must reach its own domains declares a **profile**, beside its tool rules:
+
+```yaml
+principals:
+  my-reviewer:
+    egress_profile: closed        # runs in that profile's container, on that profile's network
+```
+
+The profile's proxy carries the host list; the broker maps the role and holds its credential; your
+step's argv does not change (OPERATIONS §53–§55). The older `egress: [hosts]` key is retired — it
+belonged to the uid-based design, and every `principals.py apply` names roles still on it.
+
 **Installing a package is a decision to trust it**: that is what gives its principals rights. Read a
 package before installing it, as you would a dependency.
 

@@ -1309,6 +1309,33 @@ def controls_broker():
     check("a job's token dies with the job", 'JOBS[token]["done"] = True' in src7, True)
 
 
+def controls_h1_integration():
+    """§55: a mapped role's model step goes through the broker; everything else is untouched."""
+    print("")
+    print("H1 integrated — the door is picked by the role's declaration (§55)")
+    import importlib.util as _il8
+    _s8 = _il8.spec_from_file_location("re8", "/work/stack/role_egress.py")
+    re8 = _il8.module_from_spec(_s8); _s8.loader.exec_module(re8)
+    check("a mapped role names its profile", re8.profile_of("novel-reviewer"), "closed")
+    check("an unmapped role names nothing", re8.profile_of("novel-author"), "")
+    tk = open("/work/stack/steps/tasks.py", encoding="utf-8").read()
+    ch = open("/work/stack/steps/task_chain.py", encoding="utf-8").read()
+    bd = open("/work/stack/steps/broker_dispatch.py", encoding="utf-8").read()
+    check("the fan-out swaps the entrypoint on the mapping and changes nothing else",
+          ("role_egress.profile_of(principal)" in tk and "broker_dispatch.py" in tk), True)
+    check("a chain's model step swaps the same way",
+          ("role_egress.profile_of(st" in ch and "broker_dispatch.py" in ch), True)
+    check("the brokered step keeps agent_task's argv contract",
+          ("sys.argv[1:6]" in bd and "sys.argv[8]" in bd), True)
+    check("and carries no secret: the request is the prompt and the role's name",
+          ("PRELOOP_MCP" not in bd and "job_token" not in bd), True)
+    check("a refused dispatch is a refusal in the receipt, not a crash",
+          '"DENIED" if e.code == 403 else "FAILED"' in bd, True)
+    pr8 = open("/work/stack/principals.py", encoding="utf-8").read()
+    check("apply names every role still on the retired per-role hosts key",
+          ('"deprecated_egress": legacy_egress' in pr8 and "egress_profile" in pr8), True)
+
+
 def controls_role_egress():
     """Per-role egress: the hosts a role may reach, and the uid that keeps its credential its own.
 
@@ -2308,6 +2335,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_h1_integration()
     controls_broker()
     controls_role_egress()
     controls_review_findings()

@@ -3231,3 +3231,42 @@ a foreign profile DENY · token refresh over days and grok's lane still open. Th
 mechanism keeps running beside this until the remainder closes; wiring the *workflows* (tasks.py
 fan-out members through `/dispatch`) is the integration step that follows the experiment.
 
+## 55. H1 integrated: the door is picked by the role's declaration
+
+The experiment became the platform. A fan-out member — and a chain's model step — whose role
+declares `egress_profile:` now runs through the broker, in that profile's container, on that
+profile's network; a role that declares nothing runs exactly as before. The swap is one entrypoint
+(`broker_dispatch.py`, agent_task's argv to the letter), so the receipt, the retry loop and the
+recorder cannot tell the doors apart. Opt-in by declaration: no existing workflow changed.
+
+**Measured on the workflow that exercises all three vendors.** `novel-reviewer` mapped to the
+providers-only profile; `novel-a` run end to end:
+
+```
+PASS: no blocking finding in the required reviews
+receipt:  story    codex   COMPLETED  produced  {"role":"novel-reviewer","profile":"closed"}
+          history  claude  COMPLETED  produced  {"role":"novel-reviewer","profile":"closed"}
+          cold     grok    COMPLETED  produced  {"role":"novel-reviewer","profile":"closed"}
+closed profile's own proxy log, same window:
+          api.anthropic.com ×34   chatgpt.com ×19   api.x.ai ×10
+```
+
+Three vendors, three brokered lanes, one profile, and the profile's proxy carried every vendor
+connection — grok's lane filling the last cell of the matrix (brokered grok had already produced
+its file in isolation the same day). Where a member ran is in its receipt now (`dispatched`),
+because where it ran is part of what happened.
+
+**The retired key is named, not broken.** `egress: [hosts]` — per-role hosts, the uid-based
+design's declaration — still works mid-migration, and every `principals.py apply` lists who is
+still on it. Today that list is `devflow-researcher`, `devflow-research-reviewer` (declared in the
+devflow package while the uid design was current — its session gets the one-line migration) and
+`egress-probe`. `docs/packages.md` now teaches `egress_profile:` only.
+
+**Still open, still honest:** the `/dispatch` caller side (spend-not-escalation stands, run-tokens
+remain the tightening candidate); refresh observed over days; and removing the uid machinery —
+role-exec, the per-role proxies, sudoers — once the deprecation list is empty. The mechanism stays
+frozen and passing until then, because a record of why it exists (§48–§50) reads better beside the
+code it describes than after its deletion.
+
+**523/523 controls.**
+

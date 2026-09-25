@@ -40,7 +40,12 @@ for i, st in enumerate(member["steps"], 1):
     name = st.get("name") or f"{label}-{i}"
     started = time.time()
     if st["kind"] == "model":
-        argv = [PY, "/work/stack/steps/agent_task.py", st["provider"], st.get("route", "direct"),
+        # a mapped role's step goes through the broker — the same swap the fan-out makes (§54)
+        import role_egress
+        entry = ("/work/stack/steps/broker_dispatch.py"
+                 if st.get("principal") and role_egress.profile_of(st["principal"])
+                 else "/work/stack/steps/agent_task.py")
+        argv = [PY, entry, st["provider"], st.get("route", "direct"),
                 name, st["prompt"], st["expected"], prof, st.get("login", st["provider"]),
                 st.get("principal", "")]
     else:
