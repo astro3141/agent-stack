@@ -61,8 +61,16 @@ const withPrincipal = (own) => (PRINCIPAL ? principalAuth(PRINCIPAL) : own());
 
 // Option B egress: the routing layer's allowlist proxy. Preloop (tools, approvals), MLflow and
 // in-network names stay direct.
+//
+// A step that runs as a role of its own (§48) arrives with that role's proxy already in its
+// environment — role-exec put it there, with the role's credential. The vendor CLI must get *that*
+// proxy, not the shared one: measured (devflow's researcher, 2026-09-25), with the shared proxy
+// written over it here, every model call and every WebFetch of a confined role went out through the
+// shared list — the role's own hosts were refused as "filtered domain" and the shared list's hosts
+// were open to it. The confinement held for the adapter's own process and nothing it started.
 const EGRESS = (() => {
-  const proxy = RT.egress?.proxy ?? "http://egress:8888";
+  const roleProxy = process.env.AGENTSTACK_ROLE ? (process.env.HTTPS_PROXY || process.env.https_proxy) : null;
+  const proxy = roleProxy || RT.egress?.proxy || "http://egress:8888";
   const np = (RT.egress?.no_proxy ?? ["console", "api", "gateway", "mlflow", "localhost", "127.0.0.1"]).join(",");
   return { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, https_proxy: proxy, http_proxy: proxy, NO_PROXY: np, no_proxy: np };
 })();
