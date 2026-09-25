@@ -34,6 +34,7 @@ DECL = os.environ.get("AGENTSTACK_PACKAGES_YAML", "/work/config/packages.yaml")
 # git-ignored, merged over the tracked file — so the tracked one stays a declaration a stranger can
 # actually run (docs/packages.md).
 LOCAL_DECL = os.environ.get("AGENTSTACK_PACKAGES_LOCAL", "/work/config/packages.local.yaml")
+ALLOW = os.environ.get("AGENTSTACK_EGRESS_ALLOW", "/work/docker/egress/allow")
 NAME = re.compile(r"[a-z][a-z0-9-]{1,39}")
 
 
@@ -94,6 +95,10 @@ def _read(directory):
     return out
 
 
+class Unreadable(RuntimeError):
+    """The declaration could not be read. Not the same thing as an empty declaration."""
+
+
 def declared():
     """The package names this instance declares (config/packages.yaml).
 
@@ -103,12 +108,20 @@ def declared():
     the panel and given identities, and the declaration was a note the loader never read. Removing
     a package from config/packages.yaml did not remove it from the running stack.
     """
-    out = set()
+    out, seen = set(), False
     for path in (DECL, LOCAL_DECL):
+        if not os.path.isfile(path):
+            continue
+        seen = True
         try:
             out |= {str(k) for k in ((_yaml(path) or {}).get("packages") or {})}
-        except Exception:
-            pass              # unreadable or absent: it declares nothing, and every row says so
+        except Exception as e:
+            # "nobody declared this" and "I could not read the declaration" are different answers,
+            # and returning the first for the second is how a missing yaml module came to be
+            # reported as an operator who never declared their packages (OPERATIONS §45).
+            raise Unreadable(f"{os.path.basename(path)}: {type(e).__name__}: {e}") from e
+    if not seen:
+        raise Unreadable("config/packages.yaml is not there")
     return out
 
 
@@ -116,12 +129,20 @@ def installed():
     """Every package directory under the packages root, usable or not, by name."""
     if not os.path.isdir(ROOT):
         return {}
-    known, out = declared(), {}
+    try:
+        known, why_not = declared(), ""
+    except Unreadable as e:
+        known, why_not = set(), (f"the declaration could not be read ({e}) — every package is "
+                                 "refused until it can, and this is not a statement about what "
+                                 "anyone declared")
+    out = {}
     for entry in sorted(os.listdir(ROOT)):
         d = os.path.join(ROOT, entry)
         if os.path.isdir(d) and not entry.startswith("."):
             row = _read(d)
-            if entry not in known:
+            if why_not:
+                row["usable"], row["declared"], row["why"] = False, None, why_not
+            elif entry not in known:
                 # on disk and nobody asked for it: not loaded, and the reason is the answer
                 row["usable"], row["declared"] = False, False
                 row["why"] = ("not declared in config/packages.yaml — a package is loaded because "
@@ -215,6 +236,59 @@ def needs_env(name=None):
 SAFE_ARG = re.compile(r"[A-Za-z0-9 ./:_=@+-]{1,200}")
 
 
+HOSTNAME = re.compile(r"[a-z0-9.-]{3,120}")
+
+
+def egress_of(name=None):
+    """The hosts each package says it needs to reach, and whether the allowlist has them.
+
+    The allowlist is **one file for one proxy, shared by every container on the governed network**
+    (docker/egress/allow). Opening a host for one package opens it for all of them: adding GitHub for
+    the development workflow made GitHub reachable from the trading package's steps and from every
+    model call in the stack. That is a fact about where enforcement lives — a proxy authenticates
+    nothing, it sees a connection from a container — and it is not fixed by declaring anything.
+
+    What declaring gives is the other half: who asked for each open host, and which open hosts nobody
+    asks for any more (OPERATIONS §45). Per-role or per-package *enforcement* needs a route of its
+    own — its own container, its own network, its own proxy — the same argument as the approval
+    guard in §21.
+    """
+    allow = ""
+    try:
+        allow = open(ALLOW, encoding="utf-8").read()
+    except OSError:
+        pass
+    open_hosts = [l.strip() for l in allow.splitlines()
+                  if l.strip() and not l.strip().startswith("#")]
+    out = {}
+    for pkg, p in sorted(installed().items()):
+        if not p["usable"] or (name and pkg != name):
+            continue
+        rows = []
+        for h in ((p.get("requires") or {}).get("egress") or []):
+            host = str(h).strip()
+            if not HOSTNAME.fullmatch(host):
+                continue
+            pattern = "^" + host.replace(".", chr(92) + ".") + "$"
+            rows.append({"host": host, "open": pattern in open_hosts})
+        if rows:
+            out[pkg] = rows
+    if name:
+        return out
+    # every open host, and whether any installed package says it needs it. The providers are the
+    # platform's own baseline: the routing layer cannot work without them.
+    declared = {r["host"] for rows in out.values() for r in rows}
+    baseline = {"chatgpt.com", "auth.openai.com", "api.openai.com", "api.anthropic.com",
+                "platform.claude.com", "console.anthropic.com", "claude.ai", "auth.x.ai",
+                "accounts.x.ai", "api.x.ai", "cli-chat-proxy.grok.com"}
+    orphans = []
+    for pat in open_hosts:
+        host = pat.strip("^$").replace(chr(92) + ".", ".")
+        if host not in declared and host not in baseline:
+            orphans.append(host)
+    return {"packages": out, "open_and_undeclared": sorted(orphans)}
+
+
 def login_of(name):
     """The official login a package declares, or {} — the same shape a provider's login has.
 
@@ -292,6 +366,19 @@ if __name__ == "__main__":
                                                 "why": "not installed"}), ensure_ascii=False))
         sys.exit(0)
     rows = installed()
+    if a[:1] == ["egress"]:
+        rest = [x for x in a[1:] if not x.startswith("--")]
+        got = egress_of(rest[0] if rest else None)
+        if "--json" in a:
+            print(json.dumps(got, ensure_ascii=False))
+            sys.exit(0)
+        rows = got.get("packages", got) if isinstance(got, dict) and "packages" in got else got
+        for pkg, items in (rows or {}).items():
+            for e in items:
+                print(f"{pkg:<12} {e['host']:<32} {'open' if e['open'] else 'NOT OPEN'}")
+        for h in (got.get("open_and_undeclared") if isinstance(got, dict) else None) or []:
+            print(f"{'(nobody)':<12} {h:<32} open — no installed package declares it")
+        sys.exit(0)
     if a[:1] == ["logins"]:
         # one answer for the panel: what each package needs, and the login it declares
         out = {}

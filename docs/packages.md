@@ -197,6 +197,12 @@ docker/package.env          KEY=value, git-ignored, read into the agent's enviro
 docker/egress/allow         one regex per line: the hosts this package may reach
 ```
 
+Declare the hosts in your manifest as well — `requires: {egress: [api.example.com]}`. That is an
+audit, not a control: the allowlist is **one file for one proxy shared by every container on the
+governed network**, so a host opened for you is reachable by every other package, and `packages.py
+egress` exists to say which open host nobody asks for any more. Per-role or per-package enforcement
+would need its own container and its own proxy (OPERATIONS §45).
+
 **Declare them in the manifest**, so the operator is told before a run instead of by your step's
 error several minutes in:
 

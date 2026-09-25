@@ -1176,7 +1176,13 @@ def controls_review_findings():
     check("the runner passes its own profile to the probe", "capabilities.probe(profile)" in rw, True)
     check("and refuses a run on a profile that is not there",
           "settings.profile(profile) is None" in rw, True)
-    check("naming the profiles there are", sorted(_st.profile_names()), ["cost-first", "research-default"])
+    # what is on disk, not a list written here: a composition may carry a third profile
+    import glob as _g5
+    on_disk = sorted(_o.path.basename(f)[:-5]
+                     for f in _g5.glob("/work/config/generated/profiles/*.json"))
+    check("naming the profiles there are", sorted(_st.profile_names()), on_disk)
+    check("and there is at least the pair every measurement used",
+          all(n in on_disk for n in ("cost-first", "research-default")), True)
 
     # 2. one name, two packages
     made = []
@@ -1403,6 +1409,52 @@ def controls_package_sources():
     check("and the screen never asks for a long-lived secret, only the code",
           ("일회용 코드" in hubsrc and "token" not in hubsrc.lower().split("pkgloginstate")[1][:600]),
           True)
+
+    # egress: one list for one proxy, so the useful question is who asked for each open host
+    with _tf2.TemporaryDirectory() as _t3:
+        r3 = _pl2.Path(_t3)
+        (r3 / "allow").write_text(chr(10).join([
+            "^api\.anthropic\.com$", "^api\.example\.test$", "^nobody\.example\.test$"]))
+        (r3 / "zz-egress").mkdir()
+        (r3 / "zz-egress" / "manifest.yaml").write_text(chr(10).join([
+            "name: zz-egress", "entry: workflow.yaml", "requires:",
+            "  egress: [api.example.test, closed.example.test]"]))
+        (r3 / "zz-egress" / "workflow.yaml").write_text("workflow: {}")
+        old3 = (_pk4.ROOT, _pk4.DECL, _pk4.ALLOW)
+        try:
+            _pk4.ROOT, _pk4.ALLOW = str(r3), str(r3 / "allow")
+            declare_temp(_pk4, r3)
+            got = _pk4.egress_of()
+            check("a package may declare the hosts it reaches",
+                  [(e["host"], e["open"]) for e in got["packages"]["zz-egress"]],
+                  [("api.example.test", True), ("closed.example.test", False)])
+            check("an open host no package declares is reported",
+                  got["open_and_undeclared"], ["nobody.example.test"])
+            check("and the providers are not reported as orphans",
+                  "api.anthropic.com" in got["open_and_undeclared"], False)
+        finally:
+            _pk4.ROOT, _pk4.DECL, _pk4.ALLOW = old3
+    check("a bring-up says which open host nobody asks for",
+          "declared by no package" in up_sh, True)
+    check("and asks the interpreter that can read a manifest",
+          "python3 -c" not in up_sh.split("open_and_undeclared")[0][-400:], True)
+
+    # "nobody declared it" and "I could not read the declaration" are different answers
+    with _tf2.TemporaryDirectory() as _t4:
+        r4 = _pl2.Path(_t4)
+        (r4 / "zz-pkg").mkdir()
+        (r4 / "zz-pkg" / "manifest.yaml").write_text("name: zz-pkg" + chr(10) + "entry: workflow.yaml")
+        (r4 / "zz-pkg" / "workflow.yaml").write_text("workflow: {}")
+        (r4 / "broken.yaml").write_text("packages: [this is not a mapping")
+        old4 = (_pk4.ROOT, _pk4.DECL, _pk4.LOCAL_DECL)
+        try:
+            _pk4.ROOT, _pk4.DECL, _pk4.LOCAL_DECL = str(r4), str(r4 / "broken.yaml"), str(r4 / "none.yaml")
+            why = _pk4.installed()["zz-pkg"]["why"]
+            check("an unreadable declaration is not reported as an empty one",
+                  ("could not be read" in why, "not declared in" in why), (True, False))
+            check("and it names the file, not the operator", "broken.yaml" in why, True)
+        finally:
+            _pk4.ROOT, _pk4.DECL, _pk4.LOCAL_DECL = old4
 
     pkdoc = open("/work/docs/packages.md", encoding="utf-8").read()
     check("its own repository is the documented default, not the exception",

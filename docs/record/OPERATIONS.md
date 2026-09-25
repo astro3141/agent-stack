@@ -2648,3 +2648,60 @@ of Python is. `gh` is not in the image, so the development workflow keeps its to
 one's.
 
 **463/463 controls**, eight of them new.
+
+## 45. One allowlist, and what a role cannot be given
+
+Asked whether the internet — or GitHub — can be allowed *per role*. It cannot, and the measurement
+says why better than the design does.
+
+**What is enforced, and where.** Tool rights are per principal because Preloop authenticates a
+credential and can therefore tell principals apart. Hosts are per **network**, because the thing that
+decides them is a proxy: it sees a TCP connection from the agent container and nothing else. A
+principal is an application-level identity the proxy never learns. So `docker/egress/allow` is one
+file for one proxy, shared by every container on the governed network:
+
+```
+$ docker exec <agent> curl -s -o /dev/null -w '%{http_code}' https://api.github.com       # direct
+000                                        (no route to anything except through the proxy)
+$ docker exec <agent> env https_proxy=http://egress:8888 curl … https://api.github.com
+200
+```
+
+That 200 is the answer to the question. GitHub was opened because the development workflow needed
+it, and it is now reachable from the trading package's steps, from every model call, from any step
+any package ships. Nine more hosts were opened for one implementer's task the same way.
+
+**What declaring gives, and what it does not.** A package now declares the hosts it reaches, and the
+stack reads the allowlist back against those declarations:
+
+```
+$ packages.py egress
+devflow   github.com                open
+trading   opendart.fss.or.kr        open
+(nobody)  docs.redhat.com           open — no installed package declares it
+```
+
+A bring-up prints the last line, the way it prints an identity no declaration asks for (§40). That is
+an audit, not a control: **declaring a host does not open it, and not declaring one does not close
+it.** The allowlist stays the operator's file, and the honest reason is that there is nothing
+per-role to enforce it with.
+
+**What per-role egress would actually take.** A route of its own — the same argument as the approval
+guard in §21, where the boundary is a route and not a right. A role that must reach only GitHub runs
+in its own container, on its own network, with its own proxy and its own list; then "which hosts" is
+decided by where the connection comes from, which is the only thing a proxy can decide. Anything
+short of that is advisory: a second proxy port handed to a step through its environment would be
+bypassed by a step that used the shared one, and the same is true of a proxy credential, because
+**every role's credential already sits in one container's environment** — the separation between
+roles inside the agent rests on each step asking for its own role, not on being unable to ask for
+another's. That is worth saying plainly: per-role *tool rights* are enforced by Preloop, per-role
+*anything else inside the agent* is convention.
+
+**And the loader was caught lying while this was measured.** The bring-up asked for the orphan-host
+report with `python3`, which has no `yaml` module in that image, so `declared()` returned an empty
+set and every package was reported as **"not declared in config/packages.yaml"** — blaming the
+operator's declaration for a missing library. Now the two answers are different: an unreadable
+declaration says so, names the file, and refuses every package until it can be read; an empty one
+says nobody declared anything. Controls drive both.
+
+**471/471 controls**, ten of them new.

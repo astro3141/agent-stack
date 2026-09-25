@@ -15,3 +15,19 @@
 ^openapi\.koreainvestment\.com$
 ^openapivts\.koreainvestment\.com$
 ^opendart\.fss\.or\.kr$
+# devflow (packages/devflow): GitHub — the device-flow login and its token (github.com), the REST and
+# Git Data APIs (api.github.com), and the tree archives a checkout is fetched as (codeload).
+^github\.com$
+^api\.github\.com$
+^codeload\.github\.com$
+# devflow's implementer, preparing an infra-scanner task: primary sources about how distributions
+# package a product (package file lists, the distributions' and the vendor's own documentation).
+^packages\.ubuntu\.com$
+^packages\.debian\.org$
+^dl\.rockylinux\.org$
+^docs\.rockylinux\.org$
+^vault\.centos\.org$
+^access\.redhat\.com$
+^docs\.redhat\.com$
+^bind9\.readthedocs\.io$
+^kb\.isc\.org$

@@ -245,7 +245,7 @@ fi
 echo "== isolation"
 check "agent default routes"            0   "$(in_agent 'ip route | grep -c default')"
 check "agent direct egress"             000 "$(in_agent 'curl -s -o /dev/null -w %{http_code} --max-time 5 https://pypi.org')"
-check "egress proxy refuses non-provider" 000 "$(in_agent 'curl -s -o /dev/null -w %{http_code} --max-time 8 -x http://egress:8888 https://github.com')"
+check "egress proxy refuses non-provider" 000 "$(in_agent 'curl -s -o /dev/null -w %{http_code} --max-time 8 -x http://egress:8888 https://example.com')"
 echo "== services"
 check "Preloop MCP (auth required)"      401 "$(in_agent 'curl -s -o /dev/null -w %{http_code} http://console/mcp/v1')"
 check "Preloop api"                      200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} http://api:8000/api/v1/openapi.json')"
@@ -300,6 +300,16 @@ import capabilities
 print(\"yes\" if capabilities.probe()[\"admission\"][\"available\"] else \"no\")"')"
 # what only the host can see (backups, kept releases) — written down with the time it was looked at
 bash "$HERE/scripts/host-state.sh" >/dev/null 2>&1 || true
+# The allowlist is one file for one proxy, shared by every container on the governed network: a host
+# opened for one package is reachable by all of them. So a bring-up says which open host no installed
+# package asks for any more — the same shape as the identity report above (OPERATIONS §45).
+orphan_hosts="$(in_agent '/opt/venv/bin/python -c "
+import json, subprocess, sys
+out = subprocess.run([sys.executable, \"/work/stack/packages.py\", \"egress\", \"--json\"],
+                     capture_output=True, text=True).stdout
+print(\" \".join(json.loads(out or \"{}\").get(\"open_and_undeclared\") or []))"' 2>/dev/null)"
+[ -n "$orphan_hosts" ] && echo "  NOTE  open in docker/egress/allow and declared by no package: $orphan_hosts"
+
 echo "== capabilities in this composition"
 in_agent 'python3 /work/stack/capabilities.py' || true
 echo
