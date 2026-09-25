@@ -3270,3 +3270,45 @@ code it describes than after its deletion.
 
 **523/523 controls.**
 
+## 56. The run-token, measured before it was built — and not built
+
+§54 left "tighten the `/dispatch` caller side" as the next slice, with a per-run token as the
+candidate. Before building it, the property it depends on was measured, because §51's dispatch
+question deserved an answer that is not theater:
+
+```
+$ AGENTSTACK_RUN_TOKEN=zz-secret-probe sleep 15 &          # a live run holding its token
+$ grep -ao "AGENTSTACK_RUN_TOKEN=..." /proc/<pid>/environ  # any sibling process, same uid
+AGENTSTACK_RUN_TOKEN=zz-secret-probe
+```
+
+At `ptrace_scope 0` — this kernel's setting, measured in §51 — **any process in the agent reads any
+live run's environment.** A run token would be stolen by exactly the forger it exists to stop, in
+one line. There is nowhere else in a one-uid container to keep it either: a 0600 file has the same
+owner, and every channel a step could use is a channel a step could read. Building the token now
+would decorate the API without changing what an attacker can do, and this stack does not ship
+decorations (§46 said the same about a different lock).
+
+**So the standing state is stated instead of papered over.** `/dispatch` is callable by anything on
+the governed network; what a forger obtains is a governed model step, as a declared role, under
+that role's rules, inside that role's profile — spend, not escalation (§54). The two changes that
+would make caller authentication *real*, both outside this repository's own reach:
+
+* **`kernel.yama.ptrace_scope = 1`** on the host kernel. One knob, VM-wide, the operator's to set:
+  same-uid environment reads stop (descendants only), and a run token becomes worth minting. The
+  knob, the trade (it applies to everything in the WSL VM, debuggers included), and the decision
+  are the operator's; the stack's part — minting in the broker, checking at `/dispatch` — is a
+  small slice once the ground holds it.
+* Or the launcher moves outside the governed container entirely, which is a larger redistribution
+  of the start path than the risk it retires.
+
+**Also in this slice:** the panel's overview now asks the broker itself for its state (`map`,
+`jobs_live`) rather than showing a copy of the configuration; `egress-probe` is annotated as the
+frozen §48 mechanism's deliberate probe — the one role that stays on the retired `egress:` key
+until that machinery is deleted, so the controls that still measure role-exec and the per-role
+proxies measure something real. And the refresh observation window is open: the shared logins have
+been exercised from profile containers since 2026-09-26; what a token refresh does to them is a
+fact the calendar delivers, not a test.
+
+**524/524 controls.**
+

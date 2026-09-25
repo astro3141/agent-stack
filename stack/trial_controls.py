@@ -1302,6 +1302,9 @@ def controls_broker():
     except Exception:
         reach = False
     check("this container has no route to a profile runner", reach, False)
+    ops7 = open("/work/ops/server.py", encoding="utf-8").read()
+    check("the overview asks the broker itself, not a copy of the configuration",
+          ("cadp278-broker:8791/health" in ops7 and '"broker": broker' in ops7), True)
     src7 = open("/work/stack/broker.py", encoding="utf-8").read()
     check("the credential is swapped in at the forward and travels no further",
           ('headers["mcp-session-id"]' in src7 and '"Authorization": cred' in src7

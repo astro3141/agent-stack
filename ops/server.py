@@ -176,6 +176,12 @@ class H(BaseHTTPRequestHandler):
             except ValueError:
                 last = {}
             elsewhere = jexec([PY, "/work/stack/elsewhere.py", "--json"])
+            # §55: which role runs where, and whether the broker is up — asked of the broker
+            # itself, so the screen shows what would happen, not a copy of the configuration
+            broker = jexec([PY, "-c",
+                            "import urllib.request;"
+                            "print(urllib.request.urlopen("
+                            "'http://cadp278-broker:8791/health',timeout=5).read().decode())"])
             rc2, hs, _ = dexec(["cat", "/work/evidence/ops/host-state.json"])
             try:
                 host_state = json.loads(hs) if rc2 == 0 else None
@@ -183,6 +189,7 @@ class H(BaseHTTPRequestHandler):
                 host_state = None
             return self._send(200, {
                 "health": health,
+                "broker": broker,
                 "composition": last.get("composition"),
                 # backups and releases live outside every container; this is what the host last
                 # wrote down about them (scripts/host-state.sh), shown with its age
