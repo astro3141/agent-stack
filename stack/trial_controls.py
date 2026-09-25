@@ -1255,6 +1255,60 @@ def controls_review_findings():
 BS = chr(92)
 
 
+def controls_broker():
+    """§53–§54: the broker holds the credentials and the dispatch right; a step holds neither.
+
+    Local and modelless: refusals and reachability, driven against the live broker. What a real
+    dispatch produces was measured with model calls and is recorded in §54, not re-bought here.
+    """
+    print("")
+    print("the broker — one uid, the credentials, the only door into a profile (§53–§54)")
+    import json as _j7, urllib.request as _u7, urllib.error as _e7
+
+    def post(path, obj):
+        r = _u7.Request("http://cadp278-broker:8791" + path, data=_j7.dumps(obj).encode(),
+                        headers={"content-type": "application/json"})
+        try:
+            with _u7.urlopen(r, timeout=15) as x:
+                return x.status, _j7.loads(x.read())
+        except _e7.HTTPError as e:
+            return e.code, _j7.loads(e.read())
+
+    code, h = post("/health", {}) if False else (None, None)
+    try:
+        with _u7.urlopen("http://cadp278-broker:8791/health", timeout=10) as x:
+            h = _j7.loads(x.read())
+        check("the broker is up and read its map from the declarations",
+              ("novel-reviewer" in (h.get("map") or {}), h["map"].get("egress-probe")),
+              (True, "probe"))
+    except Exception as e:
+        check("the broker is up and read its map from the declarations", type(e).__name__, "up")
+    check("a role with no declared profile is not dispatched",
+          post("/dispatch", {"role": "novel-author"})[0], 403)
+    check("and the caller does not choose where a role runs",
+          post("/dispatch", {"role": "novel-reviewer", "profile": "probe"})[0], 403)
+    r = _u7.Request("http://cadp278-broker:8791/mcp/v1", data=b"{}",
+                    headers={"content-type": "application/json",
+                             "Authorization": "Bearer zz-not-a-live-token"})
+    try:
+        _u7.urlopen(r, timeout=10)
+        got = 200
+    except _e7.HTTPError as e:
+        got = e.code
+    check("a token that is not a live job's buys nothing at the forward", got, 401)
+    try:
+        _u7.urlopen("http://runner-closed:8790/health", timeout=4)
+        reach = True
+    except Exception:
+        reach = False
+    check("this container has no route to a profile runner", reach, False)
+    src7 = open("/work/stack/broker.py", encoding="utf-8").read()
+    check("the credential is swapped in at the forward and travels no further",
+          ('headers["mcp-session-id"]' in src7 and '"Authorization": cred' in src7
+           and "job_token" not in src7.split("def _forward")[1]), True)
+    check("a job's token dies with the job", 'JOBS[token]["done"] = True' in src7, True)
+
+
 def controls_role_egress():
     """Per-role egress: the hosts a role may reach, and the uid that keeps its credential its own.
 
@@ -2254,6 +2308,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_broker()
     controls_role_egress()
     controls_review_findings()
     controls_package_sources()

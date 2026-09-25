@@ -33,7 +33,8 @@ const RT = (() => {
   try { return JSON.parse(readFileSync("/work/config/generated/runtime.json", "utf8")); } catch { return {}; }
 })();
 const PRELOOP_URL = process.env.PRELOOP_API_URL ?? RT.preloop?.api_url ?? "http://api:8000";
-const PRELOOP_MCP_URL = RT.preloop?.mcp_url ?? `${process.env.PRELOOP_URL ?? "http://console"}/mcp/v1`;
+const PRELOOP_MCP_URL = process.env.AGENTSTACK_MCP_URL
+  ?? RT.preloop?.mcp_url ?? `${process.env.PRELOOP_URL ?? "http://console"}/mcp/v1`;
 const LOGINS = RT.paths?.logins_root ?? "/route";
 // The login directory for a provider: the profile names it (request `login`), under LOGINS.
 let LOGIN = null;
@@ -51,6 +52,9 @@ let PRINCIPAL = null;
 const NATIVE_ALLOWABLE = ["WebSearch", "WebFetch"];
 const principalEnv = (name) => `PRELOOP_MCP_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
 function principalAuth(name) {
+  // Brokered (§53): the step holds an opaque per-job token, not the credential. The broker's
+  // MCP forward swaps it for the role's real one, which exists only in the broker's process.
+  if (process.env.AGENTSTACK_JOB_TOKEN) return `Bearer ${process.env.AGENTSTACK_JOB_TOKEN}`;
   const v = process.env[principalEnv(name)];
   if (!v) throw new Error(`mcp_principal "${name}": ${principalEnv(name)} is not set`);
   return v.startsWith("Bearer ") ? v : `Bearer ${v}`;
@@ -71,7 +75,13 @@ const withPrincipal = (own) => (PRINCIPAL ? principalAuth(PRINCIPAL) : own());
 const EGRESS = (() => {
   const roleProxy = process.env.AGENTSTACK_ROLE ? (process.env.HTTPS_PROXY || process.env.https_proxy) : null;
   const proxy = roleProxy || RT.egress?.proxy || "http://egress:8888";
-  const np = (RT.egress?.no_proxy ?? ["console", "api", "gateway", "mlflow", "localhost", "127.0.0.1"]).join(",");
+  const npList = RT.egress?.no_proxy ?? ["console", "api", "gateway", "mlflow", "localhost", "127.0.0.1"];
+  // a brokered step's MCP endpoint (§53) is in-network: never sent through the egress proxy,
+  // whose list quite rightly has no idea what a "broker" is
+  if (process.env.AGENTSTACK_MCP_URL) {
+    try { npList.push(new URL(process.env.AGENTSTACK_MCP_URL).hostname); } catch {}
+  }
+  const np = npList.join(",");
   return { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, https_proxy: proxy, http_proxy: proxy, NO_PROXY: np, no_proxy: np };
 })();
 

@@ -15,6 +15,9 @@ principals:
     tool_rules: {}
 
   novel-reviewer:
+    # H1 (§53): brokered dispatch runs this role in the providers-only profile. The uid-based
+    # `egress:` key stays deliberately absent — see the note below.
+    egress_profile: closed
     # No `egress:` here on purpose, and the reason is now measured per vendor (agent-stack §48).
     # Declaring it — `egress: []` is enough, meaning "the providers and nothing else" — makes these
     # lanes run as this role's own uid behind its own proxy. On claude that works end to end: the

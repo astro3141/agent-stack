@@ -3185,3 +3185,49 @@ never holding what they would need to forge it. uid 1000 cannot read a 1050-owne
 trace a 1050 process (measured in §48's series), so the boundary is real without any vendor CLI
 ever running under the broker's uid — which is what kept uids poisonous in §48–§50.
 
+## 54. H1 slice 3: the broker
+
+The hard part §51 named, built as §53 sketched it: **one process holds the Preloop principal
+credentials and the dispatch right, and it is not a process a step can reach into.** Its own
+container, uid 1050 — one broker, not one per role — with `/work` read-only and `principals.env`
+delivered to it alone. The profile agents now receive no credential of any kind. No vendor CLI ever
+runs under the broker's uid, which is what kept per-role uids poisonous in §48–§50: the poison was
+CLIs meeting foreign uids, and the broker never runs one.
+
+**The shape.** `POST /dispatch` runs one model step as a role, in the profile that role's own
+declaration names (`egress_profile:`, read beside `tool_rules` — never from the caller). The
+`dispatch` network carries broker and runners and nothing else; the main agent has no route to a
+runner, so the broker's door is the only door. A dispatched step authenticates its MCP traffic with
+an **opaque per-job token**; the broker's forward swaps it for the role's real credential, which
+exists in exactly one process. The runner pins the argv around `agent_task.py` — a request is data.
+
+**Measured, live:**
+
+```
+dispatch novel-reviewer / claude, write review_r5.json
+    → profile closed, COMPLETED, produced: true, approvals 0     (the file is there)
+same path, write zz_bad.json
+    → DENIED, mcp_rule_denials: 1, nothing written               (the role's rules decided,
+                                                                  through the forward)
+role with no egress_profile          → 403, by name
+caller claims a different profile    → 403: "declared to run in 'closed', not 'probe'"
+a dead or invented token at /mcp/v1  → 401 "not a live job token"
+main agent → runner-closed:8790      → no route
+PRELOOP_MCP_* in any profile agent   → 0
+```
+
+**The honest limits, stated where they are load-bearing.** Anything on the governed network — steps
+included — may call `/dispatch`. What a forged dispatch obtains is a governed model step, as a
+declared role, under that role's rules, inside that role's profile: what a workflow could ask for
+legitimately. Spend, not escalation; tightening the caller side is the remaining slice, and the
+run-token idea from §51 is still the candidate. And two roles mapped to one profile can steal each
+other's *live job tokens* (same uid, one container): a token is one role's rights for one job's
+lifetime, so map roles that must not share that to different profiles.
+
+**Where H1 stands against its acceptance table:** same uid PASS · same vendor auth PASS (claude and
+codex, real calls) · per-profile hosts PASS/DENY by curl, by the CLI's own traffic, and now through
+the broker · principal secret in step env or filesystem NONE · impersonation of an unmapped role or
+a foreign profile DENY · token refresh over days and grok's lane still open. The uid-based §48
+mechanism keeps running beside this until the remainder closes; wiring the *workflows* (tasks.py
+fan-out members through `/dispatch`) is the integration step that follows the experiment.
+

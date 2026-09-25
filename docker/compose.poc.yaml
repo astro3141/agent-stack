@@ -49,6 +49,11 @@ networks:
   services:
     name: ${STACK:-agentstack}-services
     internal: true
+  # §53: broker ↔ profile runners, and nothing else. The main agent is not a member, so a step
+  # there has no route to a runner: the only door into a profile is the broker's.
+  dispatch:
+    name: ${STACK:-agentstack}-dispatch
+    internal: true
   egress-profile-probe:
     name: ${STACK:-agentstack}-egress-profile-probe
     internal: true
@@ -439,7 +444,6 @@ services:
     container_name: ${STACK:-agentstack}-agent-probe
     init: true
     restart: unless-stopped
-    command: ["sleep", "infinity"]
     volumes:
       - type: bind
         source: ${POC_HOST_DIR:-..}
@@ -452,16 +456,18 @@ services:
       POC_PY: /opt/venv/bin/python
       PYTHONPATH: /work/stack:/work/stack/steps
       AGENTSTACK_EGRESS_PROFILE: probe
+    command: ["/opt/venv/bin/python", "/work/stack/profile_runner.py"]
     networks:
       egress-profile-probe: {}
       services: {}
+      dispatch:
+        aliases: [runner-probe]
 
   agent-closed:
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-closed
     init: true
     restart: unless-stopped
-    command: ["sleep", "infinity"]
     volumes:
       - type: bind
         source: ${POC_HOST_DIR:-..}
@@ -474,6 +480,36 @@ services:
       POC_PY: /opt/venv/bin/python
       PYTHONPATH: /work/stack:/work/stack/steps
       AGENTSTACK_EGRESS_PROFILE: closed
+    command: ["/opt/venv/bin/python", "/work/stack/profile_runner.py"]
     networks:
       egress-profile-closed: {}
       services: {}
+      dispatch:
+        aliases: [runner-closed]
+
+  # §53: the broker. Its own uid — one, not one per role — so no step can read its files or trace
+  # its process; and no vendor CLI ever runs under it, which is what kept per-role uids poisonous
+  # in §48–§50. It alone receives principals.env; the profile agents receive no credential at all.
+  broker:
+    image: agentstack/governed-runtime:local
+    container_name: ${STACK:-agentstack}-broker
+    init: true
+    restart: unless-stopped
+    user: "1050:1050"
+    command: ["/opt/venv/bin/python", "/work/stack/broker.py"]
+    volumes:
+      - type: bind
+        source: ${POC_HOST_DIR:-..}
+        target: /work
+        read_only: true
+    env_file:
+      - path: principals.env
+        required: false
+    environment:
+      HOME: /tmp
+      PYTHONPATH: /work/stack:/work/stack/steps
+    networks:
+      governed: {}
+      services: {}
+      dispatch:
+        aliases: [broker]

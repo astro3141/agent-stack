@@ -22,6 +22,9 @@ principals:
   # declares one host nothing else needs, so a control can show that another role cannot reach it
   # and that this one cannot reach what the shared list has open (OPERATIONS §48).
   egress-probe:
+    # H1 (§51–§53): which egress *profile* this role's steps run in when dispatched through the
+    # broker. Mapping, not hosts: the profile's own proxy carries the list.
+    egress_profile: probe
     description: >
       the platform's probe identity for per-role egress. No tool rights: it reaches one host and
       writes nothing.
