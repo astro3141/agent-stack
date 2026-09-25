@@ -310,6 +310,43 @@ out = subprocess.run([sys.executable, \"/work/stack/packages.py\", \"egress\", \
 print(\" \".join(json.loads(out or \"{}\").get(\"open_and_undeclared\") or []))"' 2>/dev/null)"
 [ -n "$orphan_hosts" ] && echo "  NOTE  open in docker/egress/allow and declared by no package: $orphan_hosts"
 
+# Per-role egress (OPERATIONS §48): a role that declares hosts of its own runs as its own uid and
+# reaches them through its own proxy. Nothing here changes for a role that declares none.
+#
+# Three things have to happen and none of them belongs inside the governed runtime: the role users
+# are created (that needs root, so it is done from the host with `docker exec -u 0`), the proxy
+# configurations and credentials are written into the volume the agent and the proxy share, and the
+# proxy is restarted so it serves them.
+roles_json="$(in_agent '/opt/venv/bin/python /work/stack/role_egress.py plan --json' 2>/dev/null)"
+case "$roles_json" in
+  *'"uid"'*)
+    for r in $(echo "$roles_json" | tr ',' '\n' | grep -o '"[a-z][a-z0-9-]*": {"hosts"' | cut -d'"' -f2); do
+      u="$(in_agent "/opt/venv/bin/python /work/stack/role_egress.py uid $r" 2>/dev/null)"
+      [ -n "$u" ] || continue
+      docker exec -u 0 "$STACK-agent" sh -c \
+        "id -u $r >/dev/null 2>&1 || useradd -M -u $u -g roles -s /usr/sbin/nologin $r" >/dev/null 2>&1
+    done
+    # A role's step is the same step: it reads the Preloop permission hook and the provider login the
+    # adapter presents, and writes what the CLI keeps beside them. Those are shared by every step in
+    # this container today (one uid), and per-role egress does not change that — it changes which
+    # hosts the step may reach. So the group the roles share is given what a step needs, and
+    # OPERATIONS §48 says plainly that provider credentials are not per-role.
+    docker exec -u 0 "$STACK-agent" sh -c '
+      chgrp -R roles /home/agent/.preloop /route 2>/dev/null
+      chgrp -R roles /home/agent 2>/dev/null
+      chmod -R g+rwX /home/agent 2>/dev/null
+      chmod g+rwX /route 2>/dev/null
+      for d in /route/*/; do chmod -R g+rwX "$d" 2>/dev/null; done
+      true' >/dev/null 2>&1
+    out="$(docker exec -u 0 "$STACK-agent" /opt/venv/bin/python /work/stack/role_egress.py write 2>&1 | tail -1)"
+    case "$out" in
+      *'"wrote"'*) echo "== per-role egress: $out";;
+      *) echo "  WARN  per-role egress could not be written: $out" >&2;;
+    esac
+    docker restart "$STACK-egress" >/dev/null 2>&1 && echo "   egress restarted with the role proxies"
+    ;;
+esac
+
 echo "== capabilities in this composition"
 in_agent 'python3 /work/stack/capabilities.py' || true
 echo

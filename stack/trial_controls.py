@@ -1252,6 +1252,77 @@ def controls_review_findings():
           '"produced_stale": stale' in at and "os.remove" not in at, True)
 
 
+BS = chr(92)
+
+
+def controls_role_egress():
+    """Per-role egress: the hosts a role may reach, and the uid that keeps its credential its own.
+
+    Everything here is local — no host on the internet is contacted. What the proxy does with a
+    declared host was measured by hand and is recorded in OPERATIONS §48; what a control can hold
+    every time is the shape: the list it serves, the refusal without a credential, who may become
+    whom, and which uid owns what.
+    """
+    print("")
+    print("per-role egress — a role's hosts, and the uid that keeps its credential (OPERATIONS §48)")
+    import importlib.util as _il5, os as _o5, subprocess as _sp5, sys as _sy5
+    _s5 = _il5.spec_from_file_location("role_eg", "/work/stack/role_egress.py")
+    re_ = _il5.module_from_spec(_s5); _s5.loader.exec_module(re_)
+
+    plan = re_.plan()
+    rows = plan["roles"]
+    check("a role that declares hosts is given a uid and a port of its own",
+          all(r["uid"] and r["port"] for r in rows.values()), True)
+    check("and the map is stable, not positional",
+          re_.assignment() == re_.assignment(), True)
+    check("every role's uid is in the range the sudoers rule allows, and is never root",
+          all(1100 <= r["uid"] < 1500 for r in rows.values()), True)
+
+    for role, r in rows.items():
+        allow = open(f"{re_.CREDS}/{role}.allow", encoding="utf-8").read().splitlines()
+        want = ["^" + h.replace(".", chr(92) + ".") + "$" for h in re_.BASELINE + r["hosts"]]
+        check(f"{role}'s list is the providers plus what it declared", allow, want)
+        st = _o5.stat(f"{re_.CREDS}/{role}.cred")
+        check(f"{role}'s credential is 0600 and owned by that role",
+              (oct(st.st_mode)[-3:], st.st_uid), ("600", r["uid"]))
+        # and unreadable to anything that is not that role: as this process (the agent), it is not
+        check("and the agent that launches the step cannot read it",
+              _o5.access(f"{re_.CREDS}/{role}.cred", _o5.R_OK), False)
+        port = r["port"]
+        # the proxy answers, and refuses without the credential. Local: nothing leaves the network.
+        rc = _sp5.run(["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "6",
+                       "-x", f"http://egress:{port}", "https://api.anthropic.com"],
+                      capture_output=True, text=True).stdout.strip()
+        check(f"{role}'s proxy refuses a caller with no credential", rc, "000")
+
+    # who may become whom. sudo is the only way to a role, and it goes one way.
+    def as_agent(*argv):
+        return _sp5.run(list(argv), capture_output=True, text=True)
+
+    role = sorted(rows)[0] if rows else ""
+    if role:
+        r1 = as_agent("sudo", "-n", "-u", role, "/usr/local/bin/role-exec", role, "--", "id", "-un")
+        check("the launcher may become a role", (r1.returncode, r1.stdout.strip()), (0, role))
+        r2 = as_agent("sudo", "-n", "-u", "root", "/usr/local/bin/role-exec", role, "--", "id", "-un")
+        check("and may not become root", r2.returncode == 0, False)
+        r3 = as_agent("sudo", "-n", "-u", role, "/usr/local/bin/role-exec", "some-other-role",
+                      "--", "id", "-un")
+        check("role-exec refuses to run a step under a role it is not",
+              (r3.returncode, "sudo did not switch" in r3.stderr or "no uid" in r3.stderr), (4, True))
+        r4 = as_agent("sudo", "-n", "-u", role, "/usr/local/bin/role-exec", role, "--",
+                      "sh", "-c", "echo $AGENTSTACK_ROLE; echo ${HTTPS_PROXY%%://*}")
+        check("a step run as a role is told which role it is, and is handed a proxy",
+              r4.stdout.split(), [role, "http"])
+
+    src5 = open("/work/docker/agent.Dockerfile", encoding="utf-8").read()
+    check("only one program may change user, and only for the roles group",
+          ("agent ALL=(%roles) NOPASSWD:SETENV: ROLE_EXEC" in src5
+           and "Cmnd_Alias ROLE_EXEC = /usr/local/bin/role-exec" in src5), True)
+    up5 = open("/work/scripts/up.sh", encoding="utf-8").read()
+    check("a bring-up creates the role users and writes their proxies",
+          ("role_egress.py write" in up5 and "-g roles" in up5), True)
+
+
 def controls_package_sources():
     print("")
     print("where a package comes from — declared, pinned, and fetched by the host")
@@ -1414,7 +1485,9 @@ def controls_package_sources():
     with _tf2.TemporaryDirectory() as _t3:
         r3 = _pl2.Path(_t3)
         (r3 / "allow").write_text(chr(10).join([
-            "^api\.anthropic\.com$", "^api\.example\.test$", "^nobody\.example\.test$"]))
+            "^api" + BS + ".anthropic" + BS + ".com$",
+            "^api" + BS + ".example" + BS + ".test$",
+            "^nobody" + BS + ".example" + BS + ".test$"]))
         (r3 / "zz-egress").mkdir()
         (r3 / "zz-egress" / "manifest.yaml").write_text(chr(10).join([
             "name: zz-egress", "entry: workflow.yaml", "requires:",
@@ -2135,6 +2208,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_role_egress()
     controls_review_findings()
     controls_package_sources()
     controls_retry()

@@ -2796,3 +2796,75 @@ that *measure* it — role A cannot reach role B's host, cannot read role B's cr
 with no list reaches nothing but the providers.
 
 Nothing above is installed. The two measurements are here so the design is not a guess.
+
+## 48. Per-role egress, built
+
+§47 measured the two halves in miniature and named the trade. This is the built version, and the one
+place it does not reach yet.
+
+**How a role gets its own hosts.** A role declares them where its rights already live — beside
+`tool_rules`, in `config/principals.yaml` or in the package's own `principals.yaml`:
+
+```yaml
+principals:
+  egress-probe:
+    egress: [example.com]
+```
+
+`stack/role_egress.py` gives each declaring role a **uid** and a **port** and writes them down
+(`config/generated/role-uids.json`) so they never move — a positional assignment would change a
+role's uid the day another role is added, and every file that role owns would stop being its own. A
+bring-up then creates the role users, writes one tinyproxy configuration per role into a volume the
+agent and the proxy share, and restarts the proxy. A role that declares nothing gets none of this and
+nothing about it changes: the shared proxy and the provider baseline, as before.
+
+**What each half does.** The proxy holds the role's list — the providers plus what the role declared
+— and checks the role's credential, which is the only identity a proxy can learn from a connection.
+Measured, live, from the agent:
+
+```
+as egress-probe, through its own proxy:   example.com        200   (its declared host)
+                                          api.github.com     000   refused — open on the shared list
+                                          api.anthropic.com  404   the baseline, reached
+with no credential at all:                 anything          000
+```
+
+The uid is what keeps that credential from being taken: the file is `0600` owned by the role, and
+`/proc/<pid>/environ` is unreadable across uids (§46 measured the opposite when every step was one
+user). Dropping to a uid takes privilege this runtime does not have, so exactly one program may do
+it — `role-exec`, through a sudoers rule that allows only `agent`, only the `roles` group, and never
+root. Measured: the launcher may become a role, may not become root, and a role may not become
+another role. `role-exec` also refuses to run a step under a role it is not.
+
+**What had to give.** Three things, each measured rather than guessed:
+
+* `sudo` resets the environment, and a step that lost `CONDUCTOR_SELF_RUN_ID` wrote to the wrong
+  workspace and could not authenticate. So the rule carries `SETENV` and the call uses `-E`; what
+  `role-exec` then overrides is exactly the proxy.
+* `sudo` also replaces `PATH` with `secure_path`, and the node the adapter runs is not on it
+  (`FileNotFoundError: node`). `Defaults!ROLE_EXEC !secure_path` keeps the step's own path.
+* The run's workspace and the call's evidence directory are shared between the steps of a run by
+  design, so they are `setgid` and group-writable by `roles`. And a role's step reads the Preloop
+  permission hook and the provider login the adapter presents, which are shared by every step in
+  this container today — so the group gets those too. **Per-role egress is about hosts. Provider
+  credentials are not per-role**, and the honest reason is §46's: they live in one container.
+
+**Where it stops.** A *model* step as a role does not work yet. The Codex CLI builds its own sandbox
+and, run under a uid other than the one that installed it, exits before the call:
+
+```
+WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)
+Codex could not find bubblewrap on PATH        → bubblewrap installed, and then:
+Error: Operation not permitted (os error 1)
+```
+
+So the platform side is proven and the vendor side is not. `novel-reviewer` was given a host to
+measure it on a real workflow and the declaration was **taken back out**, because leaving it would
+have broken every review lane — a capability that breaks the thing it was added to is not a
+capability. The declaration stays available; the platform's own steps and any step that does not go
+through that CLI get it today; a model step needs the vendor's sandbox to tolerate a uid change, or
+the isolation class needs a container of its own, which is §47's other route and does not depend on a
+vendor at all.
+
+**484/484 controls**, thirteen of them new and all local — no host on the internet is contacted by a
+control; what the proxy does with a declared host is the measurement above.

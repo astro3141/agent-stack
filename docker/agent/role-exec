@@ -1,0 +1,51 @@
+#!/bin/sh
+# Run a step with the egress its role declared, and nothing else.
+#
+#   sudo -n -u <role> /usr/local/bin/role-exec <role> -- <command> [args...]
+#
+# sudo has already made this process the role by the time it starts (sudoers allows `agent` to become
+# any user in the `roles` group, and nothing else — not root, and not from a process that is already
+# a role). What is left to do is find the role's own proxy and exec the command through it.
+#
+# Why both halves are needed (OPERATIONS §48, measured in §47):
+#
+#   * **the proxy** is what confines the hosts: it holds the role's list and checks the role's
+#     credential. A role's proxy refuses a host the shared list has open.
+#   * **the uid** is what keeps that credential from being taken. Every step used to run as one
+#     user, where /proc/<pid>/environ is readable across processes; as its own uid it is not, and the
+#     credential file is 0600 owned by the role.
+#
+# A role that declared no hosts has no credential and no proxy of its own: the step runs as that
+# role's uid and keeps the shared proxy, which is what every step had before this existed.
+set -eu
+
+CREDS="${AGENTSTACK_ROLE_CREDS:-/role-egress}"
+
+role="${1:-}"
+[ -n "$role" ] || { echo "role-exec: no role given" >&2; exit 2; }
+case "$role" in
+  [a-z][a-z0-9-]*) : ;;
+  *) echo "role-exec: a role is [a-z][a-z0-9-]" >&2; exit 2 ;;
+esac
+shift
+[ "${1:-}" = "--" ] && shift
+[ "$#" -gt 0 ] || { echo "role-exec: no command given" >&2; exit 2; }
+
+# This process must already *be* the role: if sudo did not switch, the step would run with the
+# launcher's identity and the confinement would be a comment.
+# sudo sets HOME to the role's own home; the adapter reads the Preloop hook and the provider login
+# from the home the step started with, and the CLIs write their caches there. Per-role egress is
+# about hosts, not about giving a role a private home, so the step keeps the one it had.
+home="${AGENTSTACK_HOME:-}"
+
+me="$(id -un)"
+[ "$me" = "$role" ] || { echo "role-exec: running as $me, not $role — sudo did not switch" >&2; exit 4; }
+
+if [ -r "$CREDS/$role.cred" ] && [ -r "$CREDS/$role.port" ]; then
+  secret="$(cat "$CREDS/$role.cred")"
+  port="$(cat "$CREDS/$role.port")"
+  proxy="http://$role:$secret@egress:$port"
+  exec env HTTPS_PROXY="$proxy" https_proxy="$proxy" HTTP_PROXY="$proxy" http_proxy="$proxy" \
+           AGENTSTACK_ROLE="$role" "$@"
+fi
+exec env AGENTSTACK_ROLE="$role" "$@"

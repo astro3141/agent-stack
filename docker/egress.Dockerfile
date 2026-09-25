@@ -5,5 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends tinyproxy \
     && rm -rf /var/lib/apt/lists/*
 COPY egress/tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
 COPY egress/allow /etc/tinyproxy/allow
+# One proxy per role that declares its own hosts, beside the shared one (OPERATIONS §48).
+COPY egress/start.sh /usr/local/bin/start.sh
+RUN chmod 0755 /usr/local/bin/start.sh
 EXPOSE 8888
-CMD ["tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf"]
+CMD ["/usr/local/bin/start.sh"]

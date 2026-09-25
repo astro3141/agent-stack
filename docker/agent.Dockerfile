@@ -10,7 +10,7 @@
 FROM python:3.13-slim-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates git jq procps iproute2 dnsutils \
+      curl ca-certificates git jq procps iproute2 dnsutils sudo bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
 # This host runs Kaspersky, which terminates TLS for claude.ai with its own root CA.
@@ -19,7 +19,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY ca/kaspersky-root.crt /usr/local/share/ca-certificates/kaspersky-root.crt
 RUN update-ca-certificates
 
-RUN useradd -m -u 1000 -s /bin/bash agent
+RUN useradd -m -u 1000 -s /bin/bash agent && groupadd -g 1099 roles && usermod -aG roles agent
+# bubblewrap is here for the same reason: the Codex CLI builds its own sandbox, and when it runs as a
+# role rather than as the user that installed it, it asks for bubblewrap by name and exits 1 without
+# it (measured). Installing it is what lets a model step run as its role at all — and it is a
+# sandbox, so the step ends up more confined, not less.
+#
+# Per-role egress (OPERATIONS §48). A step runs as the role it belongs to, which is what keeps one
+# role's proxy credential out of another role's reach — measured: /proc/<pid>/environ is readable at
+# the same uid and Permission denied across uids. Dropping to a uid takes privilege, and this image
+# deliberately does not run as root, so exactly one program may do it, only for the uids the
+# platform assigns to roles, and never for root:
+#
+#   * role-exec runs as the role sudo switched to, reads that role's own credential (0600, owned by
+#     it) and execs the step through the role's proxy.
+#   * sudoers lets only `agent` become a member of the `roles` group, and only to run this one
+#     program — never root, and never from a process that is already a role. Measured: agent to a
+#     role is allowed, agent to root is refused, and one role to another is refused.
+#
+# The role users themselves are created at bring-up (scripts/up.sh), because which roles exist is
+# declared, not baked.
+COPY --chown=root:root agent/role-exec /usr/local/bin/role-exec
+RUN chmod 0755 /usr/local/bin/role-exec \
+ && printf '%s\n' 'Cmnd_Alias ROLE_EXEC = /usr/local/bin/role-exec' \
+      '# the step keeps its own PATH: sudo replaces it with secure_path otherwise, and the node the' \
+      '# adapter runs is not on it (measured: FileNotFoundError: node)' \
+      'Defaults!ROLE_EXEC !secure_path' \
+      'agent ALL=(%roles) NOPASSWD:SETENV: ROLE_EXEC' > /etc/sudoers.d/role-exec \
+ && chmod 0440 /etc/sudoers.d/role-exec \
+ && visudo -c -f /etc/sudoers.d/role-exec
 USER agent
 # Python/requests-based tools read their own bundle; point them at the system store.
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt

@@ -17,7 +17,22 @@
 # First match wins, and the default without rules is allow — which is why a principal that may do
 # only one thing ends with an explicit deny.
 
-principals: {}
+principals:
+  # The platform's own probe role. It exists to make per-role egress measurable on any machine: it
+  # declares one host nothing else needs, so a control can show that another role cannot reach it
+  # and that this one cannot reach what the shared list has open (OPERATIONS §48).
+  egress-probe:
+    description: >
+      the platform's probe identity for per-role egress. No tool rights: it reaches one host and
+      writes nothing.
+    egress:
+      - example.com
+    tool_rules:
+      write_file:
+        - action: deny
+          condition_type: simple
+          condition_expression: ""
+          rule_description: a probe writes nothing
 # Empty on purpose. Every identity here belonged to a package and now lives with it
 # (packages/<name>/principals.yaml): a package that names a principal declares what it may do, so
 # installing the package is enough for the identity to exist with rights of its own. What belongs

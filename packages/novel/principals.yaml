@@ -15,6 +15,11 @@ principals:
     tool_rules: {}
 
   novel-reviewer:
+    # No `egress:` here on purpose. Declaring it would make these lanes run as this role's uid, and
+    # the Codex CLI's own sandbox refuses to start under a uid other than the one that installed it
+    # (measured: "Error: Operation not permitted (os error 1)"). Per-role egress is proven for the
+    # platform's own steps; the model-step path has that one obstacle, named in agent-stack
+    # OPERATIONS §48 rather than left for someone to find.
     description: >
       Reads the frozen draft and writes its own review. It may not touch what it judges — measured
       as "Access denied: Scoped rule 2" when it tries (OPERATIONS.md §10).

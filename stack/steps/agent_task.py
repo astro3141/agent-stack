@@ -27,6 +27,49 @@ os.makedirs(ws, exist_ok=True)
 run_id = f"{run}-{label}-{provider}"
 evid = f"{RT['paths']['evidence_root']}/{run_id}"
 os.makedirs(evid, exist_ok=True)
+
+
+def shared_with_roles(*paths):
+    """Let a step that runs as its own role write where every step of this run writes.
+
+    A role has its own uid (OPERATIONS §48), so the run's workspace and this call's evidence
+    directory have to be writable by the group the roles share — the workspace is shared between the
+    steps of a run by design, which is the point of `{WS}` in a prompt. setgid, so what a role
+    creates stays in the group and the next step can read it.
+    """
+    import grp
+    try:
+        gid = grp.getgrnam("roles").gr_gid
+    except KeyError:
+        return
+    for p in paths:
+        try:
+            os.chown(p, -1, gid)
+            os.chmod(p, 0o2775)
+        except OSError:
+            pass          # not ours to change: the step still runs, and it is the same directory
+
+
+# Run as the role this step belongs to, when that role has one of its own. Everything after this
+# point is that role: its uid, and its egress. A step whose role declares no hosts is not re-executed
+# and nothing about it changes (§48).
+if principal and not os.environ.get("AGENTSTACK_ROLE"):
+    try:
+        sys.path.insert(0, "/work/stack")
+        import role_egress
+        role_uid = (role_egress.assignment().get(principal) or {}).get("uid")
+    except Exception:
+        role_uid = None
+    if role_uid and os.path.exists("/usr/local/bin/role-exec"):
+        shared_with_roles(ws, evid)
+        # -E keeps this step's environment: the run id, the workspace, the credential the adapter
+        # presents. sudo resets it by default, and a step that lost CONDUCTOR_SELF_RUN_ID wrote to
+        # the wrong workspace and could not authenticate at all (measured). What role-exec then
+        # overrides is exactly the proxy — the one thing this role is supposed to have of its own.
+        os.environ["AGENTSTACK_HOME"] = os.environ.get("HOME", "/home/agent")
+        os.execvp("sudo", ["sudo", "-n", "-E", "-u", principal,
+                           "/usr/local/bin/role-exec", principal,
+                           "--", sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
 req = {"run_id": run_id, "provider": provider, "model_route": model_route or "preloop_gateway",
        "login": login, "profile": prof_name,
        **({"mcp_principal": principal} if principal else {}),
@@ -69,7 +112,9 @@ r = run_once()
 # OAuth refresh — "another Claude Code process is refreshing it". Retrying once is enough; it is
 # counted here so a run never hides it.
 attempts = 1
-msg = json.dumps(r.get("turn", {}).get("error", {}) or r.get("failure", {}))
+# `turn` can be present and null — a vendor result with no turn at all. Reading it as a mapping
+# crashed the step with an AttributeError instead of reporting why the call failed (measured).
+msg = json.dumps((r.get("turn") or {}).get("error") or r.get("failure") or {})
 if r.get("status") != "COMPLETED" and "refresh" in msg.lower():
     time.sleep(20)
     r = run_once()
