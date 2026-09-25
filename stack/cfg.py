@@ -110,6 +110,10 @@ def validate_profile(p, name, env):
     t = p.get("tools") or {}
     if not isinstance(t.get("native_tools"), bool):
         errs.append(f"profile {name}: tools.native_tools must be true/false")
+    # read-only native tools that may run without asking; anything that writes or executes is refused
+    bad = [x for x in (t.get("native_allow") or []) if x not in ("WebSearch", "WebFetch")]
+    if bad:
+        errs.append(f"profile {name}: tools.native_allow may name only WebSearch and WebFetch, not {bad}")
     pol = t.get("preloop_policy")
     if pol and not (ROOT / pol).is_file():
         errs.append(f"profile {name}: tools.preloop_policy {pol} not found")

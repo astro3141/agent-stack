@@ -32,6 +32,7 @@ req = {"run_id": run_id, "provider": provider, "model_route": model_route or "pr
        **({"mcp_principal": principal} if principal else {}),
        "cwd": ws, "timeout_ms": (PROF.get("execution") or {}).get("timeout_ms", 600000),
        "native_tools": (PROF.get("tools") or {}).get("native_tools", False), "evidence_dir": evid,
+       "native_allow": list((PROF.get("tools") or {}).get("native_allow") or []),
        "prompt": open(prompt_file, encoding="utf-8").read().replace("{WS}", ws)}
 rp = os.path.join(evid, "request.json")
 json.dump(req, open(rp, "w"), indent=1)

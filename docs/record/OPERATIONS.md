@@ -2705,3 +2705,39 @@ declaration says so, names the file, and refuses every package until it can be r
 says nobody declared anything. Controls drive both.
 
 **471/471 controls**, ten of them new.
+
+## 46. Per-workflow domains, and a limit that is not a control
+
+The follow-up to §45 was "then a workflow cannot be limited to its own domains either". It cannot,
+and the reason turned out to be sharper than the one in §45 — sharp enough to write down as a limit
+of this stack rather than as a thing not built yet.
+
+**Measured.** In the agent container every step runs as the same user (uid 1000, `agent`), and
+`/proc/<pid>/environ` of one process is readable by another:
+
+```
+$ ls -l /proc/1/environ        →  -r-------- agent
+$ head -c 40 /proc/<other pid>/environ
+<a market credential, in full, belonging to a step this one has nothing to do with>
+```
+
+So a per-workflow egress credential handed to a step through its own process environment is not
+isolation: a step of any other workflow, running at the same time, can read it. The same is true of
+every credential this stack hands a step — the role principals' MCP tokens and a package's own env
+file are read into the *container's* environment, so they are readable by anything running there.
+Per-role **tool rights** are still enforced, because Preloop decides those against a credential it
+authenticates; what is convention is which credential a step chooses to present.
+
+**Two ways it could be real, and what each costs.** Dropping each package's steps to their own uid
+would close the snooping (then `/proc/<pid>/environ` is unreadable across packages) — but dropping
+privileges needs the container to start as root, and this runtime deliberately does not. Or the
+isolation class gets **a route of its own**: a second agent container, non-root as this one is, on
+its own network, with its own proxy and its own allowlist, and the runner sends a run there because
+its package asked for it. That is the §21 argument again, and it is the only one of the two that does
+not trade a property away.
+
+**No control pins this.** A control says what the stack holds; this section says what it does not.
+`packages.py egress` audits *who asked for* each open host (§45) and nothing here claims a workflow
+is confined to it. Writing it down is the honest half: the allowlist is a property of the network, so
+until an isolation class has a network, "this workflow may reach only these domains" is a sentence
+about intent.

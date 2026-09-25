@@ -47,6 +47,8 @@ const loginDir = (provider) => `${LOGINS}/${LOGIN ?? provider}`;
 // caller supplies it in PRELOOP_MCP_<NAME>. A named principal whose credential is missing is an
 // error, never a silent fall back to the adapter's wider rights.
 let PRINCIPAL = null;
+// Native tools a profile may let run without asking: read-only, and bounded by the egress allowlist.
+const NATIVE_ALLOWABLE = ["WebSearch", "WebFetch"];
 const principalEnv = (name) => `PRELOOP_MCP_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
 function principalAuth(name) {
   const v = process.env[principalEnv(name)];
@@ -94,10 +96,16 @@ const PROVIDERS = {
     // Native write/shell removed through the workspace's project settings — acpx loads that
     // tier, and a deny rule cannot be lifted by another tier. The Preloop policy forbids MCP
     // writes under .claude/, so the agent cannot rewrite this file.
-    disableNative(cwd) {
+    // `allow` is the profile's tools.native_allow — read-only tools a profile lets run without
+    // asking (WebSearch, WebFetch; cfg.py refuses anything else). Where they can reach is still the
+    // egress allowlist's to decide. Without it every web lookup waits for a person, and an
+    // unattended run's lookups expire (measured: devflow preparation, approval_expired).
+    disableNative(cwd, allow = []) {
       mkdirSync(join(cwd, ".claude"), { recursive: true });
+      const safe = allow.filter((t) => NATIVE_ALLOWABLE.includes(t));
       writeFileSync(join(cwd, ".claude/settings.json"), JSON.stringify(
-        { permissions: { deny: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"] } }) + "\n");
+        { permissions: { deny: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
+                         ...(safe.length ? { allow: safe } : {}) } }) + "\n");
       return {};
     },
     // A call to the Preloop MCP server that the adapter itself attached. Its decision is made
@@ -251,8 +259,17 @@ function postJson(url, obj, signal) {
   });
 }
 
-async function askPreloop(req, { provider, runId, cwd, signal, log, mcpOnly }) {
+async function askPreloop(req, { provider, runId, cwd, signal, log, mcpOnly, nativeAllow = [] }) {
   const tc = req.raw.toolCall ?? {};
+  // A read-only web tool the profile lets run without asking (tools.native_allow). Where it can
+  // reach is the egress allowlist's to decide; nothing that writes or executes is ever let through.
+  const nativeName = tc._meta?.claudeCode?.toolName ?? tc.name;
+  if (mcpOnly && nativeName && NATIVE_ALLOWABLE.includes(nativeName) && nativeAllow.includes(nativeName)) {
+    log({ at: new Date().toISOString(), acp_kind: tc.kind ?? null, title: tc.title ?? null,
+      raw: req.raw, outcome: "allow_once", denial: null, preloop: null, error: null,
+      routed: "profile_native_allow" });
+    return { outcome: "allow_once" };
+  }
   if (mcpOnly && PROVIDERS[provider].governedDownstream?.(req.raw)) {
     log({ at: new Date().toISOString(), acp_kind: tc.kind ?? null, title: tc.title ?? null,
       raw: req.raw, outcome: "allow_once", denial: null, preloop: null, error: null,
@@ -327,7 +344,7 @@ async function main() {
   if (PRINCIPAL && !mcpOnly) {
     throw new Error("mcp_principal requires native_tools=false: without it the run does not go through the Preloop MCP server");
   }
-  const extraEnv = mcpOnly ? prof.disableNative(req.cwd) : {};
+  const extraEnv = mcpOnly ? prof.disableNative(req.cwd, req.native_allow || []) : {};
   // model_route: "direct" → the routing layer's own login + allowlist proxy; otherwise the
   // Preloop model gateway (the #278 path). Refused if the provider has no direct profile.
   const direct = req.model_route === "direct" || !!prof.directOnly;
@@ -363,7 +380,7 @@ async function main() {
     });
     const turn = runtime.startTurn({
       handle, text: req.prompt, mode: "prompt", requestId: `${req.run_id}-1`,
-      onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, runId: req.run_id, cwd: req.cwd, signal, log, mcpOnly }),
+      onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, runId: req.run_id, cwd: req.cwd, signal, log, mcpOnly, nativeAllow: req.native_allow || [] }),
     });
     for await (const ev of turn.events) {
       if (ev.type === "text_delta" && ev.stream !== "thought") text.push(ev.text);

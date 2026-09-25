@@ -24,6 +24,7 @@ quota:
 
 tools:
   native_tools: false             # native write/shell removed; file work only via Preloop MCP
+  native_allow: [WebSearch, WebFetch]   # web lookups without asking; egress/allow decides where
   preloop_policy: policy/b-fsmcp.yaml   # applied to Preloop by `cfg.py apply`
 
 execution:
