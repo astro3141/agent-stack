@@ -3137,3 +3137,51 @@ two policies, two networks, ~14 MB of proxies.
 `up.sh` integration, controls and the role→profile mapping in `principals.yaml` follow once slice 2
 confirms the shape. The uid-based mechanism from §48 keeps running beside this until then.
 
+## 53. H1 slice 2: tools without egress, and a model step inside a profile
+
+Slice 1 proved the network identity; slice 2 gives a profile what a step needs that is *not*
+internet, and runs the real thing inside.
+
+**The `services` network.** Internal, carrying exactly the Preloop guard (same `api` / `console`
+aliases the governed network uses) and MLflow — and no egress proxy, so membership grants tools and
+records, never a route out. Measured from inside the probe profile: MCP 401 (up, refusing without a
+credential), API read 200, `mlflow` 200 — and the guard still refuses a control-plane write with
+403, so §21's route-boundary carries into profiles unchanged.
+
+**A real model step, inside the profile, no special handling.** `agent_task.py` run in
+`agent-probe` exactly as it runs in the main agent:
+
+```
+claude  COMPLETED  produced: true   {"h1": "slice2"} written through Preloop, 0 approvals
+codex   COMPLETED  produced: true   {"h1": "codex"}  — the §48 codex problem, gone by construction:
+                                     same uid as the login's owner, nothing to chmod across
+```
+
+And the traffic went where the design says it must. The **profile proxy's own log** for the claude
+call:
+
+```
+CONNECT api.anthropic.com:443        Established        ← the model call, on the profile's list
+CONNECT http-intake.logs.us5.datadoghq.com:443
+NOTICE  Proxying refused on filtered domain             ← the CLI's telemetry, not on any list
+```
+
+The shared proxy logged zero anthropic connections in the same window. Nothing in `stack/` changed
+for any of this: inside a profile, `egress`, `console`, `api` and `mlflow` mean what they mean
+everywhere else — they just resolve to the profile's own proxy and the shared services.
+
+**Acceptance so far** (§51's table): same uid PASS, same vendor auth PASS (claude and codex, real
+calls), profile hosts PASS / everything else DENY (curl and the CLI's own traffic), principal
+secrets in the profile environment NONE, telemetry refused as a side effect. Open: impersonation /
+dispatch (slice 3, the supervisor–broker), refresh observed over time rather than at a moment, and
+grok's lane.
+
+**Slice 3 is the honest hard part**, and §51 named it: with one uid and a shared `/work`, a step
+can write anything a supervisor can, so "who may start work in which profile" cannot be decided by
+anything a step could also do. The direction that survives scrutiny so far: a **broker under a uid
+of its own** in the main agent — not per role, one — holding the dispatch right and the Preloop
+principal credentials (§51's custody point), telling a profile's runner what to run, with steps
+never holding what they would need to forge it. uid 1000 cannot read a 1050-owned 0600 file or
+trace a 1050 process (measured in §48's series), so the boundary is real without any vendor CLI
+ever running under the broker's uid — which is what kept uids poisonous in §48–§50.
+

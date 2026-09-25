@@ -43,6 +43,12 @@ networks:
   # privilege instead of a capability grant to the governed runtime. Each profile network carries
   # exactly two members — the profile's proxy and the profile's agent — so a step's network
   # identity is where it runs, not what it holds.
+  # What a profile's step needs that is not internet: the Preloop guard and MLflow. No egress
+  # proxy is a member, so being on this network grants tools and records, never a route out —
+  # a profile's internet stays whatever its own proxy says (OPERATIONS §52).
+  services:
+    name: ${STACK:-agentstack}-services
+    internal: true
   egress-profile-probe:
     name: ${STACK:-agentstack}-egress-profile-probe
     internal: true
@@ -159,6 +165,7 @@ services:
     profiles: ["record"]
     networks:
       - governed
+      - services
       - observe
     volumes:
       - type: bind
@@ -292,6 +299,8 @@ services:
     networks:
       governed:
         # the agent's settings name Preloop by these; the names now resolve to this proxy
+        aliases: [api, console, gateway]
+      services:
         aliases: [api, console, gateway]
       adminnet: {}
     volumes:
@@ -445,6 +454,7 @@ services:
       AGENTSTACK_EGRESS_PROFILE: probe
     networks:
       egress-profile-probe: {}
+      services: {}
 
   agent-closed:
     image: agentstack/governed-runtime:local
@@ -466,3 +476,4 @@ services:
       AGENTSTACK_EGRESS_PROFILE: closed
     networks:
       egress-profile-closed: {}
+      services: {}
