@@ -37,14 +37,25 @@ except OSError as e:
                       "failure": f"prompt unreadable: {type(e).__name__}"}))
     raise SystemExit(0)
 
+# The execution profile owns the call's time limit, brokered or not: a local step reads
+# timeout_ms from the same profile (agent_task.py), and a fixed 900 s here cut a call the
+# profile allowed an hour for — the runner killed it mid-work with nothing produced
+# (devflow's research step, measured at 25–33 minutes under long-task's 3600 s).
+sys.path.insert(0, "/work/stack")
+import settings  # noqa: E402
+timeout_s = int(((settings.profile(prof_name) or {}).get("execution")
+                 or {}).get("timeout_ms", 900000)) // 1000
+
 req = {"role": principal, "provider": provider, "model_route": model_route or "direct",
        "label": label, "prompt": prompt, "expected": expected,
        "profile_name": prof_name, "login": login, "run_id": run,
-       "timeout_s": 900}
+       "timeout_s": timeout_s}
 try:
     r = urllib.request.Request(BROKER + "/dispatch", data=json.dumps(req).encode(),
                                headers={"content-type": "application/json"})
-    with urllib.request.urlopen(r, timeout=960) as x:
+    # the broker waits timeout_s + 30 on the runner; wait past that, so the timeout that speaks
+    # is the runner's ("TIMED_OUT"), not a socket error here
+    with urllib.request.urlopen(r, timeout=timeout_s + 60) as x:
         out = json.loads(x.read())
 except urllib.error.HTTPError as e:
     try:

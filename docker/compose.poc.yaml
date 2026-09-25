@@ -60,6 +60,12 @@ networks:
   egress-profile-closed:
     name: ${STACK:-agentstack}-egress-profile-closed
     internal: true
+  egress-profile-research:
+    name: ${STACK:-agentstack}-egress-profile-research
+    internal: true
+  egress-profile-research-review:
+    name: ${STACK:-agentstack}-egress-profile-research-review
+    internal: true
   # The admin side of Preloop: the api / console / gateway containers live here, together with
   # the guard that fronts them for the governed network and the panel that answers approvals.
   # The agent is NOT a member — that is the whole point (OPERATIONS.md §20).
@@ -435,6 +441,32 @@ services:
       egress-profile-closed:
         aliases: [egress]
 
+  egress-research-proxy:
+    image: agentstack/egress:local
+    container_name: ${STACK:-agentstack}-egress-research
+    init: true
+    restart: unless-stopped
+    command: ["tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf"]
+    volumes:
+      - ./egress/profiles/research.allow:/etc/tinyproxy/allow:ro
+    networks:
+      egressnet: {}
+      egress-profile-research:
+        aliases: [egress]
+
+  egress-research-review-proxy:
+    image: agentstack/egress:local
+    container_name: ${STACK:-agentstack}-egress-research-review
+    init: true
+    restart: unless-stopped
+    command: ["tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf"]
+    volumes:
+      - ./egress/profiles/research-review.allow:/etc/tinyproxy/allow:ro
+    networks:
+      egressnet: {}
+      egress-profile-research-review:
+        aliases: [egress]
+
   # The profile's agent: the same image, the same volumes, the same uid and HOME as the main
   # agent — H1's whole point is that the *file* identity does not change. What changes is the
   # network it is born on, and what it is NOT given: no principals.env, no market/package env.
@@ -486,6 +518,54 @@ services:
       services: {}
       dispatch:
         aliases: [runner-closed]
+
+  agent-research:
+    image: agentstack/governed-runtime:local
+    container_name: ${STACK:-agentstack}-agent-research
+    init: true
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ${POC_HOST_DIR:-..}
+        target: /work
+      - agent-home:/home/agent
+      - ws:/ws
+      - route-creds:/route
+    environment:
+      POC_DIR: /work
+      POC_PY: /opt/venv/bin/python
+      PYTHONPATH: /work/stack:/work/stack/steps
+      AGENTSTACK_EGRESS_PROFILE: research
+    command: ["/opt/venv/bin/python", "/work/stack/profile_runner.py"]
+    networks:
+      egress-profile-research: {}
+      services: {}
+      dispatch:
+        aliases: [runner-research]
+
+  agent-research-review:
+    image: agentstack/governed-runtime:local
+    container_name: ${STACK:-agentstack}-agent-research-review
+    init: true
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ${POC_HOST_DIR:-..}
+        target: /work
+      - agent-home:/home/agent
+      - ws:/ws
+      - route-creds:/route
+    environment:
+      POC_DIR: /work
+      POC_PY: /opt/venv/bin/python
+      PYTHONPATH: /work/stack:/work/stack/steps
+      AGENTSTACK_EGRESS_PROFILE: research-review
+    command: ["/opt/venv/bin/python", "/work/stack/profile_runner.py"]
+    networks:
+      egress-profile-research-review: {}
+      services: {}
+      dispatch:
+        aliases: [runner-research-review]
 
   # §53: the broker. Its own uid — one, not one per role — so no step can read its files or trace
   # its process; and no vendor CLI ever runs under it, which is what kept per-role uids poisonous

@@ -1,0 +1,22 @@
+# The research-review profile: the same list as research.allow — a reviewer of a research record
+# checks its facts against the same primary sources its author read. A profile of its own, not a
+# shared one: two roles in one profile could steal each other's live job tokens (§54), and the
+# reviewer judging the researcher is exactly the pair that must not (devflow-research-reviewer).
+^chatgpt\.com$
+^auth\.openai\.com$
+^api\.openai\.com$
+^api\.anthropic\.com$
+^platform\.claude\.com$
+^console\.anthropic\.com$
+^claude\.ai$
+^auth\.x\.ai$
+^accounts\.x\.ai$
+^api\.x\.ai$
+^cli-chat-proxy\.grok\.com$
+^packages\.ubuntu\.com$
+^packages\.debian\.org$
+^dl\.rockylinux\.org$
+^docs\.rockylinux\.org$
+^vault\.centos\.org$
+^access\.redhat\.com$
+^docs\.redhat\.com$
