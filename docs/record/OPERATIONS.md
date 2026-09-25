@@ -2856,7 +2856,7 @@ token, which is the operator's to fix and not a finding):
 | | as its own role | what happened |
 |---|---|---|
 | **claude** | **works, end to end** | `COMPLETED`, wrote its file through the role's own rights, `produced: true`, 69k tokens |
-| **codex** | no | its CLI builds its own sandbox and exits before the call: `could not create PATH aliases: Operation not permitted`, then `Codex could not find bubblewrap on PATH` — and with bubblewrap installed, `Error: Operation not permitted (os error 1)`. EPERM, not EACCES: a privileged operation refused, not a file it could not read |
+| **codex** | **works, given a login of its own** | it does not chmod what it does not own — see below |
 | **grok** | not applicable | it cannot take a principal at all, and never could: `mcp_principal is not supported for grok: its Preloop credential comes from its own config file`. Nothing to do with uids |
 
 The claude path was measured on a real role with real rights: `novel-reviewer` declared `egress: []`
@@ -2871,6 +2871,50 @@ example.com        000   refused — another role declared that host, not this o
 
 That is per-role egress doing exactly what was asked for, on a model step.
 
+**Why codex looked impossible, and what it actually was.** The CLI's own messages sent this the
+wrong way — `could not create PATH aliases`, then `Codex could not find bubblewrap on PATH`, then a
+bare `Error: Operation not permitted`. It reads like a sandbox that will not start under a strange
+uid. It is not. EPERM is what `chmod` returns on a file you do not own, and that is exactly what a
+role got:
+
+```
+as the role, on the shared codex login:
+  read  /route/codex/auth.json   yes
+  write /route/codex/auth.json   yes
+  chmod /route/codex/auth.json   Operation not permitted
+```
+
+The Codex CLI sets the mode of its credential file when it starts — reasonable, and fatal for
+anyone who is not its owner. Given a login directory the role owns, the same step **COMPLETED**
+(`gpt-6-astra`), through the role's uid and the role's proxy. Claude never hit this because it does
+not chmod that file.
+
+So the rule in the runner is about the **login**, not the vendor: a codex step whose role would run
+as its own uid is allowed when the login belongs to that role, and refused otherwise — with the fix
+in the refusal:
+
+```
+egress-probe declares egress of its own, so this step runs as that role's uid — and the codex login
+'codex' belongs to uid 1000. The Codex CLI sets the mode of its credential file when it starts, and
+chmod on a file you do not own is refused. Give this role a login of its own — connect one named for
+it and run this step on it — or drop the role's egress declaration.
+```
+
+A login of its own is not a workaround: a login here is already a named directory (`claude-b`,
+`claude-absent` exist for other reasons), the panel connects one under any name, and two roles with
+separate logins also get separate vendor sessions and separate quota. What was **not** kept is the
+shortcut used to measure it — a *copy* of the shared login, chowned to the role. Two copies of one
+refresh token is how you invalidate a login you still need; the copy was deleted and all three
+logins re-checked afterwards.
+
+**Grok's is a different shape entirely, and the same fix would reach it.** It is not about uids: the
+adapter cannot hand grok a credential at all, because grok never connected the MCP server offered
+over ACP (measured: no connection attempt, ~5 minutes per tool call waiting on a server "still
+connecting"). The one that works is registered in grok's **own config file** inside its login
+directory. So grok reads its Preloop credential from a file, which is why `mcp_principal` — a
+per-call override — cannot apply. A per-role *login*, whose config file carries that role's
+credential, is the shape that would give grok roles too. Not built.
+
 **And a step that would be confined but cannot be is now refused by name.** Running it unconfined
 would hand the role the shared list it declared its way out of; running it anyway ends in a vendor
 error three layers down that says nothing about roles. So:
@@ -2882,11 +2926,11 @@ one that installed it (OPERATIONS §48). Either this role runs its model steps o
 its egress declaration and shares the allowlist.
 ```
 
-`novel-reviewer`'s declaration was **taken back out**, because novel-a runs that role on codex and
-grok as well and two of its three review lanes would be refused — a capability that breaks the thing
-it was added to is not a capability. What is true today: **a role whose model steps run on claude can
-be confined to its own domains, now.** A role that runs on codex needs either that CLI to tolerate a
-uid change, or §47's other route — a container of its own, which depends on no vendor.
+`novel-reviewer`'s declaration was **taken back out**: novel-a runs that role on grok as well, which
+cannot take a principal at all, and on codex through the shared login. What is true today: **a role
+whose model steps run on claude, or on a codex login of its own, can be confined to its own domains
+now.** Grok needs the per-role login shape described above; §47's other route — a container per
+isolation class — still reaches everything and depends on no vendor.
 
-**489/489 controls**, eighteen of them new and all local — no host on the internet is contacted by a
+**505/505 controls**, and the rule they pin is the login's owner, not the vendor's name — no host on the internet is contacted by a
 control; what the proxy does with a declared host is the measurement above.

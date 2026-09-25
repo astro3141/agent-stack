@@ -65,23 +65,31 @@ if principal and not os.environ.get("AGENTSTACK_ROLE"):
                     if principal in role_egress.declared() else None)
     except Exception:
         role_uid = None
-    # Measured per vendor (OPERATIONS §48): the Claude CLI runs as a role, the Codex CLI builds its
-    # own sandbox and exits "Operation not permitted" under any uid but the one that installed it.
-    # A step that would be confined and cannot be is refused here, by name — running it unconfined
-    # would give the role the shared list it declared its way out of, and running it anyway ends in
-    # a vendor error three layers down that says nothing about roles.
-    if role_uid and provider in ("codex",):
-        print(json.dumps({
-            "status": "FAILED", "provider": provider, "principal": principal,
-            "run_id": run_id, "workspace": ws, "produced": False, "produced_stale": False,
-            "evidence_dir": evid, "profile": prof_name, "attempts": 0,
-            "failure": f"{principal} declares egress of its own, so this step would run as that "
-                       f"role's uid — and the {provider} CLI cannot: it builds its own sandbox and "
-                       "exits 'Operation not permitted' under a uid other than the one that "
-                       "installed it (OPERATIONS §48). Either this role runs its model steps on "
-                       "claude, or it drops its egress declaration and shares the allowlist.",
-            "measurements": {}}))
-        raise SystemExit(0)
+    # Whether a role may run this step is a fact about the login, not about the vendor
+    # (OPERATIONS §48). The Codex CLI sets the mode of its own credential file on startup, and
+    # chmod on a file you do not own is EPERM — which is the whole of "codex cannot run as a role".
+    # A role that has a login of its own runs codex exactly like anything else: measured, COMPLETED.
+    # Claude does not chmod, so it runs on a shared login. The check is on the file, not the name.
+    if role_uid and provider == "codex":
+        login_dir = f"{RT['paths']['logins_root']}/{login}"
+        try:
+            owner = os.stat(login_dir).st_uid
+        except OSError:
+            owner = None
+        if owner != role_uid:
+            print(json.dumps({
+                "status": "FAILED", "provider": provider, "principal": principal,
+                "run_id": run_id, "workspace": ws, "produced": False, "produced_stale": False,
+                "evidence_dir": evid, "profile": prof_name, "attempts": 0,
+                "failure": f"{principal} declares egress of its own, so this step runs as that "
+                           f"role's uid — and the codex login {login!r} belongs to "
+                           f"{'uid ' + str(owner) if owner is not None else 'nobody: it is not there'}. "
+                           "The Codex CLI sets the mode of its credential file when it starts, and "
+                           "chmod on a file you do not own is refused. Give this role a login of "
+                           f"its own — connect one named for it and run this step on it — or drop "
+                           "the role's egress declaration (OPERATIONS §48).",
+                "measurements": {}}))
+            raise SystemExit(0)
     if role_uid and os.path.exists("/usr/local/bin/role-exec"):
         shared_with_roles(ws, evid)
         # -E keeps this step's environment: the run id, the workspace, the credential the adapter

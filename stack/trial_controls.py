@@ -1339,14 +1339,17 @@ def controls_role_egress():
           "assignment(persist=False)" in open("/work/stack/role_egress.py", encoding="utf-8").read(),
           True)
 
-    # a step that would be confined and cannot be is refused by name, not left to a vendor error
+    # whether a role may run a codex step is a fact about the login it would use, not about the
+    # vendor: that CLI sets the mode of its own credential file, and chmod on a file you do not own
+    # is refused. A role with a login of its own runs it; a role on the shared login is told so.
     at6 = open("/work/stack/steps/agent_task.py", encoding="utf-8").read()
-    check("a model step on a CLI that cannot run as a role is refused, naming the rule",
-          ('if role_uid and provider in ("codex",)' in at6
-           and "OPERATIONS §48" in at6 and "builds its own sandbox" in at6), True)
-    check("and it is a refusal, not a quiet fall back to the shared allowlist",
-          "raise SystemExit(0)" in at6.split('if role_uid and provider in ("codex",)')[1][:1200],
-          True)
+    check("the rule is the login's owner, not the provider's name",
+          ('if role_uid and provider == "codex"' in at6
+           and "os.stat(login_dir).st_uid" in at6 and "owner != role_uid" in at6), True)
+    check("and a step it refuses is refused, not quietly run on the shared allowlist",
+          "raise SystemExit(0)" in at6.split('owner != role_uid')[1][:1400], True)
+    check("the refusal says how to fix it, not only that it failed",
+          "Give this role a login of" in at6, True)
 
     src5 = open("/work/docker/agent.Dockerfile", encoding="utf-8").read()
     check("only one program may change user, and only for the roles group",
