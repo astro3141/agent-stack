@@ -166,6 +166,7 @@
     <div class="row">템플릿
       <select id="wf"><option value="">불러오는 중…</option></select></div>
     <div id="wf-about" class="row muted"></div>
+    <div id="wf-needs" class="row muted"></div>
     <div id="wf-inputs"></div>
     <div class="row"><button class="sub" id="precheck">실행 전 검사</button><button class="act" id="start" disabled>실행</button></div>
     <div id="precheck-out" class="muted"></div>
@@ -499,6 +500,15 @@ async function loadWorkflows() {
 function renderInputs() {
   const wf = WORKFLOWS[$("#wf").value] || {inputs: [], description: ""};
   $("#wf-about").textContent = wf.description || "";
+  // What this workflow's package needs in the environment, and whether it is there. Read-only on
+  // purpose: the value is the operator's, it goes in a git-ignored file on the host, and this panel
+  // neither reads it nor offers a box to type it into (OPERATIONS §43).
+  const needs = wf.needs_env || [];
+  $("#wf-needs").innerHTML = needs.length === 0 ? "" :
+    `<div>이 패키지가 환경에서 필요한 것 — 값은 호스트의 파일에, 이 화면은 유무만 봅니다</div>` +
+    needs.map((n) =>
+      `<div>${n.present ? "있음" : "<b>없음</b>"} <code>${esc(n.name)}</code> ` +
+      `<span class="muted">${esc(n.file)}${n.purpose ? " — " + esc(n.purpose) : ""}</span></div>`).join("");
   $("#wf-inputs").innerHTML = (wf.inputs || []).map((i) =>
       `<div class="row">${esc(i.name)} <input data-k="${esc(i.name)}" value="${esc(i.default)}">` +
       (i.description ? ` <span class="muted">${esc(i.description)}</span>` : "") + `</div>`).join("")

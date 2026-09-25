@@ -76,9 +76,19 @@ def described():
     `profile` is left out: the panel chooses that once, for any workflow.
     """
     import yaml
+    try:
+        import packages
+        needs = packages.needs_env()
+        owner = {w: p["name"] for p in packages.installed().values() if p["usable"]
+                 for w in (p.get("entries") or {})}
+    except Exception:
+        needs, owner = {}, {}
     out = {}
     for name, rel in sorted(known().items()):
-        row = {"path": rel, "description": "", "inputs": []}
+        row = {"path": rel, "description": "", "inputs": [],
+               # what the package this workflow belongs to needs in the environment, and whether it
+               # is there. Names and presence only — the panel shows it and never offers entry.
+               "needs_env": needs.get(owner.get(name), [])}
         try:
             d = yaml.safe_load(open(f"/work/{rel}", encoding="utf-8")) or {}
             w = d.get("workflow") or {}

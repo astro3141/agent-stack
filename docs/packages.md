@@ -197,6 +197,29 @@ docker/package.env          KEY=value, git-ignored, read into the agent's enviro
 docker/egress/allow         one regex per line: the hosts this package may reach
 ```
 
+**Declare them in the manifest**, so the operator is told before a run instead of by your step's
+error several minutes in:
+
+```yaml
+requires:
+  env:
+    - name: MY_LANE_TOKEN
+      purpose: read the issues it reviews          # shown in the panel
+      file: docker/package.env                     # where the operator puts it
+```
+
+```bash
+docker exec cadp278-agent /opt/venv/bin/python /work/stack/packages.py needs
+my-lane   MY_LANE_TOKEN   MISSING  docker/package.env — read the issues it reviews
+```
+
+The panel shows the same line under the workflow you select, as `있음` / `없음`. **Presence only.**
+The value is never read, returned, logged, or typed into that screen: a panel that accepted a
+credential would be a control-plane surface holding a secret, which is the one thing this stack
+takes care not to build. Declaring it does not make it a precondition either — the stack reports,
+and your step refuses at the point of use, because only it knows whether *this* run needs the
+credential at all (trading declares KIS's keys; `trading-b` never touches them).
+
 The stack does not hold them for you and does not ask for them: a composition without the file
 simply cannot run what needs it. Your step reads `os.environ`, and when the value is not there it
 **refuses with a hint that names the file** rather than failing halfway

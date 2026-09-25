@@ -3,6 +3,9 @@
 usage:
   packages.py list [--json]        what is installed, and whether each one is usable
   packages.py show <name>          one package's manifest, resolved
+  packages.py needs [<name>] [--json]
+                                   what each package needs in the environment, and whether it is
+                                   there — names and presence, never values
 
 A workflow used to be three things at once: a file under `stack/workflows/`, steps and prompts
 scattered through `stack/`, and its name written into a list inside `run_workflow.py` and another
@@ -173,6 +176,42 @@ def requires_of(workflow_name):
     return list(((p.get("requires") or {}).get("capabilities")) or []), p["name"]
 
 
+def needs_env(name=None):
+    """What each package says it needs in the environment, and whether it is there — never its value.
+
+    A package that reaches something other than a model provider needs a credential of its own, and
+    until now it could only say so in the error a step raises when the value is absent: the operator
+    found out several minutes into a run, from inside a step. A manifest may declare it:
+
+        requires:
+          env:
+            - name: DEVFLOW_GITHUB_TOKEN
+              purpose: read issues and pull requests, write reviews
+              file: docker/package.env
+
+    This reports presence and nothing else. **The value is never read, returned, logged or offered
+    for entry**: it arrives as environment from a git-ignored file the operator writes on the host
+    (OPERATIONS §43). Whether a missing one stops a run is the package's to decide — its step
+    refuses at the point of use, which is the only place that knows whether this run needs it.
+    """
+    out = {}
+    for pkg, p in sorted(installed().items()):
+        if not p["usable"] or (name and pkg != name):
+            continue
+        rows = []
+        for e in ((p.get("requires") or {}).get("env") or []):
+            e = {"name": str(e)} if isinstance(e, str) else dict(e)
+            var = str(e.get("name") or "")
+            if not var:
+                continue
+            rows.append({"name": var, "purpose": str(e.get("purpose") or ""),
+                         "file": str(e.get("file") or "docker/package.env"),
+                         "present": bool(os.environ.get(var))})
+        if rows:
+            out[pkg] = rows
+    return out
+
+
 def principals():
     """Every principal the installed packages declare, with the package that declared it.
 
@@ -216,6 +255,20 @@ if __name__ == "__main__":
                                                 "why": "not installed"}), ensure_ascii=False))
         sys.exit(0)
     rows = installed()
+    if a[:1] == ["needs"]:
+        rest = [x for x in a[1:] if not x.startswith("--")]
+        needs = needs_env(rest[0] if rest else None)
+        if "--json" in a:
+            print(json.dumps(needs, ensure_ascii=False))
+        elif not needs:
+            print("no installed package declares anything in the environment")
+        else:
+            for pkg, items in needs.items():
+                for e in items:
+                    print(f"{pkg:<12} {e['name']:<26} "
+                          f"{'present' if e['present'] else 'MISSING':<8} {e['file']}"
+                          + (f"  — {e['purpose']}" if e["purpose"] else ""))
+        sys.exit(0)
     _, wf_conflicts = workflows(with_conflicts=True)
     if "--json" in a:
         who, conflicts = principals()

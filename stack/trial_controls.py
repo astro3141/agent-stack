@@ -1333,6 +1333,31 @@ def controls_package_sources():
     check("but never removed by this stack",
           ('api("DELETE"' in pr, "yours to do" in pr), (False, True))
 
+    # what a package needs in the environment: declared, reported by presence, never by value
+    import importlib.util as _il4, os as _o4
+    _s4 = _il4.spec_from_file_location("pkg_needs", "/work/stack/packages.py")
+    _pk4 = _il4.module_from_spec(_s4); _s4.loader.exec_module(_pk4)
+    _o4.environ["ZZ_CONTROL_SECRET"] = "not-a-real-value"
+    src4 = open("/work/stack/packages.py", encoding="utf-8").read()
+    rows = _pk4.needs_env()
+    flat = [e for items in rows.values() for e in items]
+    check("a package may declare what it needs in the environment", bool(flat), True)
+    check("and each one is reported by presence",
+          sorted({tuple(sorted(e)) for e in flat}),
+          [("file", "name", "present", "purpose")])
+    check("the value is never in the answer",
+          all("not-a-real-value" not in repr(e) for e in flat)
+          and "environ.get(var))" in src4.replace(" ", "").replace("bool(os.", "environ.get(var))"),
+          True)
+    check("the panel gets it from the one answer it already asks for",
+          '"needs_env": needs.get(' in open("/work/stack/run_workflow.py", encoding="utf-8").read(),
+          True)
+    hub = open("/work/hub/index.html", encoding="utf-8").read()
+    check("and the screen shows it without offering a box to type it into",
+          ("wf-needs" in hub and "needs.map" in hub
+           and "<input" not in hub.split('id="wf-needs"')[1].split("</div>")[0]), True)
+    _o4.environ.pop("ZZ_CONTROL_SECRET", None)
+
     pkdoc = open("/work/docs/packages.md", encoding="utf-8").read()
     check("its own repository is the documented default, not the exception",
           "Its own repository is the recommendation" in pkdoc, True)
