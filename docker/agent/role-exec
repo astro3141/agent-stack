@@ -38,14 +38,17 @@ shift
 # about hosts, not about giving a role a private home, so the step keeps the one it had.
 home="${AGENTSTACK_HOME:-}"
 
-me="$(id -un)"
+# Absolute paths for everything this script runs. The sudoers rule turns secure_path off so the step
+# keeps the PATH the adapter needs, which means PATH here is the caller's — and a program that checks
+# who it is should not look up `id` on a path someone else chose.
+me="$(/usr/bin/id -un)"
 [ "$me" = "$role" ] || { echo "role-exec: running as $me, not $role — sudo did not switch" >&2; exit 4; }
 
 if [ -r "$CREDS/$role.cred" ] && [ -r "$CREDS/$role.port" ]; then
-  secret="$(cat "$CREDS/$role.cred")"
-  port="$(cat "$CREDS/$role.port")"
+  secret="$(/usr/bin/cat "$CREDS/$role.cred")"
+  port="$(/usr/bin/cat "$CREDS/$role.port")"
   proxy="http://$role:$secret@egress:$port"
-  exec env HTTPS_PROXY="$proxy" https_proxy="$proxy" HTTP_PROXY="$proxy" http_proxy="$proxy" \
+  exec /usr/bin/env HTTPS_PROXY="$proxy" https_proxy="$proxy" HTTP_PROXY="$proxy" http_proxy="$proxy" \
            AGENTSTACK_ROLE="$role" "$@"
 fi
 exec env AGENTSTACK_ROLE="$role" "$@"
