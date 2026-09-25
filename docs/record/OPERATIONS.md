@@ -3312,3 +3312,31 @@ fact the calendar delivers, not a test.
 
 **524/524 controls.**
 
+## 57. Who owns a profile
+
+Asked directly: is an egress profile the package's or the stack's? The split, and it is the same
+split §45 drew for the shared allowlist:
+
+* **A profile is the operator's.** Its allowlist file (`docker/egress/profiles/<name>.allow`), its
+  proxy and its runner are provisioned at the instance — a package cannot create one or widen one
+  by declaring harder. The broker now says so where the line is crossed: a role mapped to a name
+  this instance does not provision is refused with the provisioned list and where profiles are
+  made, instead of the muddy "runner did not answer" it used to produce.
+* **A mapping is a reference, and a package may make one.** `egress_profile: <name>` in a package's
+  `principals.yaml` is the same trust-on-install as its tool rules (§27) — it names which existing
+  profile a role runs in, nothing more. The platform's own `config/principals.yaml` wins a name
+  clash, so the operator can override a package's mapping without editing the package.
+* **A package's channel for needs stays what §45 made it**: `requires.egress` is the audit that
+  says which hosts it wants, and its README asks the operator for a profile shaped like that.
+
+**Measured the same hour it was written, by someone else.** The devflow session migrated off the
+retired key while this section was being drafted: two new profiles (`research`,
+`research-review`) provisioned instance-side — allow files, proxies, runners, committed — and the
+roles mapped to them from the package side, by name. Nobody was told the split; the shape taught
+it. The deprecation list is down to `egress-probe`, the frozen design's deliberate probe, which
+means retiring the uid machinery now waits on nothing but the decision to delete it.
+
+Also here: the broker's `/health` lists the provisioned profiles beside the map, so the panel shows
+both halves of the ownership; and the control count moving 524→515 is the legacy per-role checks
+leaving with the roles that left the legacy key — a dynamic count, not a loss.
+

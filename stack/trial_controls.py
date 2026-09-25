@@ -1305,7 +1305,16 @@ def controls_broker():
     ops7 = open("/work/ops/server.py", encoding="utf-8").read()
     check("the overview asks the broker itself, not a copy of the configuration",
           ("cadp278-broker:8791/health" in ops7 and '"broker": broker' in ops7), True)
+    check("the broker says which profiles this instance provisions",
+          set(h.get("profiles_provisioned") or []) >= {"probe", "closed"}
+          if isinstance(h, dict) else False, True)
     src7 = open("/work/stack/broker.py", encoding="utf-8").read()
+    check("a mapping to a profile nobody provisioned is refused naming the owner",
+          ("which this instance does not provision" in src7
+           and "Profiles" + chr(10) + "                                             " not in ""
+           and "docker/egress/" in src7), True)
+    check("and the set of existing profiles is read from the operator's artifacts",
+          'glob.glob("/work/docker/egress/profiles/*.allow")' in src7, True)
     check("the credential is swapped in at the forward and travels no further",
           ('headers["mcp-session-id"]' in src7 and '"Authorization": cred' in src7
            and "job_token" not in src7.split("def _forward")[1]), True)

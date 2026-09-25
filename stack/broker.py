@@ -49,6 +49,18 @@ JOBS_LOCK = threading.Lock()
 TOKEN_TTL_S = 3600
 
 
+def provisioned():
+    """The egress profiles this instance actually has — the operator's artifacts, read from disk.
+
+    A profile is the stack's to own (§57): its allowlist file and its proxy/runner pair are created
+    at bring-up, like the shared allowlist in §45. A package may *reference* one by name in a
+    role's declaration; it cannot create or widen one by declaring harder. So the set of names that
+    exist is read from what the operator provisioned, never from what anyone requested."""
+    import glob
+    return sorted(os.path.basename(f)[:-len(".allow")]
+                  for f in glob.glob("/work/docker/egress/profiles/*.allow"))
+
+
 def mapping():
     """{role: profile} — read from the declarations, at call time, never from a request."""
     import importlib
@@ -90,7 +102,8 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/health":
             with JOBS_LOCK:
                 live = sum(1 for j in JOBS.values() if not j["done"])
-            return self._send(200, {"ok": True, "map": mapping(), "jobs_live": live})
+            return self._send(200, {"ok": True, "map": mapping(),
+                                    "profiles_provisioned": provisioned(), "jobs_live": live})
         return self._send(404, {"error": "unknown"})
 
     def do_POST(self):
@@ -116,6 +129,15 @@ class H(BaseHTTPRequestHandler):
             # the caller does not choose where a role runs; saying so beats ignoring it
             return self._send(403, {"error": f"role {role!r} is declared to run in "
                                              f"{profile!r}, not {req['profile']!r}"})
+        have = provisioned()
+        if profile not in have:
+            # the ownership line, spoken where it is crossed: the package chose a name, and only
+            # the operator makes names exist
+            return self._send(501, {"error": f"role {role!r} is mapped to profile {profile!r}, "
+                                             f"which this instance does not provision. Profiles "
+                                             f"are the operator's: this instance has "
+                                             f"{have or 'none'}. Add the profile (docker/egress/"
+                                             "profiles/, compose) or remap the role (§57)."})
         if credential(role) is None:
             return self._send(503, {"error": f"the broker holds no credential for {role!r}"})
         token = secrets.token_urlsafe(24)
