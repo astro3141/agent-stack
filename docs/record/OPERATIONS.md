@@ -2934,3 +2934,51 @@ isolation class — still reaches everything and depends on no vendor.
 
 **505/505 controls**, and the rule they pin is the login's owner, not the vendor's name — no host on the internet is contacted by a
 control; what the proxy does with a declared host is the measurement above.
+
+## 49. "Grok never connected" was true once, and is not true now
+
+§48 repeated a finding from the routing work: grok ignores an MCP server handed over ACP, which is
+why its Preloop credential comes from its own config file and why `mcp_principal` — a per-call
+override — cannot apply to it. Asked *why* it never connected, and the honest first answer was that
+nobody had found out: FINDINGS-281 records the observation ("its log shows no connection attempt")
+and the workaround, not a cause.
+
+Measured now, against grok 1.0.40 in this image:
+
+**It advertises the capability.** Its ACP `initialize` reply:
+`"mcpCapabilities":{"http":true,"sse":true}`.
+
+**It connects.** Handed an HTTP MCP server pointing at a listener of ours, it posts to it — twice,
+unprompted:
+
+```
+POST /mcp  server/discover   _meta io.modelcontextprotocol/protocolVersion 2026-07-28
+POST /mcp  initialize        protocolVersion 2025-11-25
+```
+
+**And against the real server it completes the handshake and pulls the tools.** Preloop's own access
+log, for `grok-cli/1.0.40`, four requests per session and the same shape every time:
+
+```
+POST /mcp/v1  400    (its first protocol version, refused)
+POST /mcp/v1  200    (the one they agree on)
+POST /mcp/v1  202
+POST /mcp/v1  200   11189 bytes     ← the tool list
+```
+
+So the 400 is a version negotiation that succeeds on the retry, not a failure. What misled this
+session was grok's ACP reply: `session/new` returns `"mcpServers": []` (or `null`) **while the
+server is connected and answering** — the field is not the evidence, and reading it as such is how
+"no server attached" was concluded twice in one afternoon, by me.
+
+**What this changes.** `mcp_principal is not supported for grok` is now a statement about an older
+grok, kept in our adapter as a fact about grok. If the credential can go in the ACP `session/new`
+headers — and it demonstrably can — then grok can take a principal, which means per-role tool rights
+and per-role egress reach it exactly as they reach claude. Not done here: the same earlier session
+found two other grok behaviours that were worked around at the time (it imported Claude's settings
+from `$HOME`, and it asked the client about its own MCP calls), and whether those resurface on the
+ACP-handed path needs a real run, not a handshake.
+
+**What is worth keeping from this beyond grok**: a vendor limitation recorded once is an assumption
+from then on, and this one survived three months and two rewrites of the thing it constrained. The
+adapter says it in a comment, the docs repeat it, and nothing re-asked the CLI until someone did.
