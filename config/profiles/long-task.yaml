@@ -2,18 +2,16 @@
 # task itself: which providers may run it and in what order, on which route and login, under
 # which quota limits and which tool policy, and where the run is recorded.
 name: long-task
-description: As research-default, with a 30-minute call limit — for a model that implements a change (devflow impl_profile)
+description: As research-default, with a 60-minute call limit — for a model that implements a change (devflow impl_profile)
 
+# Claude only. Measured with devflow's implementer (2026-09-25): Codex wrote its report with its own
+# edit tool, which is not the governed MCP writer, so the edit waited for a person and expired, and
+# a file it wrote through MCP held "undefined". And devflow-implementer declares egress of its own,
+# which the Codex CLI cannot run under (§48). A run that cannot have Claude waits instead.
 providers:                        # order = preference
   - name: claude
     route: direct                 # direct: routing-layer login + allowlist egress
     login: claude                 # a directory under paths.logins_root
-  - name: codex
-    route: direct
-    login: codex
-  - name: grok
-    route: direct
-    login: grok
 
 quota:
   max_age_s: 1800                 # an observation older than this is "stale" → not eligible
@@ -28,7 +26,7 @@ tools:
   preloop_policy: policy/b-fsmcp.yaml   # applied to Preloop by `cfg.py apply`
 
 execution:
-  timeout_ms: 1800000
+  timeout_ms: 3600000
 
 record:
   mlflow_experiment: p281-routing
