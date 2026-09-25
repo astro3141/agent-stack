@@ -54,9 +54,15 @@ def declared():
     try:
         import principals as pr
         for role, spec in (pr.declared() or {}).items():
-            hosts = [str(h).strip() for h in ((spec or {}).get("egress") or [])]
+            spec = spec or {}
+            if "egress" not in spec:
+                continue          # no declaration: the shared proxy, as before
+            # `egress: []` is a declaration, and a useful one — "the providers, and nothing else".
+            # It is what a model role wants: the shared list has hosts open for other packages, and a
+            # role that declares an empty list cannot reach them.
+            hosts = [str(h).strip() for h in (spec.get("egress") or [])]
             hosts = [h for h in hosts if HOST.fullmatch(h)]
-            if hosts and NAME.fullmatch(str(role)):
+            if NAME.fullmatch(str(role)):
                 out[str(role)] = sorted(set(hosts))
     except Exception as e:
         print(json.dumps({"error": f"could not read the declarations: {type(e).__name__}: {e}"}),

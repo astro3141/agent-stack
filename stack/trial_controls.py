@@ -1314,6 +1314,30 @@ def controls_role_egress():
         check("a step run as a role is told which role it is, and is handed a proxy",
               r4.stdout.split(), [role, "http"])
 
+    # "the providers and nothing else" is a declaration a role can make
+    import tempfile as _tf6, pathlib as _pl6
+    reader = re_.declared
+    try:
+        re_.declared = lambda: {"zz-empty": [], "zz-hosts": ["example.test"]}
+        got = {k: v for k, v in re_.plan()["roles"].items() if k.startswith("zz-")}
+        check("an empty egress list is a declaration, not an absence",
+              sorted(got), ["zz-empty", "zz-hosts"])
+        check("and it means the providers and nothing else",
+              got["zz-empty"]["hosts"], [])
+    finally:
+        re_.declared = reader
+    check("a role that declares nothing at all is not given a uid",
+          "zz-none" in re_.plan()["roles"], False)
+
+    # a step that would be confined and cannot be is refused by name, not left to a vendor error
+    at6 = open("/work/stack/steps/agent_task.py", encoding="utf-8").read()
+    check("a model step on a CLI that cannot run as a role is refused, naming the rule",
+          ('if role_uid and provider in ("codex",)' in at6
+           and "OPERATIONS §48" in at6 and "builds its own sandbox" in at6), True)
+    check("and it is a refusal, not a quiet fall back to the shared allowlist",
+          "raise SystemExit(0)" in at6.split('if role_uid and provider in ("codex",)')[1][:1200],
+          True)
+
     src5 = open("/work/docker/agent.Dockerfile", encoding="utf-8").read()
     check("only one program may change user, and only for the roles group",
           ("agent ALL=(%roles) NOPASSWD:SETENV: ROLE_EXEC" in src5

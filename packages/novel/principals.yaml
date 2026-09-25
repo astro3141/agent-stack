@@ -15,11 +15,15 @@ principals:
     tool_rules: {}
 
   novel-reviewer:
-    # No `egress:` here on purpose. Declaring it would make these lanes run as this role's uid, and
-    # the Codex CLI's own sandbox refuses to start under a uid other than the one that installed it
-    # (measured: "Error: Operation not permitted (os error 1)"). Per-role egress is proven for the
-    # platform's own steps; the model-step path has that one obstacle, named in agent-stack
-    # OPERATIONS §48 rather than left for someone to find.
+    # No `egress:` here on purpose, and the reason is now measured per vendor (agent-stack §48).
+    # Declaring it — `egress: []` is enough, meaning "the providers and nothing else" — makes these
+    # lanes run as this role's own uid behind its own proxy. On claude that works end to end: the
+    # lane completed, wrote its review file through this role's rights, and could reach neither the
+    # GitHub the shared allowlist has open nor a host another role declared. On codex it cannot: that
+    # CLI builds its own sandbox and exits "Operation not permitted" under any uid but the one that
+    # installed it, so the step is refused by name instead. novel-a runs this role on codex and grok
+    # as well, so declaring it here would refuse two of the three review lanes. A package whose model
+    # steps all run on claude can declare it today.
     description: >
       Reads the frozen draft and writes its own review. It may not touch what it judges — measured
       as "Access denied: Scoped rule 2" when it tries (OPERATIONS.md §10).

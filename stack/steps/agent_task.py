@@ -60,6 +60,23 @@ if principal and not os.environ.get("AGENTSTACK_ROLE"):
         role_uid = (role_egress.assignment().get(principal) or {}).get("uid")
     except Exception:
         role_uid = None
+    # Measured per vendor (OPERATIONS §48): the Claude CLI runs as a role, the Codex CLI builds its
+    # own sandbox and exits "Operation not permitted" under any uid but the one that installed it.
+    # A step that would be confined and cannot be is refused here, by name — running it unconfined
+    # would give the role the shared list it declared its way out of, and running it anyway ends in
+    # a vendor error three layers down that says nothing about roles.
+    if role_uid and provider in ("codex",):
+        print(json.dumps({
+            "status": "FAILED", "provider": provider, "principal": principal,
+            "run_id": run_id, "workspace": ws, "produced": False, "produced_stale": False,
+            "evidence_dir": evid, "profile": prof_name, "attempts": 0,
+            "failure": f"{principal} declares egress of its own, so this step would run as that "
+                       f"role's uid — and the {provider} CLI cannot: it builds its own sandbox and "
+                       "exits 'Operation not permitted' under a uid other than the one that "
+                       "installed it (OPERATIONS §48). Either this role runs its model steps on "
+                       "claude, or it drops its egress declaration and shares the allowlist.",
+            "measurements": {}}))
+        raise SystemExit(0)
     if role_uid and os.path.exists("/usr/local/bin/role-exec"):
         shared_with_roles(ws, evid)
         # -E keeps this step's environment: the run id, the workspace, the credential the adapter

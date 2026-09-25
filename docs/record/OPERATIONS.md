@@ -2849,22 +2849,44 @@ another role. `role-exec` also refuses to run a step under a role it is not.
   this container today — so the group gets those too. **Per-role egress is about hosts. Provider
   credentials are not per-role**, and the honest reason is §46's: they live in one container.
 
-**Where it stops.** A *model* step as a role does not work yet. The Codex CLI builds its own sandbox
-and, run under a uid other than the one that installed it, exits before the call:
+**Where it stops, per vendor.** A model step as a role is one question per CLI, and asking it of all
+three is the whole answer (the Claude login was renewed for this; the first attempt hit an expired
+token, which is the operator's to fix and not a finding):
+
+| | as its own role | what happened |
+|---|---|---|
+| **claude** | **works, end to end** | `COMPLETED`, wrote its file through the role's own rights, `produced: true`, 69k tokens |
+| **codex** | no | its CLI builds its own sandbox and exits before the call: `could not create PATH aliases: Operation not permitted`, then `Codex could not find bubblewrap on PATH` — and with bubblewrap installed, `Error: Operation not permitted (os error 1)`. EPERM, not EACCES: a privileged operation refused, not a file it could not read |
+| **grok** | not applicable | it cannot take a principal at all, and never could: `mcp_principal is not supported for grok: its Preloop credential comes from its own config file`. Nothing to do with uids |
+
+The claude path was measured on a real role with real rights: `novel-reviewer` declared `egress: []`
+— *the providers and nothing else* — and the lane completed, wrote `review_r9.json` through its own
+tool rules, and from inside that role:
 
 ```
-WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)
-Codex could not find bubblewrap on PATH        → bubblewrap installed, and then:
-Error: Operation not permitted (os error 1)
+api.anthropic.com  404   the baseline, reached
+api.github.com     000   refused, and the shared allowlist has it open
+example.com        000   refused — another role declared that host, not this one
 ```
 
-So the platform side is proven and the vendor side is not. `novel-reviewer` was given a host to
-measure it on a real workflow and the declaration was **taken back out**, because leaving it would
-have broken every review lane — a capability that breaks the thing it was added to is not a
-capability. The declaration stays available; the platform's own steps and any step that does not go
-through that CLI get it today; a model step needs the vendor's sandbox to tolerate a uid change, or
-the isolation class needs a container of its own, which is §47's other route and does not depend on a
-vendor at all.
+That is per-role egress doing exactly what was asked for, on a model step.
 
-**484/484 controls**, thirteen of them new and all local — no host on the internet is contacted by a
+**And a step that would be confined but cannot be is now refused by name.** Running it unconfined
+would hand the role the shared list it declared its way out of; running it anyway ends in a vendor
+error three layers down that says nothing about roles. So:
+
+```
+egress-probe declares egress of its own, so this step would run as that role's uid — and the codex
+CLI cannot: it builds its own sandbox and exits 'Operation not permitted' under a uid other than the
+one that installed it (OPERATIONS §48). Either this role runs its model steps on claude, or it drops
+its egress declaration and shares the allowlist.
+```
+
+`novel-reviewer`'s declaration was **taken back out**, because novel-a runs that role on codex and
+grok as well and two of its three review lanes would be refused — a capability that breaks the thing
+it was added to is not a capability. What is true today: **a role whose model steps run on claude can
+be confined to its own domains, now.** A role that runs on codex needs either that CLI to tolerate a
+uid change, or §47's other route — a container of its own, which depends on no vendor.
+
+**489/489 controls**, eighteen of them new and all local — no host on the internet is contacted by a
 control; what the proxy does with a declared host is the measurement above.
