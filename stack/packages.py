@@ -34,7 +34,13 @@ DECL = os.environ.get("AGENTSTACK_PACKAGES_YAML", "/work/config/packages.yaml")
 # git-ignored, merged over the tracked file — so the tracked one stays a declaration a stranger can
 # actually run (docs/packages.md).
 LOCAL_DECL = os.environ.get("AGENTSTACK_PACKAGES_LOCAL", "/work/config/packages.local.yaml")
-ALLOW = os.environ.get("AGENTSTACK_EGRESS_ALLOW", "/work/docker/egress/allow")
+# What the shared proxy actually serves, which since §60 is the generated merge of the tracked
+# baseline and this instance's own additions — not the tracked file. Reading the tracked one made
+# this audit answer "NOT OPEN" about hosts that were open, which is the opposite of its job.
+ALLOW = os.environ.get(
+    "AGENTSTACK_EGRESS_ALLOW",
+    "/work/config/generated/egress/allow" if os.path.isfile("/work/config/generated/egress/allow")
+    else "/work/docker/egress/allow")
 NAME = re.compile(r"[a-z][a-z0-9-]{1,39}")
 
 

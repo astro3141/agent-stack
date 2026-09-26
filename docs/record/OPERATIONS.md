@@ -3454,3 +3454,15 @@ now, and nothing deleted what is inside it: it is someone else's, even when it i
 
 **521/521 controls.**
 
+### §60 addendum: the audit followed the file it stopped being
+
+Splitting the allowlist moved what the proxy serves into `config/generated/egress/allow` and left
+`packages.py egress` reading the tracked baseline — so the first question asked of it afterwards
+("are devflow's three GitHub hosts still open?") came back **NOT OPEN about three hosts that were
+open**. An audit that reads the wrong file is worse than no audit: this one would have talked an
+operator into removing hosts a package needs. It reads the effective list now, falling back to the
+tracked one when nothing is generated yet, and a control pins which file it must be.
+
+Found by being asked to confirm the previous answer, one commit later — which is the argument for
+answering "is it done?" with a measurement instead of a memory.
+

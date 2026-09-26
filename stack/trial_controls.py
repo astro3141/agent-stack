@@ -1640,7 +1640,10 @@ def controls_package_sources():
             check("a package may declare the hosts it reaches",
                   [(e["host"], e["open"]) for e in got["packages"]["zz-egress"]],
                   [("api.example.test", True), ("closed.example.test", False)])
-            check("an open host no package declares is reported",
+            check("the audit reads what the proxy serves, not the tracked baseline",
+          "config/generated/egress/allow" in open("/work/stack/packages.py",
+                                                  encoding="utf-8").read(), True)
+    check("an open host no package declares is reported",
                   got["open_and_undeclared"], ["nobody.example.test"])
             check("and the providers are not reported as orphans",
                   "api.anthropic.com" in got["open_and_undeclared"], False)
