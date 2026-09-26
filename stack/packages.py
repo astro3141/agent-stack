@@ -3,6 +3,8 @@
 usage:
   packages.py list [--json]        what is installed, and whether each one is usable
   packages.py show <name>          one package's manifest, resolved
+  packages.py python [<name>] [--json]
+                                   what each package needs importable, and whether it is there
   packages.py needs [<name>] [--json]
                                    what each package needs in the environment, and whether it is
                                    there — names and presence, never values
@@ -305,6 +307,48 @@ def egress_of(name=None):
     return {"packages": out, "open_and_undeclared": sorted(orphans)}
 
 
+MODULE = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,60}")
+
+
+def needs_python(name=None):
+    """What each package needs importable, and whether the runtime has it — never installing it.
+
+    Measured before this existed (OPERATIONS §62): **no container in this stack can reach PyPI** —
+    not the governed runtime, not the admin side, by proxy or direct. The only place a Python
+    dependency can be installed is the image build, which is the operator's action on the host. So
+    "the platform works out what a package needs and installs it" is not a thing this stack can do
+    without opening a route it spent §45–§60 closing, and it does not pretend otherwise.
+
+    What it does instead is the §43 shape for a credential, applied to a library: the package
+    declares, the stack answers whether it is there, and a run that would fail on an ImportError
+    twenty minutes in is refused at the start with the name of the module and where it goes.
+
+        requires:
+          python: [pydantic, httpx]
+
+    A pure-Python dependency does not belong here at all — vendor it in the package, which arrives
+    as a directory and needs nothing from the image. This is for what cannot travel that way.
+    """
+    import importlib.util as il
+    out = {}
+    for pkg, p in sorted(installed().items()):
+        if not p["usable"] or (name and pkg != name):
+            continue
+        rows = []
+        for m in ((p.get("requires") or {}).get("python") or []):
+            mod = str(m).strip()
+            if not MODULE.fullmatch(mod):
+                continue
+            try:
+                present = il.find_spec(mod.split(".")[0]) is not None
+            except (ImportError, ValueError):
+                present = False
+            rows.append({"module": mod, "present": present})
+        if rows:
+            out[pkg] = rows
+    return out
+
+
 def login_of(name):
     """The official login a package declares, or {} — the same shape a provider's login has.
 
@@ -382,6 +426,19 @@ if __name__ == "__main__":
                                                 "why": "not installed"}), ensure_ascii=False))
         sys.exit(0)
     rows = installed()
+    if a[:1] == ["python"]:
+        rest = [x for x in a[1:] if not x.startswith("--")]
+        got = needs_python(rest[0] if rest else None)
+        if "--json" in a:
+            print(json.dumps(got, ensure_ascii=False))
+        elif not got:
+            print("no installed package declares a Python dependency")
+        else:
+            for pkg, items in got.items():
+                for e in items:
+                    print(f"{pkg:<12} {e['module']:<20} "
+                          f"{'importable' if e['present'] else 'MISSING — add it to the image'}")
+        sys.exit(0)
     if a[:1] == ["egress"]:
         rest = [x for x in a[1:] if not x.startswith("--")]
         got = egress_of(rest[0] if rest else None)

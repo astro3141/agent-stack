@@ -173,6 +173,26 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
                        "detail": "unknown capability"}
         elif not caps[c]["available"] and c not in gone:
             gone.append(c)
+    # A module the package says it imports, checked here (§62): the alternative is an ImportError
+    # in a step, minutes in, naming a module and nothing about which package wanted it or why the
+    # image has not got it. No container in this stack can reach PyPI — the fix is always a line in
+    # the image, at build, by the operator.
+    try:
+        import packages as _pk
+        lacking = [(pkg, e["module"]) for pkg, rows in _pk.needs_python().items()
+                   for e in rows if not e["present"]
+                   if pkg == (_pk.requires_of(workflow)[1] or pkg_name)]
+    except Exception:
+        lacking = []
+    if lacking:
+        print(json.dumps({
+            "error": "this workflow's package needs a module the runtime has not got: "
+                     + ", ".join(m for _, m in lacking),
+            "why": {m: f"{pkg} declares it in requires.python" for pkg, m in lacking},
+            "hint": "no container here can reach PyPI (OPERATIONS §62): add it to "
+                    "docker/agent.Dockerfile's venv install and re-run scripts/up.sh --build. "
+                    "A pure-Python dependency belongs in the package instead."}, ensure_ascii=False))
+        return 3
     if gone:
         print(json.dumps({"error": "the stack cannot run this now: " + ", ".join(gone),
                           "why": {k: caps[k]["without_it"] for k in gone},

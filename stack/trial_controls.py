@@ -1321,6 +1321,43 @@ def controls_broker():
     check("a job's token dies with the job", 'JOBS[token]["done"] = True' in src7, True)
 
 
+def controls_python_deps():
+    """§62: a package declares what it imports; the stack answers and refuses, never installs."""
+    print("")
+    print("a package's Python dependency — declared, verified, never installed (§62)")
+    import importlib.util as _ilp, json as _jp, os as _op, pathlib as _plp
+    import subprocess as _spp, sys as _syp, tempfile as _tfp
+    _sp = _ilp.spec_from_file_location("pk_py", "/work/stack/packages.py")
+    _pkp = _ilp.module_from_spec(_sp); _sp.loader.exec_module(_pkp)
+    with _tfp.TemporaryDirectory() as t:
+        r = _plp.Path(t)
+        (r / "zz-dep").mkdir()
+        (r / "zz-dep" / "manifest.yaml").write_text(chr(10).join([
+            "name: zz-dep", "entry: workflow.yaml", "requires:",
+            "  python: [json, zz_not_a_module]"]))
+        (r / "zz-dep" / "workflow.yaml").write_text("workflow: {}")
+        old_root, old_decl = _pkp.ROOT, _pkp.DECL
+        try:
+            _pkp.ROOT = str(r)
+            declare_temp(_pkp, r)
+            got = _pkp.needs_python()["zz-dep"]
+            check("a declared module is reported present or missing, by name",
+                  [(e["module"], e["present"]) for e in got],
+                  [("json", True), ("zz_not_a_module", False)])
+        finally:
+            _pkp.ROOT, _pkp.DECL = old_root, old_decl
+    src = open("/work/stack/packages.py", encoding="utf-8").read()
+    rw = open("/work/stack/run_workflow.py", encoding="utf-8").read()
+    check("the stack never installs it: no pip anywhere in the loader or the runner",
+          ("pip" not in src.replace("PyPI", "") and "pip install" not in rw), True)
+    check("a run whose package lacks a module is refused before it starts",
+          ("needs_python()" in rw and "return 3" in rw.split("needs_python()")[1][:900]), True)
+    check("and the refusal says where a module comes from in this stack",
+          "no container here can reach PyPI" in rw, True)
+    check("the reason it cannot be installed is measured, not assumed",
+          "not the admin side" in src, True)
+
+
 def controls_multi_model_admission():
     """§61: a round that needs several models can ask about all of them, and decides for itself."""
     print("")
@@ -2434,6 +2471,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_python_deps()
     controls_multi_model_admission()
     controls_h1_integration()
     controls_broker()

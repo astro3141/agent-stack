@@ -3505,3 +3505,58 @@ means once reviews are models.
 inside a temp-root `try` block, which is how a syntax error reached a suite that had reported passing
 — the suite is run after every edit for exactly this reason, and it was.
 
+## 62. A library a package needs: declared, verified, and not installed
+
+Asked whether the platform should work out a package's libraries and install them. Three
+measurements decided it before any design did:
+
+```
+pydantic, httpx in the agent image        MISSING
+PyPI from the governed runtime            no route, by proxy or direct
+PyPI from the admin side                  no route, by proxy or direct
+```
+
+**No container in this stack can install anything.** The only place a Python dependency can arrive
+is the image build, on the host, by the operator — which is where `pytest`, `sympy` and `PyYAML`
+already come from. "The platform works it out and installs it" would mean opening PyPI to a
+container, and §45–§60 were spent closing exactly that kind of route. Two more reasons not to, even
+if the route existed: one shared interpreter means one package's version pin is every package's, and
+a pip install runs arbitrary setup code at install time — a much larger grant than the trust §27
+describes.
+
+**So the platform does the part that is actually its own**, the §43 shape for a credential applied to
+a library. The package declares:
+
+```yaml
+requires:
+  python: [pydantic, httpx]
+```
+
+`packages.py python` answers whether each is importable, and a run whose package lacks one is
+refused **at the start**:
+
+```
+{"error": "this workflow's package needs a module the runtime has not got: pydantic",
+ "why": {"pydantic": "zz-pydep declares it in requires.python"},
+ "hint": "no container here can reach PyPI (§62): add it to docker/agent.Dockerfile's venv install
+          and re-run scripts/up.sh --build. A pure-Python dependency belongs in the package instead."}
+```
+
+Measured with a probe package declaring `pydantic` (absent) and `json` (present): reported
+correctly, and the run refused by name rather than dying on an `ImportError` inside a step twenty
+minutes in.
+
+**And the first line of the answer is "you probably do not need this".** A pure-Python dependency
+belongs *in* the package — a package arrives as a directory, and a step can put a vendored tree on
+`sys.path` without the image knowing. The trading harness's own proposal is exactly right on this
+point: the harness source travels in the package, and only the two C-extension libraries are the
+image's business. `requires.python` is for what cannot travel as a directory, and it stays a
+declaration rather than an instruction.
+
+What is *not* built, deliberately: a build hook that reads declarations and adds them to the image.
+It is mechanizable and host-side, so the trust boundary survives — but it makes an image's contents a
+function of whatever is installed, and the operator who has to trust a package's principals (§27)
+should get to see that line too. Worth revisiting when more than one package needs it.
+
+**534/534 controls.**
+

@@ -88,7 +88,18 @@ workflows:                    # or `entry: workflow.yaml` for a single one
 requires:
   capabilities: [tool_rights, egress, record, admission]   # the runner refuses a run without them
 runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
+requires:
+  python: [pydantic]          # modules you import that the image must already carry
 ```
+
+**Bring your own code; declare only what you cannot.** A pure-Python dependency belongs *in* the
+package — it arrives as a directory, and a step can put it on `sys.path` itself. Declare
+`requires.python` only for what cannot travel that way (a C extension, a wheel), and note what the
+stack will and will not do with it: no container here can reach PyPI (OPERATIONS §62), so nothing is
+installed for you. What you get is an answer and a refusal — `packages.py python` says whether each
+module is importable, and a run whose package lacks one is refused at the start, naming the module,
+instead of dying on an ImportError inside a step. Adding it is a line in the image and a rebuild, by
+the operator.
 
 A package may carry **several workflows** when they share steps — that is why the three trading
 workflows are one package.
