@@ -136,6 +136,25 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/workflows":
             # with what each one says about itself, so the screen offers what exists
             return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "workflows", "--detail"]))
+        m = re.fullmatch(r"/api/packages/([a-z][a-z0-9-]{1,39})/runbook", p)
+        if m:
+            # §58: the package's own operating document. The loader validated the path (inside the
+            # package, exists); this only reads what that validation admitted, and says so when a
+            # package declares none.
+            info = jexec([PY, "/work/stack/packages.py", "show", m.group(1)])
+            rb = (info or {}).get("runbook") or ""
+            if not rb:
+                return self._send(404, {"error": f"{m.group(1)} declares no runbook"})
+            rc, text, _ = dexec(["cat", f"/work/{rb}"])
+            if rc != 0:
+                return self._send(404, {"error": "declared but unreadable"})
+            b = text.encode()
+            self.send_response(200)
+            self.send_header("content-type", "text/plain; charset=utf-8")
+            self.send_header("content-length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+            return None
         m = re.fullmatch(r"/api/packages/([a-z][a-z0-9-]{1,39})/login", p)
         if m:
             # a package may declare an official login of its own, driven exactly as a provider's

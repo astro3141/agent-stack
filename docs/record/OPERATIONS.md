@@ -3340,3 +3340,26 @@ Also here: the broker's `/health` lists the provisioned profiles beside the map,
 both halves of the ownership; and the control count moving 524→515 is the legacy per-role checks
 leaving with the roles that left the legacy key — a dynamic count, not a loss.
 
+## 58. A package's runbook, shown where the run starts
+
+The devflow session wrote a runbook for its package and asked for one thing from the stack: read
+the `runbook:` manifest key and put the link on the workflow-selection screen — the same
+declarative shape as `login:` (§44) and `env:` (§43). A package needing an operating document is
+not one package's circumstance, so the key is platform now:
+
+```yaml
+# manifest.yaml
+runbook: RUNBOOK.md
+```
+
+The loader validates it like an entry — a file inside the package, or the declaration is ignored
+rather than becoming a link that 404s at the operator. The panel gets the path from the one answer
+it already asks for (`workflows --detail`), shows `사용 설명서` beside the workflow's description,
+and `GET /api/packages/<name>/runbook` serves the text. The stack reads none of it: what the
+document says is the package's, where it is shown is the platform's — the same line as everything
+else on that screen.
+
+Measured: devflow's own runbook served through the panel; a package with no declaration answers
+404 by name; a declaration pointing outside the package is ignored (driven with `../outside.md`);
+519/519 controls, four new. devflow re-pinned at `d50834c`, the commit that carries the document.
+

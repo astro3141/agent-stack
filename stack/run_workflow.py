@@ -83,6 +83,8 @@ def described():
                   for p in packages.installed().values() if p["usable"]}
         owner = {w: p["name"] for p in packages.installed().values() if p["usable"]
                  for w in (p.get("entries") or {})}
+        runbooks = {p["name"]: p.get("runbook") or "" for p in packages.installed().values()
+                    if p["usable"]}
     except Exception:
         needs, owner = {}, {}
     out = {}
@@ -92,7 +94,11 @@ def described():
                # is there. Names and presence only — the panel shows it and never offers entry.
                "needs_env": needs.get(owner.get(name), []),
                # the official login this workflow's package declares, if it has one (§44)
-               "login": (logins.get(owner.get(name)) or None)}
+               "login": (logins.get(owner.get(name)) or None),
+               # the package's own operating document (§58): the panel links it, the stack only
+               # says where it is
+               "runbook": runbooks.get(owner.get(name), ""),
+               "package": owner.get(name, "")}
         try:
             d = yaml.safe_load(open(f"/work/{rel}", encoding="utf-8")) or {}
             w = d.get("workflow") or {}

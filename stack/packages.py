@@ -86,7 +86,17 @@ def _read(directory):
             out["why"] = f"{wf_name}: {rel!r} is not there"
             return out
         resolved[wf_name] = path
-    out.update(usable=True, entry=resolved.get(name) or sorted(resolved.values())[0],
+    # `runbook:` — the package's own operating document, shown by the panel (§58). Validated like
+    # an entry: a file inside the package, or the declaration is ignored with a note rather than a
+    # link that 404s at the operator.
+    runbook = ""
+    rb = str(m.get("runbook") or "")
+    if rb:
+        rbp = os.path.normpath(os.path.join(directory, rb))
+        if rbp.startswith(os.path.normpath(directory) + os.sep) and os.path.isfile(rbp):
+            runbook = os.path.relpath(rbp, "/work")
+    out.update(runbook=runbook,
+               usable=True, entry=resolved.get(name) or sorted(resolved.values())[0],
                entries=resolved, version=str(m.get("version") or ""),
                description=str(m.get("description") or ""),
                requires=(m.get("requires") or {}), login=(m.get("login") or {}),

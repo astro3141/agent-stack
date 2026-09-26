@@ -87,6 +87,7 @@ workflows:                    # or `entry: workflow.yaml` for a single one
   my-lane: workflow.yaml
 requires:
   capabilities: [tool_rights, egress, record, admission]   # the runner refuses a run without them
+runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
 ```
 
 A package may carry **several workflows** when they share steps — that is why the three trading

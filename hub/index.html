@@ -499,7 +499,8 @@ async function loadWorkflows() {
 }
 function renderInputs() {
   const wf = WORKFLOWS[$("#wf").value] || {inputs: [], description: ""};
-  $("#wf-about").textContent = wf.description || "";
+  $("#wf-about").innerHTML = esc(wf.description || "")
+    + (wf.runbook ? ` · <a href="/api/packages/${esc(wf.package)}/runbook" target="_blank" rel="noopener">사용 설명서</a>` : "");
   // What this workflow's package needs in the environment, and whether it is there. Read-only on
   // purpose: the value is the operator's, it goes in a git-ignored file on the host, and this panel
   // neither reads it nor offers a box to type it into (OPERATIONS §43).

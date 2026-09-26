@@ -1668,6 +1668,30 @@ def controls_package_sources():
         finally:
             _pk4.ROOT, _pk4.DECL, _pk4.LOCAL_DECL = old4
 
+    # a package may declare its own operating document; the panel links it, the stack only
+    # says where it is (§58)
+    check("a declared runbook is validated like an entry and exposed by path",
+          (_pk4.installed().get("devflow") or {}).get("runbook"), "packages/devflow/RUNBOOK.md")
+    with _tf2.TemporaryDirectory() as _t9:
+        r9 = _pl2.Path(_t9)
+        (r9 / "zz-rb").mkdir()
+        (r9 / "zz-rb" / "manifest.yaml").write_text(
+            "name: zz-rb" + chr(10) + "entry: workflow.yaml" + chr(10) + "runbook: ../outside.md")
+        (r9 / "zz-rb" / "workflow.yaml").write_text("workflow: {}")
+        old9, old9d = _pk4.ROOT, _pk4.DECL
+        try:
+            _pk4.ROOT = str(r9)
+            declare_temp(_pk4, r9)
+            check("one that points outside the package is ignored, not linked",
+                  _pk4.installed()["zz-rb"].get("runbook"), "")
+        finally:
+            _pk4.ROOT, _pk4.DECL = old9, old9d
+    rw9 = open("/work/stack/run_workflow.py", encoding="utf-8").read()
+    check("the panel gets it from the one answer it already asks for",
+          '"runbook": runbooks.get(owner.get(name)' in rw9, True)
+    check("and the screen offers a link, not an editor",
+          "/runbook" in open("/work/hub/index.html", encoding="utf-8").read(), True)
+
     pkdoc = open("/work/docs/packages.md", encoding="utf-8").read()
     check("its own repository is the documented default, not the exception",
           "Its own repository is the recommendation" in pkdoc, True)
