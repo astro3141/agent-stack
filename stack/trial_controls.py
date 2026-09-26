@@ -1321,6 +1321,37 @@ def controls_broker():
     check("a job's token dies with the job", 'JOBS[token]["done"] = True' in src7, True)
 
 
+def controls_multi_model_admission():
+    """§61: a round that needs several models can ask about all of them, and decides for itself."""
+    print("")
+    print("multi-model admission — the router picks one, this asks about a set (§61)")
+    import json as _j6, subprocess as _sp6, sys as _sy6
+    src = open("/work/stack/steps/admit_models.py", encoding="utf-8").read()
+
+    def ask(profile, providers):
+        r = _sp6.run([_sy6.executable, "/work/stack/steps/admit_models.py", profile, providers],
+                     capture_output=True, text=True, timeout=300)
+        return _j6.loads((r.stdout.strip().splitlines() or ["{}"])[-1])
+
+    got = ask("research-default", "claude,codex,grok")
+    check("every named provider gets a verdict",
+          sorted(got.get("eligible", []) + got.get("missing", [])), ["claude", "codex", "grok"])
+    check("a provider outside the profile's candidate list is still asked about",
+          sorted(ask("long-task", "claude,codex").get("eligible", [])
+                 + ask("long-task", "claude,codex").get("missing", [])), ["claude", "codex"])
+    check("an unknown profile is refused, not answered",
+          ask("zz-no-such-profile", "claude")["all_eligible"], False)
+    check("naming nobody is refused with the usage",
+          "admit_models.py <profile>" in ask("research-default", "")["reason"], True)
+    check("a missing provider is named with the router's own words",
+          "missing" in src and 'verdict.get(p) or {}).get(chr(39)'.replace("chr(39)", "'why'")
+          in src.replace('"why"', "'why'"), True)
+    check("and the step decides nothing: no HOLD, no exit code, no refusal of the run",
+          ("HOLD" not in src and "SystemExit(1)" not in src), True)
+    check("the profile's own thresholds are kept; only who is asked about changes",
+          'pol["candidates"] = wanted' in src, True)
+
+
 def controls_h1_integration():
     """§55: a mapped role's model step goes through the broker; everything else is untouched."""
     print("")
@@ -1640,15 +1671,15 @@ def controls_package_sources():
             check("a package may declare the hosts it reaches",
                   [(e["host"], e["open"]) for e in got["packages"]["zz-egress"]],
                   [("api.example.test", True), ("closed.example.test", False)])
-            check("the audit reads what the proxy serves, not the tracked baseline",
-          "config/generated/egress/allow" in open("/work/stack/packages.py",
-                                                  encoding="utf-8").read(), True)
-    check("an open host no package declares is reported",
+            check("an open host no package declares is reported",
                   got["open_and_undeclared"], ["nobody.example.test"])
             check("and the providers are not reported as orphans",
                   "api.anthropic.com" in got["open_and_undeclared"], False)
         finally:
             _pk4.ROOT, _pk4.DECL, _pk4.ALLOW = old3
+    check("the audit reads what the proxy serves, not the tracked baseline",
+          "config/generated/egress/allow" in open("/work/stack/packages.py",
+                                                  encoding="utf-8").read(), True)
     check("a bring-up says which open host nobody asks for",
           "declared by no package" in up_sh, True)
     check("and asks the interpreter that can read a manifest",
@@ -2403,6 +2434,7 @@ def controls_suite():
 
 
 if __name__ == "__main__":
+    controls_multi_model_admission()
     controls_h1_integration()
     controls_broker()
     controls_role_egress()

@@ -3466,3 +3466,42 @@ tracked one when nothing is generated yet, and a control pins which file it must
 Found by being asked to confirm the previous answer, one commit later — which is the argument for
 answering "is it done?" with a measurement instead of a memory.
 
+## 61. The router picks one; a round may need several
+
+A review round that requires two model families to both complete held itself on one provider's
+quota and never asked about the other. The devflow session traced it and asked whether it is the
+stack's. It is, and the shape of the gap is worth naming precisely, because nothing was broken:
+
+* `route.py` answers **which provider should this step take**, evaluated over the candidates the
+  profile names. That is the right answer to that question.
+* The round's question is different: **are claude and codex both usable**, because a lens is filled
+  only when two different families have completed. There was no way to ask it.
+* So the workflow asked the only question available, through the profile it had — `long-task`, whose
+  candidate list is `['claude']` (measured) — got "claude is at 91%", and held the round. Codex was
+  within limits the whole time and was never consulted.
+
+`stack/steps/admit_models.py <profile> <providers>` asks the other question with the same machinery:
+the profile's routing policy, its thresholds and windows and logins untouched, with the candidate
+list replaced by the providers named — then `router.py` over fresh observations. On the case that
+found this:
+
+```
+admit_models.py long-task claude,codex
+{"all_eligible": false, "eligible": ["codex"], "missing": ["claude"],
+ "reason": "claude: exhausted: session 91% >= 80%"}
+```
+
+**It decides nothing**, and a control pins that: no HOLD in it, no nonzero exit, no refusal of a run.
+Whether a round holds, runs short-handed, or runs anyway is what a round *is*, which is the
+workflow's (CONTRACT.md). What the platform owes is the question being askable and the refusal
+carrying the router's own words, so a held round can say why in the sentence a person reads.
+
+Worth noting what this does *not* fix: nothing consults it unless a workflow calls it. devflow's
+round can hold on a full picture now, and the same step is there for any package whose lane needs
+more than one family — `distinct_models` is not a devflow idea, it is what "two independent reviews"
+means once reviews are models.
+
+**529/529 controls**, seven new. And a repair on the way: the §60 addendum's control had been spliced
+inside a temp-root `try` block, which is how a syntax error reached a suite that had reported passing
+— the suite is run after every edit for exactly this reason, and it was.
+
