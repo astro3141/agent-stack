@@ -195,7 +195,9 @@ operator's to give — a capability the runtime does not need is one it does not
 
 ```
 docker/package.env          KEY=value, git-ignored, read into the agent's environment
-docker/egress/allow         one regex per line: the hosts this package may reach
+docker/egress/allow.local   one regex per line, git-ignored: the hosts this package may reach
+                            (docker/egress/allow is the tracked provider baseline — platform
+                            content, never a package's; the two merge at bring-up, §60)
 ```
 
 Declare the hosts in your manifest as well — `requires: {egress: [api.example.com]}`. That is an
