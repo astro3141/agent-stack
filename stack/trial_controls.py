@@ -1893,14 +1893,37 @@ def controls_packages():
     tp = open("/work/docker/egress/tinyproxy.conf", encoding="utf-8").read()
     compose_src = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
     gi = open("/work/docker/.gitignore", encoding="utf-8").read()
-    # the rules, not the prose around them: this asked "is there a wildcard in the file" and an
-    # explanatory comment with an asterisk in it failed the check (measured, §59). What the list
-    # allows is its non-comment lines.
-    allow_rules = [l.strip() for l in allow.splitlines()
-                   if l.strip() and not l.strip().startswith("#")]
-    check("the market hosts are named, not a wildcard",
-          (all(any(h in r for r in allow_rules) for h in ("koreainvestment", "opendart"))
-           and not any("*" in r for r in allow_rules)), True)
+    # The rules, not the prose around them: this asked "is there a wildcard in the file" and an
+    # explanatory comment with an asterisk in it failed the check (§59). And it asserted that the
+    # market hosts are *present*, which stopped being a platform property when an instance's own
+    # additions moved out of the tracked file (§60) — a fresh clone opens no market host at all.
+    # What is platform: the tracked list is the providers and nothing else, and no list anywhere
+    # names a wildcard.
+    def rules(text):
+        return [l.strip() for l in text.splitlines()
+                if l.strip() and not l.strip().startswith("#")]
+
+    # against the platform's own definition of the baseline, not a list of substrings written here
+    def host_of(rule):
+        return rule.strip().strip("^$").replace(chr(92) + ".", ".")
+
+    import importlib.util as _ilb
+    _sb = _ilb.spec_from_file_location("re_base", "/work/stack/role_egress.py")
+    _reb = _ilb.module_from_spec(_sb); _sb.loader.exec_module(_reb)
+    check("the tracked allowlist is the providers and nothing else",
+          sorted(host_of(r) for r in rules(allow)), sorted(_reb.BASELINE))
+    import glob as _gx
+    effective = []
+    for _f in (["/work/config/generated/egress/allow"]
+               + _gx.glob("/work/config/generated/egress/profiles/*.allow")
+               + ["/work/docker/egress/allow.local"]):
+        if _os.path.isfile(_f):
+            effective += rules(open(_f, encoding="utf-8").read())
+    check("and no list this instance actually serves names a wildcard",
+          [r for r in effective if "*" in r], [])
+    check("a host is opened by naming it, one regex anchored at both ends",
+          all(r.startswith("^") and r.endswith("$") for r in effective) if effective else True,
+          True)
     check("and the ports they serve on are named too",
           "ConnectPort 9443" in tp and "ConnectPort 29443" in tp, True)
     check("a port opened is not a host opened",

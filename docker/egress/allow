@@ -1,3 +1,11 @@
+# The providers, and nothing else. This is platform content: the routing layer cannot execute
+# without these, and every instance needs exactly them.
+#
+# A host opened for a *package* is this instance's decision about that package — which packages it
+# runs, and what they reach — so it goes in `allow.local`, which is git-ignored, and the two are
+# merged into config/generated/egress/allow at bring-up (the proxies mount the generated file).
+# Before this split, a private package's domains were published here: six lines in a public
+# repository saying what a private workflow talks to (OPERATIONS §60).
 ^chatgpt\.com$
 ^auth\.openai\.com$
 ^api\.openai\.com$
@@ -9,23 +17,3 @@
 ^accounts\.x\.ai$
 ^api\.x\.ai$
 ^cli-chat-proxy\.grok\.com$
-# Market data for the trading package's live mode. Added deliberately (OPERATIONS §36): the
-# port was built so the packet is frozen OUTSIDE this runtime, and fetching it here puts a
-# brokerage credential inside the governed agent. Two hosts, both read-only APIs.
-^openapi\.koreainvestment\.com$
-^openapivts\.koreainvestment\.com$
-^opendart\.fss\.or\.kr$
-# devflow (packages/devflow): GitHub, for the package's own steps *inside* this container — the
-# device-flow login (github.com), the REST and Git Data APIs (api.github.com), and the tarball a
-# checkout is fetched as (api.github.com redirects to codeload.github.com; lib/remote.py streams it).
-#
-# Asked once whether these are leftovers, since `scripts/packages.sh` clones on the HOST and needs
-# nothing here. Two different consumers, and only the first is host-side: fetching the *package* is
-# a git clone by the operator; talking to GitHub about a *task* is evaluate / integrate / publish,
-# which are `type: script` steps and run wherever Conductor runs — the main agent, on this list.
-# Measured: from the main agent api.github.com 200, codeload 301, github.com 200; from a profile
-# container both refused, because a profile carries its own list and none of them names GitHub.
-# devflow's own RUNBOOK lists this entry as required instance setup (OPERATIONS §59).
-^github\.com$
-^api\.github\.com$
-^codeload\.github\.com$

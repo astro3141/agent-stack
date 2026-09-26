@@ -85,6 +85,9 @@ if [ "$MODE" != "--check" ]; then
   # egress, mlflow) are built from it: without it an edit to ops/server.py or hub/index.html
   # simply does not reach the running stack, and nothing says so. Layers are cached, so an
   # unchanged tree costs a few seconds.
+  # What the proxies read is generated: tracked baseline + this instance's own additions (§60).
+  # Before the containers start, so a first bring-up on a fresh clone has the file to mount.
+  bash "$HERE/scripts/egress_gen.sh" || exit 1
   (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --build $FORCE) || exit 1
   # `up` only starts; a service left out of this composition would keep running from the last one,
   # and freeing its memory is the reason for choosing a smaller composition in the first place.

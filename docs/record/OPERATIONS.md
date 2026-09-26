@@ -3403,3 +3403,54 @@ caught the nine documentation hosts. It does not answer "from where" — host-si
 script step, a profile's model step — and that is the distinction this note tripped on. A `where:`
 field on `requires.egress` would encode it; worth building when a second case needs it, not for one.
 
+## 60. The allowlist was instance configuration all along
+
+§59 answered "are these hosts leftovers" with "no, devflow's scripts need them" and stopped there.
+The better question came straight back: **then why are a private package's domains in a public
+repository?** They were. Six lines in `docker/egress/allow` and seven in each of two profile lists
+said what a private workflow talks to — GitHub, a vendor's documentation, three distribution
+archives. Nobody leaked anything; the file was simply never classified, while everything around it
+was (§42 for packages, §57 for profiles, §51 for instance registration).
+
+**Classified now, the same way as the rest:**
+
+```
+docker/egress/allow                tracked    the providers — platform content, every instance
+                                              needs exactly these
+docker/egress/allow.local          ignored    what THIS instance opened, for the packages it runs
+docker/egress/profiles/<n>.allow   ignored    a profile it provisioned (closed and probe ship
+                                              tracked, as the shapes to copy)
+        ↓  scripts/egress_gen.sh, at every bring-up
+config/generated/egress/…          ignored    what the proxies actually mount
+```
+
+The proxies read the generated merge, so the tracked file cannot drift into carrying an instance's
+decisions — the failure mode that produced this section. The image still bakes a baseline-only copy,
+so a container that somehow starts without the mount refuses everything but the providers: a missing
+generated file must not mean an open proxy.
+
+**Measured after the switch, every boundary unchanged:**
+
+```
+main agent (shared)   api.github.com 200   api.anthropic.com 404   docs.redhat.com 000
+research profile      docs.redhat.com 302  api.github.com 000      api.anthropic.com 404
+closed profile        api.anthropic.com 404   docs.redhat.com 000
+```
+
+And what the public repository now carries is eleven provider hosts, twice, plus `example.com` for
+the platform's own probe. Nothing about anyone's workflow.
+
+**A control had to change with it, and the change is the point.** "The market hosts are named, not
+a wildcard" (§36) asserted that two specific hosts were *present* in the tracked file — an
+instance's configuration, dressed as a platform property, which a fresh clone would fail. It now
+asserts what is actually the platform's: the tracked list equals the baseline the code defines, no
+list this instance serves names a wildcard, and every rule is anchored at both ends. A control that
+asserts a configuration is a control that will be wrong on somebody else's machine.
+
+**Also fixed here**: the `git add -A` that published 38 files out of a stray `C:`-named directory —
+a Windows absolute path some tool wrote as a relative one — never reached the remote (the push was
+rejected for being behind, and the commit was rebuilt from three files). That shape is git-ignored
+now, and nothing deleted what is inside it: it is someone else's, even when it is junk.
+
+**521/521 controls.**
+

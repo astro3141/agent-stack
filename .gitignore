@@ -75,3 +75,13 @@ evidence/*
 # published; whatever is inside it belongs to whoever made it, so nothing here deletes it.
 /C:/
 /[A-Z]:/
+
+# What this instance opened, and for whose package. The providers baseline is tracked
+# (docker/egress/allow); an instance's own additions and any profile it provisions are its business,
+# and this repository is public — the same split as config/packages.local.yaml (OPERATIONS §60).
+# `closed` (baseline only) and `probe` (the platform's own) ship tracked as the shapes to copy.
+docker/egress/allow.local
+docker/egress/profiles/*.allow
+!docker/egress/profiles/closed.allow
+!docker/egress/profiles/probe.allow
+config/generated/egress/
