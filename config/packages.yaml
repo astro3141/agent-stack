@@ -29,7 +29,3 @@ packages:
   novel:
     from: local
     note: capability trial — role-split chapter with a bounded repair loop
-  trading:
-    from: https://github.com/astro3141/agent-stack-trading.git
-    ref: main
-    note: the harness arch-cycle port — cycle, decision shapes, live packet (private repo)
