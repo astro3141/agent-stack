@@ -3363,3 +3363,43 @@ Measured: devflow's own runbook served through the panel; a package with no decl
 404 by name; a declaration pointing outside the package is ignored (driven with `../outside.md`);
 519/519 controls, four new. devflow re-pinned at `d50834c`, the commit that carries the document.
 
+## 59. Not a leftover: two consumers of one host name
+
+A note came over from the devflow session: the three GitHub hosts in `docker/egress/allow` are
+leftovers, "declared by no package", and the fetch happens on the host so a container needs no route
+to GitHub. Half right, and the half that is wrong is the part that would have broken devflow.
+
+**"Declared by no package" was stale.** It was true the day it was written and stopped being true
+when devflow declared them (`ce45d51`, the §45 audit). `packages.py egress` today:
+
+```
+devflow   github.com            open
+devflow   api.github.com        open
+devflow   codeload.github.com   open
+```
+
+Nothing is unattributed. The §45 orphan report is empty.
+
+**And there are two consumers, not one.** Fetching the *package* is a git clone by
+`scripts/packages.sh`, on the host, needing nothing here — that part of the note is right, and §37
+is why. Talking to GitHub about a *task* is a different thing entirely: `evaluate`, `integrate`,
+`publish` are `type: script` steps, so they run wherever Conductor runs — the main agent — and
+`lib/remote.py` streams a tarball from codeload with an error string that points at this very file.
+devflow's own runbook lists the entry as required instance setup. Measured:
+
+```
+from the main agent (where devflow's script steps run):
+  api.github.com 200   codeload.github.com 301   github.com 200
+from a profile container (where its model steps run):
+  api.github.com 000   codeload.github.com 000        — profiles name no GitHub, correctly
+```
+
+So: nothing removed, and the *reason* written where the question arose — a comment in the allowlist
+naming both consumers and which one is host-side. A host name in that file is not self-explaining,
+and "is this still needed?" is the question it will be asked again.
+
+**What this says about the audit.** §45's report answers "who asked for this host", which is what
+caught the nine documentation hosts. It does not answer "from where" — host-side tooling, a main-agent
+script step, a profile's model step — and that is the distinction this note tripped on. A `where:`
+field on `requires.egress` would encode it; worth building when a second case needs it, not for one.
+

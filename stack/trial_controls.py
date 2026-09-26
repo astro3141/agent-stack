@@ -1893,8 +1893,14 @@ def controls_packages():
     tp = open("/work/docker/egress/tinyproxy.conf", encoding="utf-8").read()
     compose_src = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
     gi = open("/work/docker/.gitignore", encoding="utf-8").read()
+    # the rules, not the prose around them: this asked "is there a wildcard in the file" and an
+    # explanatory comment with an asterisk in it failed the check (measured, §59). What the list
+    # allows is its non-comment lines.
+    allow_rules = [l.strip() for l in allow.splitlines()
+                   if l.strip() and not l.strip().startswith("#")]
     check("the market hosts are named, not a wildcard",
-          all(h in allow for h in ("koreainvestment", "opendart")) and "*" not in allow, True)
+          (all(any(h in r for r in allow_rules) for h in ("koreainvestment", "opendart"))
+           and not any("*" in r for r in allow_rules)), True)
     check("and the ports they serve on are named too",
           "ConnectPort 9443" in tp and "ConnectPort 29443" in tp, True)
     check("a port opened is not a host opened",

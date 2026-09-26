@@ -68,3 +68,10 @@ evidence/*
 !evidence/n1-markers/
 !evidence/n7-bypass-inventory.txt
 !evidence/n7-network-isolation.txt
+
+# A Windows absolute path that a tool wrote as a relative one, so `C:` became a directory here.
+# Junk by construction — and `git add -A` committed 38 files of a package's working copy out of one
+# before it was caught (OPERATIONS §59). Ignored so the next mis-quoted path is untracked, not
+# published; whatever is inside it belongs to whoever made it, so nothing here deletes it.
+/C:/
+/[A-Z]:/
