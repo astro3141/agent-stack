@@ -15,17 +15,13 @@ deterministically.
 REPEATABLE = "guarded"   # stage resets the round; freeze returns the same draft for the same bytes; triage counts a repair per draft, not per run of the step
 import glob, hashlib, json, os, shutil, sys
 
-sys.path.insert(0, "/work/stack")
-import settings
+sys.path.insert(0, "/work/stack/steps")   # the stack's PYTHONPATH has it; this is for running by hand
+import step                               # docs/packages.md, contract 1 and 2
 
-RT = settings.runtime()
-RUN = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
-WS = f"{RT['paths']['workspace_root']}/{RUN}"
+RUN = step.run_id()
+WS = step.workspace()                     # a control points this at a temporary directory (trial_controls.load)
 FIXTURES = "/work/packages/novel/fixtures"
-
-
-def out(**kw):
-    print(json.dumps(kw))
+out = step.out
 
 
 def sha_file(path):

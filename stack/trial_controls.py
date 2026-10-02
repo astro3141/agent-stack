@@ -796,9 +796,11 @@ def controls_repeat():
     # 1) every step declares it
     # Every step, wherever it lives: the platform's and every package's. `vendor/` is not a step
     # (it is a library a package calls), so it is left out by path.
+    # `step.py` is the helper every step imports (stack/steps/step.py), not a step: left out by name.
     step_files = sorted(f for f in (_glob.glob("/work/stack/steps/*.py")
                                     + _glob.glob("/work/packages/*/steps/*.py"))
-                        if "/vendor/" not in f and not f.endswith("__init__.py"))
+                        if "/vendor/" not in f and not f.endswith("__init__.py")
+                        and os.path.basename(f) != "step.py")
     missing = [os.path.basename(f) for f in step_files
                if "REPEATABLE" not in open(f, encoding="utf-8").read()]
     check("every step says what a repeat of it does", missing, [])

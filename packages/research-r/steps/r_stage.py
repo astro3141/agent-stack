@@ -12,28 +12,44 @@ two, deterministically, and never edits content.
 # What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
 # "guarded" — it recognises the repeat; "no" — it does the work again.
 REPEATABLE = "yes"   # prepares the research run's workspace from fixtures
-import hashlib, json, os, shutil, sys
+import hashlib, shutil, sys
 from pathlib import Path
-sys.path.insert(0, "/work/stack")
-import settings
+sys.path.insert(0, "/work/stack/steps")   # the stack's PYTHONPATH has it; this is for running by hand
+import step                               # docs/packages.md, contract 1 and 2
 
-run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
-ws = Path(settings.runtime()["paths"]["workspace_root"]) / run; ws.mkdir(parents=True, exist_ok=True)
+run = step.run_id()
+ws = Path(step.workspace()); ws.mkdir(parents=True, exist_ok=True)
 rd = Path("/research/artifacts/runs") / run
 sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
-mode = sys.argv[1]
+
+
+def refuse(reason):
+    # What is missing, said in the output (contract 5) — not a traceback from shutil. Before this,
+    # `in` and `review` on a host without the /research mount died with FileNotFoundError and no
+    # JSON line, which Conductor reads as the step crashing rather than as the run refusing.
+    step.out(ok=False, moved=[], reason=reason, hashes={}); sys.exit(0)
+
+
+mode = sys.argv[1] if len(sys.argv) > 1 else ""
 moved = []
 if mode == "in":
     src = Path("/research/artifacts/reference-fixture.json")
+    if not src.is_file():
+        refuse(f"{src} is not there: this trial needs the /research mount (docker/compose.poc.yaml)")
     shutil.copyfile(src, ws / src.name); moved.append(src.name)
 elif mode == "review":
-    for n in ("candidate.json", "verification.primary.json", "verification.independent.json"):
+    names = ("candidate.json", "verification.primary.json", "verification.independent.json")
+    missing = [n for n in names if not (rd / n).is_file()]
+    if missing:
+        refuse(f"the research run directory {rd} lacks {', '.join(missing)}")
+    for n in names:
         shutil.copyfile(rd / n, ws / n); moved.append(n)
 elif mode == "back":
     src = ws / "review.json"
     if not src.is_file():
-        print(json.dumps({"ok": False, "moved": [], "reason": "reviewer produced no review.json"})); sys.exit(0)
+        refuse("reviewer produced no review.json")
     rd.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, rd / "review.json"); moved.append("review.json")
-print(json.dumps({"ok": True, "moved": moved, "reason": "",
-                  "hashes": {n: sha(ws / n) for n in moved}}))
+else:
+    refuse(f"unknown mode {mode!r}: in | review | back")
+step.out(ok=True, moved=moved, reason="", hashes={n: sha(ws / n) for n in moved})

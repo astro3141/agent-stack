@@ -3,25 +3,31 @@
 usage: execute.py <provider> <file_name> <content>
 Knows nothing about any vendor: it builds the common request, calls run-agent.mjs, and
 re-emits the normalized result as one flat JSON object for Conductor's output schema.
+
+It calls the adapter itself rather than through stack/steps/agent_task.py, and so does without
+what that step adds — the produced/stale stamp of the expected artifact, the one bounded retry
+on a provider's login refresh, a principal on the call (docs/record/PACKAGE-MATRIX.md, auto).
+Kept as the trial was measured; the workspace it uses is the run's, as every step's is.
 """
 
 # What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
 # "guarded" — it recognises the repeat; "no" — it does the work again.
 REPEATABLE = "no"   # a model call
 import json, os, subprocess, sys
-sys.path.insert(0, "/work/stack")
+sys.path.insert(0, "/work/stack/steps")   # the stack's PYTHONPATH has it; this is for running by hand
+import step                               # docs/packages.md, contract 1 and 2
 import settings
 
 provider, file_name, content = sys.argv[1:4]
 model_route = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else "preloop_gateway"
 prof_name = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else "research-default"
 login = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else provider
-RT, PROF = settings.runtime(), settings.profile(prof_name) or {}
-run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
-run_id = f"{run}-{provider}"
-cwd = f"{RT['paths']['workspace_root']}/{run_id}"
+PROF = settings.profile(prof_name) or {}
+run = step.run_id()
+run_id = f"{run}-{provider}"               # the call's id: one evidence directory per call
+cwd = step.workspace()                     # the run's workspace — where the recorder and the panel look
 os.makedirs(cwd, exist_ok=True)
-evid = f"{RT['paths']['evidence_root']}/{run_id}"
+evid = step.evidence_dir(run_id)
 req = {
     "run_id": run_id, "provider": provider, "cwd": cwd, "login": login, "profile": prof_name,
     "timeout_ms": (PROF.get("execution") or {}).get("timeout_ms", 400000),
@@ -64,4 +70,4 @@ out = {
 # inside objects): one the adapter did not report is left out, never recorded as 0.
 meas = {k: out.pop(k) for k in ("total_tokens", "wall_ms")}
 out["measurements"] = {k: v for k, v in meas.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
-print(json.dumps(out))
+step.out(**out)
