@@ -1872,7 +1872,7 @@ def controls_packages():
           '"--agent-kinds", "claude-code,codex"' in boot, True)
     check("admission is the router's answer, not one source's file",
           'json.load(open("/obs/codex.raw.json"' not in capsrc
-          and "would take" in capsrc and "router.py" in capsrc, True)
+          and "would take" in capsrc and "admission.evaluate(" in capsrc, True)
     check("a package's declared capabilities are read by the runner",
           "def requires_of(" in pk_src and "packages.requires_of(workflow)" in rw_src, True)
     check("a run id used twice is an answer, not a traceback",

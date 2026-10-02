@@ -141,6 +141,11 @@ events_for, checkpoints_for = runstate.events_for, runstate.checkpoints_for
 instance_id, launcher_alive = runstate.instance_id, runstate.launcher_alive
 
 
+def run_ended(ui, from_byte=0):
+    """Whether this run's event log records the workflow ending — past `from_byte`, either way."""
+    return runevents.ended(events_for(ui), from_byte)
+
+
 def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", case=""):
     if workflow not in WORKFLOWS:
         fight = contested().get(workflow)
@@ -298,7 +303,7 @@ def run_conductor(ui, argv, env, log):
         rc = proc.poll()
         if rc is not None:
             return rc                      # it left on its own: nothing to tidy
-        if ended_at is None and runevents.ended(events_for(ui), from_byte):
+        if ended_at is None and run_ended(ui, from_byte):
             ended_at = time.time()         # the workflow is over; the dashboard is not
         elif ended_at and time.time() - ended_at > 5:
             proc.terminate()
