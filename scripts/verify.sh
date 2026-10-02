@@ -41,7 +41,20 @@ while [ $# -gt 0 ]; do
 done
 STACK="${STACK:-agentstack}"
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
-PY="${PY:-python3}"
+# The host python: the first candidate that actually runs a script from stdin. On a Windows host
+# `python3` can be the Microsoft Store's app-execution alias — a stub that prints "Python", exits
+# 49 and runs nothing (measured 2026-10-02: every static check failed with that one word as its
+# reason) — and the interpreter there is `python`, or `py -3`. UTF-8 for whatever it prints: a
+# cp949 console could not encode the em dash in a control's name, and the control died on it.
+export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+pick_py() {
+  local c
+  for c in ${PY:-} python3 python "py -3"; do
+    if [ "$(printf 'print(7)' | $c - 2>/dev/null | tr -d '\r')" = 7 ]; then printf '%s' "$c"; return 0; fi
+  done
+  return 1
+}
+PY="$(pick_py)" || { echo "no working python on this host (tried python3, python, py -3); set PY=<interpreter>" >&2; exit 2; }
 FAILS=0; CHECKS=0
 ok()   { CHECKS=$((CHECKS+1)); printf '  ok    %s\n' "$1"; }
 bad()  { CHECKS=$((CHECKS+1)); FAILS=$((FAILS+1)); printf '  FAIL  %s\n' "$1"; [ -n "${2:-}" ] && printf '        %s\n' "$2"; }
@@ -64,7 +77,9 @@ sect "static — what a checkout can say about itself"
 echo "  cannot see: whether any of it runs. That is the stack level."
 
 # a throwaway runtime, so the step helper and the in-tree controls resolve a workspace that is ours
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; CROOT=""
+cleanup() { rm -rf "$TMP"; [ -n "$CROOT" ] && docker exec "$STACK-agent" rm -rf "$CROOT" >/dev/null 2>&1; true; }
+trap cleanup EXIT
 mkdir -p "$TMP/config/generated" "$TMP/ws"
 printf '{"preloop":{"api_url":"x","mcp_url":"x"},"mlflow":{"url":"x"},"egress":{"proxy":"http://127.0.0.1:1","no_proxy":[]},"paths":{"workspace_root":"%s/ws","evidence_root":"%s/ev","observations":"%s/obs","logins_root":"%s/route"}}' \
   "$TMP" "$TMP" "$TMP" "$TMP" > "$TMP/config/generated/runtime.json"
@@ -133,19 +148,37 @@ out="$(AGENTSTACK_PACKAGES="$HERE/packages" AGENTSTACK_PACKAGES_YAML="$HERE/conf
 if echo "$out" | grep -q "UNUSABLE\|REFUSED"; then bad "a declared package is unusable or needs a newer stack" "$(echo "$out" | grep 'UNUSABLE\|REFUSED')"; else ok "every declared package is usable: $(echo "$out" | grep -cvE '^\s' ) packages"; fi
 echo "$out" | grep "note:" | sed 's/^/        /' || true
 
-CONDUCTOR_SELF_RUN_ID=verify-static $PY packages/hello-lane/steps/write.py "verify" >/dev/null 2>&1 \
-  && [ -f "$TMP/ws/verify-static/hello.txt" ] && ok "a step addresses the workspace through the helper (hello-lane)" \
-  || bad "hello-lane's step did not write where the helper points"
-r="$(CONDUCTOR_SELF_RUN_ID=verify-static $PY packages/research-r/steps/r_stage.py bogus 2>&1 | tail -1 | nocr)"
+# The step tests and the in-tree packages' controls run with the stack's own interpreter when the
+# stack is up — in the agent container, where the paths and the settings are the runtime's — and
+# with the host python only on a checkout that has no stack. A native Windows python wrote the
+# hello-lane file under a mixed path and ran novel's controls to a different answer than the
+# runtime gives (measured 2026-10-02, with the runtime's own answer taken in the same session);
+# the runtime's answer is the one that counts.
+if stack_up; then
+  CROOT="/tmp/verify-$$"
+  docker exec "$STACK-agent" sh -c "mkdir -p $CROOT/config/generated $CROOT/ws && printf '%s' '{\"preloop\":{\"api_url\":\"x\",\"mcp_url\":\"x\"},\"mlflow\":{\"url\":\"x\"},\"egress\":{\"proxy\":\"http://127.0.0.1:1\",\"no_proxy\":[]},\"paths\":{\"workspace_root\":\"$CROOT/ws\",\"evidence_root\":\"$CROOT/ev\",\"observations\":\"$CROOT/obs\",\"logins_root\":\"$CROOT/route\"}}' > $CROOT/config/generated/runtime.json"
+  runpy()  { local id="$1" f="$2"; shift 2; docker exec -e AGENTSTACK_ROOT="$CROOT" -e CONDUCTOR_SELF_RUN_ID="$id" "$STACK-agent" /opt/venv/bin/python "/work/$f" "$@"; }
+  runpyc() { docker exec -e AGENTSTACK_ROOT="$CROOT" "$STACK-agent" /opt/venv/bin/python -c "$@"; }
+  note "step tests and package controls run in the agent container, with the stack's interpreter"
+else
+  runpy()  { local id="$1"; shift; CONDUCTOR_SELF_RUN_ID="$id" $PY "$@"; }
+  runpyc() { $PY -c "$@"; }
+  note "step tests and package controls run with the host python ($PY); the stack level uses the runtime's"
+fi
+r="$(runpy verify-static packages/hello-lane/steps/write.py verify 2>&1 | tail -1 | nocr)"
+if runpyc 'import json, os, sys; sys.exit(0 if os.path.isfile(json.loads(sys.argv[1])["path"]) else 1)' "$r" 2>/dev/null; then
+  ok "a step addresses the workspace through the helper (hello-lane)"
+else bad "hello-lane's step did not write where the helper points" "$r"; fi
+r="$(runpy verify-static packages/research-r/steps/r_stage.py bogus 2>&1 | tail -1 | nocr)"
 case "$r" in *'"ok": false'*) ok "a step refuses in its output rather than crashing (research-r)";; *) bad "research-r's step did not refuse as JSON" "$r";; esac
-r="$($PY -c 'import step; step.main(lambda: 1/0, decision="")' 2>&1 | tail -1 | nocr)"
+r="$(runpyc 'import step; step.main(lambda: 1/0, decision="")' 2>&1 | tail -1 | nocr)"
 case "$r" in *TOOL_FAILURE*) ok "the helper turns a crash into the declared output";; *) bad "step.main did not report a crash" "$r";; esac
 
 for c in packages/*/controls.py; do
   [ -f "$c" ] || continue
   name="$(basename "$(dirname "$c")")"
   if grep -qE "^  $name:" config/packages.yaml && grep -A3 -E "^  $name:" config/packages.yaml | grep -q "from: local"; then
-    if CONDUCTOR_SELF_RUN_ID=verify-ctl $PY "$c" 2>&1 | nocr > "$TMP/ctl-$name.log"; then ok "$name: $(tail -1 "$TMP/ctl-$name.log")"; else bad "$name: controls failed" "$(grep -E 'FAIL|Error' "$TMP/ctl-$name.log" | head -5 | tr '\n' ';')"; fi
+    if runpy verify-ctl "$c" 2>&1 | nocr > "$TMP/ctl-$name.log"; then ok "$name: $(tail -1 "$TMP/ctl-$name.log")"; else bad "$name: controls failed" "$(grep -E 'FAIL|Error' "$TMP/ctl-$name.log" | head -5 | tr '\n' ';')"; fi
   else
     note "$name: controls.py present; a fetched package's controls run at the stack level"
   fi
