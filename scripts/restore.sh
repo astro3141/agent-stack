@@ -225,6 +225,7 @@ replace_with evidence-runs runs "$WORKSPACEU/evidence"
 replace_with evidence-conductor-events conductor-events "$WORKSPACEU/evidence"
 replace_with config config "$WORKSPACEU"
 replace_with policy policy "$WORKSPACEU"
+replace_with state state "$WORKSPACEU"            # package state (docs/packages.md, "State that outlives a run")
 if untar_host research "$STAGE/x-research"; then
   RES_SRC="$STAGE/x-research/$(ls "$STAGE/x-research" | head -1)"
   rm -rf "$WORKSPACEU/evidence/research"; mkdir -p "$WORKSPACEU/evidence"

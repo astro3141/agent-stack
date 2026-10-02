@@ -213,6 +213,8 @@ copy_dir "$POC_DIRU/evidence/ui-runs" evidence-ui-runs no
 copy_dir "$POC_DIRU/evidence/runs" evidence-runs no
 copy_dir "$POC_DIRU/evidence/conductor-events" evidence-conductor-events no
 copy_dir "$POC_DIRU/config" config yes               # sources and generated/state.json together
+copy_dir "$POC_DIRU/state" state no                   # package state that outlives a run (docs/packages.md); the default
+                                                     # state_root — an operator who moved it adds that path here
 copy_dir "$POC_DIRU/policy" policy yes
 copy_dir "$RESEARCH_DIRU" research yes
 copy_dir "$PRELOOPU" preloop-dir yes                 # compose files and .env (keys!)
