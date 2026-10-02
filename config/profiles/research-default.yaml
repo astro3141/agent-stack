@@ -17,7 +17,12 @@ providers:                        # order = preference
 
 quota:
   max_age_s: 1800                 # an observation older than this is "stale" → not eligible
-  require_windows: [weekly]       # a provider must report these windows to be eligible
+  require_windows:                # a provider must report these windows to be eligible —
+    claude: [weekly]              # a list applies to every provider; a mapping, per provider
+    codex: [weekly]
+    grok: []                      # measured 2026-10-02: Grok's CLI proxy answers for the account
+                                  # with no usage figure at all (OPERATIONS §64); admitted on
+                                  # identity and freshness, and the decision says so
   max_used_percent:               # at or above → "exhausted"
     session: 80
     weekly: 90

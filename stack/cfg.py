@@ -101,9 +101,22 @@ def validate_profile(p, name, env):
     q = p.get("quota") or {}
     if not (isinstance(q.get("max_age_s"), int) and q["max_age_s"] > 0):
         errs.append(f"profile {name}: quota.max_age_s must be a positive integer")
-    for w in q.get("require_windows") or []:
-        if w not in WINDOWS:
-            errs.append(f"profile {name}: unknown window {w!r}")
+    req = q.get("require_windows") or []
+    if isinstance(req, dict):          # per provider: {claude: [weekly], grok: []}
+        for n, ws in req.items():
+            if n not in {x["name"] for x in p.get("providers") or []}:
+                errs.append(f"profile {name}: require_windows names {n!r}, not one of its providers")
+            if not isinstance(ws, list):
+                errs.append(f"profile {name}: require_windows.{n} must be a list of windows")
+            for w in ws if isinstance(ws, list) else []:
+                if w not in WINDOWS:
+                    errs.append(f"profile {name}: unknown window {w!r}")
+    elif isinstance(req, list):
+        for w in req:
+            if w not in WINDOWS:
+                errs.append(f"profile {name}: unknown window {w!r}")
+    else:
+        errs.append(f"profile {name}: require_windows must be a list, or a mapping provider -> list")
     for w, v in (q.get("max_used_percent") or {}).items():
         if w not in WINDOWS or not isinstance(v, (int, float)) or isinstance(v, bool) or not 0 < v <= 100:
             errs.append(f"profile {name}: max_used_percent.{w} must be a number in (0, 100]")

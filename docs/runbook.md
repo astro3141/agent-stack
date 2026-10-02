@@ -128,6 +128,22 @@ means a period with no start. Whether the answer is a changed plan, a changed Co
 changed vendor response, that line says which — and what to change (the profile's required
 windows, or the collector's classification) is decided from it, not from the HOLD.
 
+Measured on that install: `reported_windows: []` with a timestamp and a matching account — the
+proxy answers for the account and gives no usage figure. The profile's `quota.require_windows`
+takes a per-provider form for exactly this (`research-default.yaml`: `grok: []`), and a provider
+admitted that way carries it in the decision: `within limits (no usage window reported; none
+required of this provider)`. That is an operator's statement that this account's vendor reports
+nothing, not the stack's guess that nothing means plenty — keep the list form, or that provider's
+`[weekly]`, wherever the vendor does report one. The raw answer behind the reading, when the
+plan is in question:
+
+```bash
+docker exec agentstack-agent sh -c 'tok=$(/opt/venv/bin/python -c "import json; a=json.load(open(\"/route/grok/auth.json\")); print(next(v[\"key\"] for v in a.values() if isinstance(v, dict) and v.get(\"key\")))"); \
+  curl -s -x http://egress:8888 -H "Authorization: Bearer $tok" -H "x-xai-token-auth: xai-grok-cli" -H "Accept: application/json" \
+  "https://cli-chat-proxy.grok.com/v1/billing?format=credits"'
+# config.creditUsagePercent, or onDemandCap/onDemandUsed, is what CodexBar turns into the window; neither → none
+```
+
 ## A fresh install: logged in, and one provider still unusable
 
 **Look:** the accounts view shows all three providers 연결됨, and one of them is refused:

@@ -3632,3 +3632,30 @@ re-classified by length into `session`/`weekly`, and nothing else. A classificat
 silently is the one thing a fail-closed router cannot explain, so the raw list travels with it now.
 
 Linux, the same commits: cold start green, verify stack 18/18 (`cold-start-linux` run 16).
+
+### §64 addendum: the Grok reading, and what the profile now says about it (2026-10-02)
+
+The next run on that host, with the collector carrying `reported_windows`:
+
+```
+{"provider": "grok", "source": "codexbar:grok-cli-proxy", "observed_at": "2026-10-02T06:57:36Z",
+ "observed_account": "email:1d504a6b18afad1f", "executing_account": "email:1d504a6b18afad1f",
+ "identity_basis": "same-credential", "model_route": "direct",
+ "windows": {}, "reported_windows": [], "extra_windows": []}
+```
+
+The account is seen, the reading is fresh, and the vendor gives no usage figure — the
+period-only answer CodexBar classifies as unknown rather than 0 %. `auto` passed on the same
+run (F5 confirmed fixed): full 19/20, the one miss being this HOLD.
+
+So `require_windows` takes a per-provider form, and `research-default` says `grok: []` with the
+measurement beside it. The router admits such a provider on identity and freshness and writes
+*why* into the decision — `within limits (no usage window reported; none required of this
+provider)` — so a record never shows a bare "within limits" for a provider that reported nothing.
+The list form still binds every candidate; `claude` and `codex` keep `[weekly]`, which both report.
+What this is not: a change to the router's rule that unknown is not eligible. A provider the
+profile requires a window of, and that reports none, is as unknown as before (control added, with
+the four cases).
+
+Owed from that host: the raw billing answer (runbook, "Runs hold"), which says whether this is
+the plan or the proxy. Until then the profile's line is the operator's statement, dated.

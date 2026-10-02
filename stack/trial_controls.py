@@ -2062,6 +2062,24 @@ def controls_docs():
     check("and it says which login is missing", "quota observer" in absent, True)
     check("two accounts that really differ are still a mismatch",
           differ.startswith("account_mismatch:"), True)
+    # A vendor that reports no usage figure (measured: Grok's CLI proxy, §64) is unknown unless
+    # the profile says, for that provider, that none is required — and then the decision says
+    # on what basis it was admitted. The list form still applies to every candidate.
+    _pol2 = {"max_age_s": 600, "candidates": ["claude", "grok"], "max_used_percent": {"session": 80, "weekly": 90},
+             "require_windows": {"claude": ["weekly"], "grok": []}}
+    _bare = lambda prov: {"provider": prov, "observed_account": "email:abc", "executing_account": "email:abc",
+                          "observed_at": _now.isoformat(), "windows": {}}
+    g = _r.evaluate("grok", _bare("grok"), _pol2, _now)
+    c = _r.evaluate("claude", _bare("claude"), _pol2, _now)
+    check("no figure, none required of this provider → eligible", g["eligible"], True)
+    check("and the decision says it was admitted without one", "no usage window reported" in g["why"], True)
+    check("no figure, weekly required of that provider → unknown",
+          (c["eligible"], c["why"]), (False, "unknown: required weekly window not reported"))
+    _pol3 = {**_pol2, "require_windows": ["weekly"]}
+    check("the list form still binds every candidate",
+          _r.evaluate("grok", _bare("grok"), _pol3, _now)["why"], "unknown: required weekly window not reported")
+    g2 = _r.evaluate("grok", {**_bare("grok"), "windows": {"weekly": {"used_percent": 95}}}, _pol2, _now)
+    check("a figure, when reported, is still judged against the limit", g2["why"], "exhausted: weekly 95% >= 90%")
     oh_src = open("/work/stack/ops_health.py", encoding="utf-8").read()
     # codex used to be the one provider whose account only the observer could see, which made a
     # fresh install need a second login. It is now read the way Grok is: with the login that

@@ -16,7 +16,10 @@ Rules, in order, per candidate (policy "candidates" order is preference order):
   2. observed_account != executing_account -> ineligible (account_mismatch) — never "close enough"
   3. observation older than max_age_s     -> ineligible (stale) — a stale number is not a number
   4. a window in require_windows missing   -> ineligible (unknown); other missing windows are
-     recorded as "not reported", never assumed empty
+     recorded as "not reported", never assumed empty. require_windows is a list (every
+     candidate) or a mapping provider -> list: a vendor that reports no usage figure at all
+     (measured: Grok's CLI proxy, OPERATIONS §64) is admitted only where the profile says so,
+     and the decision then says it was admitted without one
   5. any reported window used_percent >= its limit -> ineligible (exhausted)
   6. otherwise eligible
 First eligible candidate wins. None eligible -> HOLD: the run does not start (fail closed).
@@ -75,7 +78,10 @@ def evaluate(cand, obs, policy, now):
     wins = obs.get("windows") or {}
     if not isinstance(wins, dict):
         return {**r, "eligible": False, "why": "unknown: windows malformed"}
-    for w in policy.get("require_windows", []):
+    req = policy.get("require_windows") or []
+    if isinstance(req, dict):
+        req = req.get(cand) or []
+    for w in req:
         if (wins.get(w) or {}).get("used_percent") is None:
             return {**r, "eligible": False, "why": f"unknown: required {w} window not reported"}
     for w, limit in policy["max_used_percent"].items():
@@ -88,6 +94,10 @@ def evaluate(cand, obs, policy, now):
         r[f"{w}_used"] = u
         if u >= limit:
             return {**r, "eligible": False, "why": f"exhausted: {w} {u}% >= {limit}%"}
+    if not any((wins.get(w) or {}).get("used_percent") is not None for w in policy["max_used_percent"]):
+        # nothing to be within: the profile required no window of this provider, and it reported
+        # none. Eligible, and the record says on what basis — identity and freshness only.
+        return {**r, "eligible": True, "why": "within limits (no usage window reported; none required of this provider)"}
     return {**r, "eligible": True, "why": "within limits"}
 
 
