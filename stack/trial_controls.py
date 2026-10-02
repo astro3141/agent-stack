@@ -908,7 +908,14 @@ def controls_composition():
     import yaml                                   # the compose file itself, not a guess at it
     svcs = (yaml.safe_load(open("/work/docker/compose.poc.yaml", encoding="utf-8"))
             or {}).get("services") or {}
-    optional = sorted(n for n, v in svcs.items() if (v or {}).get("profiles"))
+    profiled = {n: (v or {}).get("profiles") or [] for n, v in svcs.items()}
+    # an egress profile an instance provisions is a compose profile `egress-<name>` (§60): its
+    # proxy and its runner, and nothing else, carry one
+    egress = sorted(n for n, ps in profiled.items() if ps and all(p.startswith("egress-") for p in ps))
+    check("the provisioned egress profiles' services carry only their own compose profile",
+          all(len(profiled[n]) == 1 and (n.startswith("agent-") or n.endswith("-proxy")) for n in egress)
+          and bool(egress), True)
+    optional = sorted(n for n, ps in profiled.items() if ps and n not in egress)
     # the screen's services (hub, ops, the replay dashboard) and recording are the optional ones
     check("only these services are optional", optional, ["hub", "mlflow", "ops", "replay"])
     for must in ("egress", "toolsvc", "fsmcp", "quota", "agent"):
@@ -920,7 +927,9 @@ def controls_composition():
     check("an unknown composition is refused", "unknown composition:" in up, True)
     check("a composition that drops a service also stops it", "rm -sf $drop" in up, True)
     down = open("/work/scripts/down.sh", encoding="utf-8").read()
-    check("down takes everything, whatever was up", 'COMPOSE_PROFILES="record,ui"' in down, True)
+    check("down takes everything, whatever was up",
+          'COMPOSE_PROFILES="$_profiles"' in down and '_profiles="record,ui"' in down
+          and "--remove-orphans" in down, True)
 
 
 def controls_approval_boundary():
@@ -1502,7 +1511,25 @@ def controls_package_sources():
     _pk4 = _il4.module_from_spec(_s4); _s4.loader.exec_module(_pk4)
     _o4.environ["ZZ_CONTROL_SECRET"] = "not-a-real-value"
     src4 = open("/work/stack/packages.py", encoding="utf-8").read()
-    rows = _pk4.needs_env()
+    # a package of this control's own declares the need: until 2026-10 this read whichever
+    # installed package declared one (devflow, a private package), so the platform's suite
+    # failed on a host that had not installed it (the cold-start runner)
+    import tempfile as _tf4, pathlib as _pl4
+    with _tf4.TemporaryDirectory() as _t4:
+        r4n = _pl4.Path(_t4)
+        (r4n / "zz-needs").mkdir()
+        (r4n / "zz-needs" / "manifest.yaml").write_text(chr(10).join([
+            "name: zz-needs", "entry: workflow.yaml", "requires:", "  env:",
+            "    - name: ZZ_CONTROL_SECRET", "      purpose: a control's need",
+            "      file: docker/package.env"]))
+        (r4n / "zz-needs" / "workflow.yaml").write_text("workflow: {}")
+        old4n = _pk4.ROOT, _pk4.DECL
+        try:
+            _pk4.ROOT = str(r4n)
+            declare_temp(_pk4, r4n)
+            rows = _pk4.needs_env()
+        finally:
+            _pk4.ROOT, _pk4.DECL = old4n
     flat = [e for items in rows.values() for e in items]
     check("a package may declare what it needs in the environment", bool(flat), True)
     check("and each one is reported by presence",
@@ -1620,8 +1647,22 @@ def controls_package_sources():
 
     # a package may declare its own operating document; the panel links it, the stack only
     # says where it is (§58)
-    check("a declared runbook is validated like an entry and exposed by path",
-          (_pk4.installed().get("devflow") or {}).get("runbook"), "packages/devflow/RUNBOOK.md")
+    with _tf2.TemporaryDirectory() as _t8:
+        r8 = _pl2.Path(_t8)
+        (r8 / "zz-rb-ok").mkdir()
+        (r8 / "zz-rb-ok" / "manifest.yaml").write_text(
+            "name: zz-rb-ok" + chr(10) + "entry: workflow.yaml" + chr(10) + "runbook: RUNBOOK.md")
+        (r8 / "zz-rb-ok" / "workflow.yaml").write_text("workflow: {}")
+        (r8 / "zz-rb-ok" / "RUNBOOK.md").write_text("# how")
+        old8, old8d = _pk4.ROOT, _pk4.DECL
+        try:
+            _pk4.ROOT = str(r8)
+            declare_temp(_pk4, r8)
+            check("a declared runbook is validated like an entry and exposed by path",
+                  _pk4.installed()["zz-rb-ok"].get("runbook"),
+                  _o4.path.relpath(str(r8 / "zz-rb-ok" / "RUNBOOK.md"), "/work"))
+        finally:
+            _pk4.ROOT, _pk4.DECL = old8, old8d
     with _tf2.TemporaryDirectory() as _t9:
         r9 = _pl2.Path(_t9)
         (r9 / "zz-rb").mkdir()
@@ -1887,12 +1928,13 @@ def controls_packages():
           _os.path.exists("/work/stack/steps/live_packet.py"), False)
     lp = (open("/work/packages/trading/steps/live_packet.py", encoding="utf-8").read()
           if not absent("/work/packages/trading/steps/live_packet.py", "live packet (trading)") else "")
-    check("it freezes a file and stops, so the bridge still fetches nothing",
-          "/work/handoff" in lp and "packet_bridge" not in lp.split('"""')[2], True)
-    check("and the packet says what it is not",
-          '"universe_version": "live-fetch"' in lp and "not_included" in lp, True)
-    check("the token is kept, because the vendor refuses a second one",
-          "TOKEN_CACHE" in lp and "~/.kis-token.json" in lp, True)
+    if lp:
+        check("it freezes a file and stops, so the bridge still fetches nothing",
+              "/work/handoff" in lp and "packet_bridge" not in lp.split('"""')[2], True)
+        check("and the packet says what it is not",
+              '"universe_version": "live-fetch"' in lp and "not_included" in lp, True)
+        check("the token is kept, because the vendor refuses a second one",
+              "TOKEN_CACHE" in lp and "~/.kis-token.json" in lp, True)
 
     # a step's imports work wherever the step lives
     compose = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
@@ -1918,7 +1960,7 @@ def controls_docs():
     check("the documents exist",
           sorted(_os.path.basename(p) for p in docs),
           ["commands.md", "concepts.md", "containers.md", "install.md", "packages.md",
-           "reading-a-run.md", "runbook.md"])
+           "reading-a-run.md", "runbook.md", "update-day.md"])
     # what a second operator had to reverse-engineer, now stated
     cont, run_doc, pkg = (docs["/work/docs/containers.md"], docs["/work/docs/reading-a-run.md"],
                           docs["/work/docs/packages.md"])
@@ -1931,7 +1973,7 @@ def controls_docs():
           all(x in run_doc for x in ("evidence/ui-runs/<id>/meta.json", "events.jsonl",
                                      "/ws/<conductor run id>/", "evidence/p281/")), True)
     check("the package contract states the four a step must keep",
-          all(x in pkg for x in ("settings.runtime()", "last line of stdout is JSON",
+          all(x in pkg for x in ("step.workspace()", "last line of stdout is JSON",
                                  "REPEATABLE", '"items"')), True)
     check("and how data comes in", "handoff" in pkg and "by name, not by path" in pkg, True)
 
@@ -2265,7 +2307,7 @@ def controls_resume():
     # pulled out from under one (measured — a run in flight, down.sh, and the checkpoint was there).
     down = open("/work/scripts/down.sh", encoding="utf-8").read()
     check("a run in flight is stopped before the containers are",
-          down.index("run_workflow.py stop") < down.index('COMPOSE_PROFILES="record,ui" docker compose'),
+          down.index("run_workflow.py stop") < down.index('COMPOSE_PROFILES="$_profiles" docker compose'),
           True)
     check("and stopped the way a person would, so it keeps its checkpoint",
           "graceful: it keeps its checkpoint" in down, True)
