@@ -870,9 +870,14 @@ def controls_panel():
            cy.parse_args(["trading-b", "--retain-days", "14"])["retain_days"]], [None, "14"])
 
     # a router that holds before the roles step must not break the workflow's own hold message
+    # novel-a is this repository's; the two trading graphs are the trading package's and are
+    # checked when it is installed, skipped by name when it is not
     for name in ("novel-a", "trading-b", "trading-shapes"):
         import glob as _g2
-        path = next(f for f in _g2.glob("/work/packages/*/*.yaml") if f.endswith("/" + name + ".yaml"))
+        path = next((f for f in _g2.glob("/work/packages/*/*.yaml") if f.endswith("/" + name + ".yaml")), "")
+        if not path:
+            absent(f"/work/packages/trading/{name}.yaml", f"{name}: the hold message (trading)")
+            continue
         y = open(path, encoding="utf-8").read()
         hold = [l for l in y.splitlines() if "HOLD:" in l]
         check(f"{name}: the hold message survives an early hold",
