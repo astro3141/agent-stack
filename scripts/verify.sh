@@ -173,6 +173,14 @@ r="$(runpy verify-static packages/research-r/steps/r_stage.py bogus 2>&1 | tail 
 case "$r" in *'"ok": false'*) ok "a step refuses in its output rather than crashing (research-r)";; *) bad "research-r's step did not refuse as JSON" "$r";; esac
 r="$(runpyc 'import step; step.main(lambda: 1/0, decision="")' 2>&1 | tail -1 | nocr)"
 case "$r" in *TOOL_FAILURE*) ok "the helper turns a crash into the declared output";; *) bad "step.main did not report a crash" "$r";; esac
+# the contract's own examples, executed (#23): every yaml block parses with no duplicate key, the
+# manifest example is a package the stack's reader accepts, every python block compiles. The
+# script finds docs/packages.md beside itself, so the call is the same in both forms of runpy.
+out="$(runpy doc-examples stack/doc_examples.py 2>&1 | nocr)"
+case "$out" in
+  *"examples ok"*) if echo "$out" | grep -q "^  FAIL"; then bad "an example in docs/packages.md is wrong" "$(echo "$out" | grep '^  FAIL' | head -3 | tr '\n' ';')"; else ok "docs/packages.md: $(echo "$out" | tail -1)"; fi;;
+  *) bad "the documented examples could not be checked" "$(echo "$out" | tail -2 | tr '\n' ';')";;
+esac
 
 for c in packages/*/controls.py; do
   [ -f "$c" ] || continue
@@ -258,7 +266,7 @@ if echo "$floors" | grep -q "too_old"; then bad "a package needs a newer stack" 
 RID="verify-$(date +%s | tail -c 7)"
 if in_agent /work/stack/run_workflow.py start "$RID" hello-lane research-default text=verify > "$TMP/hello.log" 2>&1 \
    && in_agent /work/stack/run_workflow.py show "$RID" 2>/dev/null | tail -1 | grep -q '"completed_ok": true'; then
-  ok "hello-lane ran to completion ($RID) — a package step through Conductor, no model"
+  ok "hello-lane ran to completion ($RID) — a package step through Conductor, no model, no login — a fresh install's first run (#26)"
 else bad "hello-lane did not complete ($RID)" "$(tail -3 "$TMP/hello.log" | tr '\n' ';')"; fi
 
 # A sub-workflow and a wait, through this stack's door (stack/cases/child-run.yaml, #13). The

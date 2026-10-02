@@ -146,6 +146,31 @@ def run_ended(ui, from_byte=0):
     return runevents.ended(events_for(ui), from_byte)
 
 
+def child_context(suite="", case="", env=None):
+    """What a run started from inside another run inherits (#13).
+
+    A step that starts a run (devflow's drive.py: `run_workflow.py start`) runs under Conductor,
+    so CONDUCTOR_SELF_RUN_ID in its environment is the *parent's* id. The child's meta records
+    it, the child's Conductor gets it as AGENTSTACK_PARENT_RUN so the record step tags the
+    record with it, and the suite/case labels come from the parent when the caller gave none —
+    which is what lets one devflow-auto's passes be read together.
+    Returns (parent conductor run id or "", suite, case).
+    """
+    env = os.environ if env is None else env
+    parent = str(env.get("CONDUCTOR_SELF_RUN_ID") or "")
+    if parent and not (suite or case):
+        for m in runstate.RUNS.glob("*/meta.json"):
+            try:
+                meta = json.loads(m.read_text())
+            except (OSError, ValueError):
+                continue
+            ev = events_for(meta.get("ui_id", ""))
+            if ev and runevents.conductor_run_of(ev) == parent:
+                suite, case = suite or str(meta.get("suite") or ""), case or str(meta.get("case") or "")
+                break
+    return parent, suite, case
+
+
 def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", case=""):
     if workflow not in WORKFLOWS:
         fight = contested().get(workflow)
@@ -254,11 +279,14 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
         print(json.dumps({"error": f"the run id {ui!r} has been used already",
                           "hint": "ids are used once; `resume` continues that run"}))
         return 2
+    parent, suite, case = child_context(suite, case)
     meta = {"ui_id": ui, "workflow": workflow, "profile": profile, "inputs": inputs,
             # labels only: they group runs and name the case a run was started for, and change
             # nothing about what runs. What a case *means* is the dataset's, and this carries it
             # without reading it (stack/suite.py, OPERATIONS §24).
             "suite": suite, "case": case,
+            # the run a step of which started this one, by its Conductor id (#13); "" otherwise
+            "parent": parent,
             "started_at": time.time(), "state": "running",
             # what the stack could do when this run started, so a run read later is read in
             # the light of the stack it actually ran on
@@ -275,7 +303,9 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
             "--web", "--web-port", "0", "-i", f"profile={profile}"]
     for k, v in inputs.items():
         argv += ["-i", f"{k}={v}"]
-    env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor")}
+    env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor"),
+           # this run's own Conductor sets CONDUCTOR_SELF_RUN_ID afresh; the parent travels apart
+           "AGENTSTACK_PARENT_RUN": parent}
     with open(d / "run.log", "wb") as log:
         rc = run_conductor(ui, argv, env, log)
     meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})
@@ -472,7 +502,7 @@ def cmd_list():
         if v is None:
             continue
         rows.append({k: v.get(k) for k in ("ui_id", "workflow", "profile", "state", "started_at", "current_step",
-                                            "terminated_at", "route", "suite", "case")}
+                                            "terminated_at", "route", "suite", "case", "parent")}
                     | {"decision": (v.get("output") or {}).get("decision"),
                        # a run that stopped before it ended, and has something to continue from
                        # A stop *is* an end in Conductor's log (it fails the run), so "not ended"

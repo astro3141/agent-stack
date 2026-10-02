@@ -82,11 +82,11 @@ packages/<name>/
 ```yaml
 name: my-lane                 # must equal the directory name
 version: 0.1.0
-description: one line, shown in the panel's 새 실행 tab
+description: one line, shown in the panel's 워크플로 tab
 workflows:                    # or `entry: workflow.yaml` for a single one
   my-lane: workflow.yaml
 requires:
-  capabilities: [tool_rights, egress, record, admission]   # the runner refuses a run without them
+  capabilities: [tool_rights, egress, record, admission]   # only what your steps use: a package with no model call declares [] and runs on a fresh install before any login (hello-lane)
   python: [pydantic]          # modules you import that the image must already carry
 runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
 ```
@@ -210,7 +210,11 @@ block; three packages had each copied their own subset, one of them twice
 recorder turns into an MLflow run, and what `trajectory.py` sums; a copy is written beside the
 adapter's raw result as `<evidence_dir>/execution.json`, so the evidence directory carries the
 platform's record of the call whether or not any step passed it on. A record carries
-`contract: 1`, the version of this shape. This is the whole set (a control compares this list
+`contract: 1`, the version of this shape; so do a fan-out's receipt and a chain's answer. The
+recorder also reads the evidence directories of the run directly, so a call your workflow made
+and did not list is recorded all the same (#22); and a run a step of yours starts through
+`run_workflow.py start` carries your run's id as its parent and inherits your `--suite`/`--case`
+(#13). This is the whole set (a control compares this list
 with `execution.FIELDS`); declare what you route on and copy the lines, do not retype them:
 
 ```yaml

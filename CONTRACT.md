@@ -64,6 +64,13 @@ configuration file, where it can be repeated, reviewed and automated.
 | reading enough state to judge whether this is healthy | retention and cleanup (`scripts/cleanup.sh`, `--retain-*` on a cycle) |
 | | release, rollback, backup, restore (`scripts/release.sh`, `backup.sh`, `restore.sh`) |
 
+The rule was not what the panel did, until it was decided (#24, 2026-10-02): the panel had a
+start button, and starting a run is work a script or a scheduler can do. The panel's 워크플로 tab
+now lists what may be started and what each one takes, and shows the command; it starts nothing,
+and it resumes nothing — a run that can be continued says so, with the command — and it applies
+no configuration: the 설정 상태 card shows what is applied and names the commands. Stopping a run
+that is going stays on the panel, because that is a judgement.
+
 The controls of the other solutions follow the same rule rather than their own product boundary:
 Preloop's approval decision is *in this panel*, because that is the thing that cannot go on
 without a human — while its policy editing, its consoles and MLflow's comparison views are linked
@@ -76,6 +83,22 @@ The graph and its edges; what each artifact is and when it is fixed; what makes 
 the pass / repair / block judgement; what a failed member means (drop it, repair it, block the
 run); how results are compared; and the statistics — including how a missing observation is
 treated, which nothing in the platform may decide for it.
+
+## A package that brings its own runtime
+
+Some work is not a graph of steps: a desk that runs all day, a harness with its own loop, a
+process that waits on a market. Such a package keeps its runtime — its process, its lifetime,
+its scheduling, its state (`requires.state`, docs/packages.md), its remote mechanics — and the
+contract is about the doors, not the shape. **Every model call goes through
+`stack/steps/agent_task.py`**: it is a command any process in the agent container can run
+(`agent_task.py <provider> <route> <label> <prompt-file> <expected> [<profile> [<login>
+[<principal>]]]`), it picks the broker or the local door from the role's declaration, it presents
+the principal, and it leaves the execution record in the evidence directory where the recorder
+collects it whether or not the package lists it. Approvals are Preloop's and nothing else answers
+them. A result is recorded by the record step or by the evidence it left — a package writes no
+MLflow of its own. What such a package may not do: write into the stack's login store (`/route`,
+§50), reach a vendor past the egress proxy (the network refuses, and so does the rule), or answer
+an approval. The place for this is made; what the package puts in it is the package's (#25).
 
 ## Where this PoC crossed the line, and what was done
 

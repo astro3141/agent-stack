@@ -179,7 +179,7 @@ for r in rows:
         "attempt_results": results.get(r["label"]) or [res]}
 
 os.makedirs(os.path.dirname(receipt_path), exist_ok=True)
-json.dump({"context": context, "wall_s": wall, "members": members},
+json.dump({"contract": execution.CONTRACT, "context": context, "wall_s": wall, "members": members},
           open(receipt_path, "w"), ensure_ascii=False, indent=1)
 
 busy = round(sum(m["seconds"] for m in members.values()), 2)

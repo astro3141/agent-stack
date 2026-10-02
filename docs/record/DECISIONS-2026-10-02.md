@@ -109,7 +109,7 @@ CADP effect client와 CADP-GAP의 큰 갭 1~4는 CADP가 v0.5를 authority로 �
 | [#10](https://github.com/astro3141/agent-stack/issues/10) | 운영자 | update day 1 마무리: release.sh update → verify full → claude N7 → §65 기록. 그 전엔 PR #9 머지 안 함 |
 | [#11](https://github.com/astro3141/agent-stack/issues/11) | 운영자 | Grok raw billing 응답: 플랜인지 프록시인지 |
 | [#12](https://github.com/astro3141/agent-stack/issues/12) | 다음 | CONTRACT에 원칙 한 문단; 후보 4(artifact binding)는 공통 → step.py 헬퍼, context 의미는 패키지 |
-| [#13](https://github.com/astro3141/agent-stack/issues/13) | 다음 | 후보 8: 자식 run·wait이 스택의 문을 통과하는지 CI 픽스쳐로 측정; cycle.py 입력 전달 구현 |
+| [#13](https://github.com/astro3141/agent-stack/issues/13) | 완료(§66·§71) | 후보 8: 자식 run·wait이 스택의 문을 통과하는지 CI 픽스쳐로 측정; cycle.py 입력 전달 구현 |
 | [#14](https://github.com/astro3141/agent-stack/issues/14) | 다음 | 후보 6: 자리가 devflow·trading의 필요에 맞는지(제작자 질문 2개), backup.sh에 state 포함 |
 | [#15](https://github.com/astro3141/agent-stack/issues/15) | 다음 | 선언되지 않은 것 셋: grok posture vs native_tools(cfg 검증), keeper 120 s(quota.reuse_s), direct 경로의 observer 문구 |
 | [#16](https://github.com/astro3141/agent-stack/issues/16) | 다음 | 구성: toolsvc 제거, probe 둘·quota를 compose profile로, replay 요청 시 |
@@ -117,11 +117,11 @@ CADP effect client와 CADP-GAP의 큰 갭 1~4는 CADP가 v0.5를 authority로 �
 | [#18](https://github.com/astro3141/agent-stack/issues/18) | 보류 | 후보 7 HTTP remote 역학(원칙상 공통, 크기로 뒤); 스택 컨트롤의 trading fixture → 스택 소유 |
 | [#19](https://github.com/astro3141/agent-stack/issues/19) | 조건부 | CADP effect client와 갭 1~4: CADP policy delta 이후 |
 | [#20](https://github.com/astro3141/agent-stack/issues/20) | 운영자 + 문서 | update day 1 대조: backup.sh 건너뜀(사후 실행), update-day.md에 `--replace-toolchain` 누락 |
-| [#22](https://github.com/astro3141/agent-stack/issues/22) | 다음 | 실행 사실은 플랫폼이 모은다: receipt가 아니라 evidence에서 기록, step이 시작한 자식 run의 연결(#13의 남은 절반) |
-| [#23](https://github.com/astro3141/agent-stack/issues/23) | 다음 | step/요청/결과 계약 버전, docs/packages.md 예제를 static 검사가 실행 |
-| [#24](https://github.com/astro3141/agent-stack/issues/24) | 운영자 판단 | CONTRACT 화면 규칙 vs 패널(시작·적용 버튼): 규칙에 '처음 한 번'을 넣을지(추천) 버튼을 뺄지 |
-| [#25](https://github.com/astro3141/agent-stack/issues/25) | 다음 | 자기 런타임을 가져오는 패키지(trading)의 확장 계약 — 스택이 마련할 자리 (#18과 함께) |
-| [#26](https://github.com/astro3141/agent-stack/issues/26) | 다음 | 새 제작자의 첫 성공 측정: 문서 예제 그대로의 패키지가 로그인 없이 패널에서 시작되는지 |
+| [#22](https://github.com/astro3141/agent-stack/issues/22) | 완료(§71) | 실행 사실은 플랫폼이 모은다: receipt가 아니라 evidence에서 기록, step이 시작한 자식 run의 연결(#13의 남은 절반) |
+| [#23](https://github.com/astro3141/agent-stack/issues/23) | 완료(§71) | step/요청/결과 계약 버전, docs/packages.md 예제를 static 검사가 실행 |
+| [#24](https://github.com/astro3141/agent-stack/issues/24) | **결정: 패널에서 시작 제거** | CONTRACT 화면 규칙 vs 패널: 운영자가 (B)를 택했다 — 시작(precheck/start)·재개·설정 생성·적용은 명령으로, 패널은 상태와 명령을 보여 준다 (§70). 남은 버튼은 사람의 것뿐: 로그인 코드, 승인·거부, 중지, 그래프 보기 |
+| [#25](https://github.com/astro3141/agent-stack/issues/25) | 완료(§71, 계약 절) | 자기 런타임을 가져오는 패키지(trading)의 확장 계약 — 스택이 마련할 자리 (#18과 함께) |
+| [#26](https://github.com/astro3141/agent-stack/issues/26) | 완료(§71, #24로 재해석) | 새 제작자의 첫 성공 측정: 문서 예제 그대로의 패키지가 로그인 없이 패널에서 시작되는지 |
 | [#27](https://github.com/astro3141/agent-stack/issues/27) | 운영자 full 레벨 | run-agent.mjs 분리(공급자 어댑터 / 승인 / 원장 / 결과) — 모델 호출이 있어야 검증되므로 fixture부터 |
 
 #22–#26은 PR #21 머지 전 외부 리뷰를 코드로 검증한 결과(OPERATIONS §67)에서 나온 설계 수준 항목이다. 확인된 결함 일곱은 같은 PR에서 고쳤다.

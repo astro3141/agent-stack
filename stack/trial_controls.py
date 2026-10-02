@@ -1002,10 +1002,15 @@ def controls_approval_boundary():
     ops_server = open("/work/ops/server.py", encoding="utf-8").read()
     check("the panel runs the decision itself, not in the agent",
           'jlocal(["/work/stack/approvals.py", "decide"' in ops_server, True)
-    check("applying a policy runs on the admin side",
-          'container=ADMIN if what == "apply"' in ops_server, True)
+    # #24 (decided 2026-10-02): the panel neither generates nor applies configuration — the
+    # endpoints went with the start and resume buttons. The split (generate in the agent, apply
+    # on the admin side past the guard, §21) is pinned where it lives now: the bring-up.
+    check("the panel neither generates nor applies configuration",
+          "/api/config/apply" not in ops_server and "/api/config/generate" not in ops_server, True)
+    check("applying a policy runs on the admin side, at the bring-up",
+          bool(re.search(r'docker exec "\$STACK-admin"[^\n]*cfg\.py apply', up)), True)
     check("generating it does not — the provider logins are in the agent",
-          'what == "apply" else None' in ops_server, True)
+          'docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate' in up, True)
     admin_block = compose.split("  admin:")[1].split("  apiguard:")[0]
     check("the operator's container is on the admin network and no other",
           admin_block.split("networks:")[1].split("volumes:")[0].split(), ["-", "adminnet"])
@@ -2339,12 +2344,15 @@ def controls_resume():
     check("our own tidy-up is not reported as the run failing",
           "Reporting -15 as the exit" in src, True)
 
-    check("the panel can continue what it stopped",
-          '/api/runs/([a-z0-9-]{6,40})/resume' in ops_server, True)
-    check("and does it detached, like a start",
-          'run_workflow.py", "resume", m.group(1)], detach=True' in ops_server, True)
-    check("the button appears only for a run that can be continued",
-          'r.resumable ? `<button class="sub" data-resume=' in hub, True)
+    # #24 (decided 2026-10-02): continuing a run is a command, like starting one — the panel's
+    # resume button and the API's resume endpoint went with the start button. What stays is the
+    # fact: a run that can be continued says so, with the command.
+    check("continuing a run is a command", "def cmd_resume(" in src
+          and "run_workflow.py resume" in open("/work/docs/commands.md", encoding="utf-8").read(), True)
+    check("the panel offers no resume and the API has no resume endpoint",
+          "data-resume" not in hub and "/resume" not in hub and '/resume", p)' not in ops_server, True)
+    check("a run that can be continued says so, with the command",
+          'r.resumable ? ` <span class="muted">재개 가능 · <code>run_workflow.py resume' in hub, True)
 
     # the reason none of the above reached the running panel until it was found
     check("the bring-up builds the images whose source is this tree",

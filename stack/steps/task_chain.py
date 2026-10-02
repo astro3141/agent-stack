@@ -68,6 +68,7 @@ for i, st in enumerate(member["steps"], 1):
 
 final = member["steps"][-1].get("expected") or ""
 print(json.dumps({
+    "contract": execution.CONTRACT,
     "status": "COMPLETED" if ok else "FAILED",
     "produced": ok and (not final or os.path.exists(f"{WS}/{final}")),
     "run_id": f"{RUN}-{label}",

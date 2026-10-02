@@ -9,21 +9,21 @@ who can reach it, not what it can do: whoever reaches it controls these actions.
 
 Routes
   GET  /api/health
-  GET  /api/config/status                 POST /api/config/generate   POST /api/config/apply
+  GET  /api/config/status                 (generate and apply are commands: cfg.py, scripts/up.sh — #24)
   GET  /api/profiles                      GET /api/workflows   what may be started
   GET  /api/accounts?profile=<name>       per provider: login state, quota, account match, eligibility
   POST /api/accounts/<provider>/login     body {"login": optional}     start the official login
   GET  /api/accounts/<provider>/login?login=<name>
   POST /api/accounts/<provider>/code      body {"code": "...", "login": optional}
   POST /api/accounts/<provider>/cancel    body {"login": optional}
-  GET  /api/runs                          POST /api/runs  body {"workflow","profile","inputs":{}}
-  GET  /api/runs/<ui-id>                  POST /api/runs/<ui-id>/stop   POST /api/runs/<ui-id>/resume
+  GET  /api/runs                          (starting a run is a command: scripts/cycle.sh, #24)
+  GET  /api/runs/<ui-id>                  POST /api/runs/<ui-id>/stop   (resume is a command: run_workflow.py resume)
   GET  /api/approvals                     pending approval requests (read-only)
   GET  /api/packages                      what each installed package needs, and the login it declares
   GET  /api/packages/<name>/login         where that login stands: url, code, state
   POST /api/packages/<name>/login         start it     POST …/code {"code": "..."}     POST …/cancel
 """
-import json, os, re, secrets, subprocess, time
+import json, os, re, subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -238,13 +238,10 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = urlparse(self.path).path; b = self._body()
-        if p in ("/api/config/generate", "/api/config/apply"):
-            # The split follows the guard: generating writes files in this tree and reads the
-            # provider logins, which only the agent has; applying writes to Preloop, which only
-            # the admin side may do (OPERATIONS §21).
-            what = p.rsplit("/", 1)[1]
-            return self._send(200, jexec([PY, "/work/stack/cfg.py", what], timeout=300,
-                                         container=ADMIN if what == "apply" else None))
+        # The configuration generate and apply endpoints are gone with the start and resume
+        # buttons (#24): that is work scripts/up.sh does on every bring-up and `cfg.py generate`
+        # (agent) / `cfg.py apply` (admin, past the guard — §21) do by hand. The panel reads the
+        # state (the status endpoint above) and changes nothing.
         m = re.fullmatch(r"/api/accounts/([a-z]+)/(login|code|cancel)", p)
         if m:
             prov, act = m.groups()
@@ -294,15 +291,8 @@ class H(BaseHTTPRequestHandler):
             # Stopping a run that is going is a person's call — the same kind of decision as an
             # approval, and the only other one this panel makes. Conductor does the stopping.
             return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "stop", m.group(1)]))
-        m = re.fullmatch(r"/api/runs/([a-z0-9-]{6,40})/resume", p)
-        if m:
-            # The other half of stopping. Whether an interrupted run is worth continuing is the
-            # same kind of judgement as stopping it was, so it is offered in the same place.
-            # Detached, like a start: resuming re-enters the step that did not finish and runs on.
-            rc, out, err = dexec([PY, "/work/stack/run_workflow.py", "resume", m.group(1)], detach=True)
-            if rc != 0:
-                return self._send(502, {"error": (err or out or "could not resume").strip()[-300:]})
-            return self._send(200, {"ui": m.group(1), "resuming": True})
+        # POST …/resume is gone with the start (#24): continuing an interrupted run is
+        # `run_workflow.py resume <id>`, a command, as CONTRACT.md's table has always said.
         m = re.fullmatch(r"/api/approvals/([0-9a-f-]{36})", p)
         if m:
             # Preloop owns the decision; this panel is where the person makes it, because an
@@ -318,28 +308,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "comment must be a string of at most 500 chars"})
             out = jlocal(["/work/stack/approvals.py", "decide", m.group(1), d, comment])
             return self._send(200 if out.get("ok") else 502, out)
-        if p == "/api/runs":
-            wf, prof, inputs = b.get("workflow"), b.get("profile") or "research-default", b.get("inputs") or {}
-            # what may be started is the runner's answer, not a second list kept here: a package
-            # installed under packages/ is startable from the panel the moment it is there
-            allowed = jexec([PY, "/work/stack/run_workflow.py", "workflows"])
-            if not isinstance(allowed, dict) or "error" in allowed:
-                return self._send(502, {"error": "could not read which workflows may be started"})
-            if wf not in allowed or not NAME.fullmatch(prof) or not isinstance(inputs, dict):
-                return self._send(400, {"error": "invalid workflow, profile or inputs"})
-            # The run is started detached, so what the stack cannot do has to be found out before
-            # that: a refusal after detaching would look like a run that never reported anything.
-            unrecorded = b.get("allow_unrecorded") is True
-            gate = jexec([PY, "/work/stack/capabilities.py", "--missing"]
-                         + (["--allow-unrecorded"] if unrecorded else []))
-            if gate.get("missing"):
-                return self._send(409, {"error": "the stack cannot run this now: "
-                                                 + ", ".join(gate["missing"]), **gate})
-            ui = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
-            pairs = [f"{k}={v}" for k, v in inputs.items() if isinstance(v, (str, int))]
-            rc, out, err = dexec([PY, "/work/stack/run_workflow.py", "start", ui, wf, prof] + pairs
-                                 + (["--allow-unrecorded"] if unrecorded else []), detach=True)
-            return self._send(202 if rc == 0 else 500, {"ui_id": ui} if rc == 0 else {"error": err[-300:]})
+        # POST /api/runs (start a workflow) is gone: starting is a command (scripts/cycle.sh), not a
+        # button — CONTRACT.md "What belongs on a screen", decided on #24 (2026-10-02). Stopping a
+        # run that is going stays: that is a person's judgement.
         return self._send(404, {"error": "no such route"})
 
 
