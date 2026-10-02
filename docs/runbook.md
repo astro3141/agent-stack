@@ -357,6 +357,9 @@ Two things worth knowing before you need them:
 
 Losing the backup key means losing the backup. Keep the key and the archive in different places.
 
+Updating on purpose — once a month, with the drift report, the controls and a rollback point — is
+its own page: [update-day.md](update-day.md).
+
 ---
 
 ## Things not to do

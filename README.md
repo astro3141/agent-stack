@@ -41,6 +41,7 @@ directory, and the operations that let the result survive a restart, an update o
 | **[docs/reading-a-run.md](docs/reading-a-run.md)** | where everything a run leaves lands, and what reads it |
 | **[docs/packages.md](docs/packages.md)** | writing a workflow package: the contract its steps keep |
 | **[docs/runbook.md](docs/runbook.md)** | **the operator's document**: what the job is, and what to do when something is wrong |
+| **[docs/update-day.md](docs/update-day.md)** | keeping it current: the weekly drift report, the monthly update, and the rollback point |
 
 ## The documents that matter
 
