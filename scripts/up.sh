@@ -119,6 +119,14 @@ if [ "$MODE" != "--check" ]; then
     echo "   not in this composition:$drop"
     (cd "$HERE/docker" && COMPOSE_PROFILES="record,ui" docker compose -f compose.poc.yaml rm -sf $drop >/dev/null) || exit 1
   fi
+  # The generated settings (config/generated/: runtime.json, profiles/<name>.json) are derived from
+  # config/ and git-ignored, so a fresh clone has none — and they used to be generated only on the
+  # branch that claims a new Preloop. A clone brought up against an already-claimed instance had
+  # no profile, the router could not read research-default, and admission failed with
+  # FileNotFoundError (measured on a Windows host, 2026-10-02). Generated here, every time, like
+  # the egress lists above; the claim branch below generates again, harmlessly.
+  docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate >/dev/null 2>&1 \
+    || echo "  WARN  config/generated could not be written (cfg.py generate) — profiles may be missing" >&2
   echo "== Preloop (+ PoC network attachment)"
   docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
     -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml" \
