@@ -3691,3 +3691,20 @@ it, the reuse window, the time it keeps.
 
 Full on that host, measured: 20/20 when the endpoint answered. With the keeper, the asking that
 tripped it is one live reading per 120 s per login, whatever the panel does.
+
+### §64 addendum 3: the router controls ran for the first time (measured 2026-10-02)
+
+With the keeper in place the second install's `verify.sh --level full` reached 20/21: auto and
+novel-a both PASS, and the one failure was `router_controls` — which had never run on any
+machine (addendum 1's F6) and now did, because all three providers were eligible. It died before
+its first case: `KeyError: 'weekly'` in `set_()`, walking a path into Grok's `windows`, which is
+`{}`. Two things were wrong with the cases, and neither was the router. A mutation assumed the
+live reading carried the window it was about to set; and the cases ran the router with the
+static `stack/routing-policy.json`, which still required a weekly window of every provider while
+the profile the stack routes with had stopped requiring one of Grok. Rerun by hand on a
+collection shaped like that install's (claude and codex with a weekly window, grok with none):
+with the profile's policy 26/26; with the static one 19/26, every miss "→ grok" held on
+`grok: unknown: required weekly window not reported` — the exact line the profile change was
+for. `router_controls.py` now takes the policy as its second argument, `verify.sh` passes the
+generated profile's, a case creates the path it sets, and `routing-policy.json` carries the same
+per-provider form as `research-default`.

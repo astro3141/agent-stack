@@ -249,7 +249,7 @@ print("ok" if not bad else "; ".join(bad))
 PYRC
 )"
 if [ "$rc_state" = ok ]; then
-  if in_agent /work/stack/router_controls.py "$RC_OBS" > "$TMP/router_controls.log" 2>&1; then ok "router_controls: $(tail -1 "$TMP/router_controls.log" | nocr)"
+  if in_agent /work/stack/router_controls.py "$RC_OBS" "$RC_OBS/policy.json" > "$TMP/router_controls.log" 2>&1; then ok "router_controls: $(tail -1 "$TMP/router_controls.log" | nocr)"
   else bad "router_controls reported failures" "$(grep -c '"ok": false' "$TMP/router_controls.log") case(s)"; tail -6 "$TMP/router_controls.log" | sed 's/^/        | /'; fi
 else
   note "router_controls: skipped — the live router does not find every provider eligible, which the cases start from: ${rc_state:-the collection did not answer}"
