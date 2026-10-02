@@ -43,7 +43,7 @@ PY_IN_AGENT="/opt/venv/bin/python"
 RELEASES="${RELEASE_DIR:-$HOME/agentstack-releases}"
 RELEASESU="$(u "$RELEASES")"; RELEASES="$(m "$RELEASESU")"
 # services of this stack (the agent and the observer share one image)
-SERVICES="agent mlflow toolsvc fsmcp egress ops hub"
+SERVICES="agent mlflow fsmcp egress ops hub"
 TOOLS="claude conductor preloop_cli codex grok node"
 
 say()  { printf '  %-42s %s\n' "$1" "$2"; }

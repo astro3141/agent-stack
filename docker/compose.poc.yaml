@@ -203,23 +203,6 @@ services:
       --artifacts-destination /mlflow/artifacts
       --workers 1
 
-  toolsvc:
-    build:
-      context: .
-      dockerfile: toolsvc.Dockerfile
-    image: agentstack/toolsvc:local
-    container_name: ${STACK:-agentstack}-toolsvc
-    init: true
-    restart: unless-stopped
-    networks:
-      toolnet:
-        # instance-independent name: the Preloop policy addresses the tool servers by it
-        aliases: [toolsvc]
-    volumes:
-      - type: bind
-        source: ${POC_HOST_DIR:-..}/evidence/n1-markers
-        target: /markers
-
   # #281 option B: filesystem MCP behind Preloop. On toolnet only: the agent cannot reach it
   # except through Preloop's MCP proxy, which is where the rules are evaluated.
   fsmcp:
@@ -243,6 +226,10 @@ services:
   quota:
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-quota
+    # Optional: codex's second quota source (OPERATIONS §29). Off unless `scripts/up.sh --observer`
+    # (or a quota-home volume already exists): without its own login it only ran codexbar every
+    # five minutes into exit 1 (second install, issue #16).
+    profiles: ["observer"]
     init: true
     restart: unless-stopped
     networks:

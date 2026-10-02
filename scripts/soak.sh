@@ -56,7 +56,7 @@ sample() {  # $1 = when, $2 = cycle number
   # and that shows up in neither memory nor disk. Measured before this was sampled — the agent held
   # 111 zombies and the file server 550, one per provider call that had ever run.
   local procs="" n z
-  for c in agent fsmcp toolsvc quota ops hub; do
+  for c in agent fsmcp quota ops hub; do   # quota only when the observer profile is on
     n="$(docker exec "$STACK-$c" sh -c 'ls /proc | grep -c "^[0-9]*$"' 2>/dev/null || echo 0)"
     z="$(docker exec "$STACK-$c" sh -c 'ps -eo stat 2>/dev/null | grep -c "^Z" || true' 2>/dev/null || echo 0)"
     procs="$procs${procs:+,}\"$c\":{\"procs\":${n:-0},\"zombies\":${z:-0}}"

@@ -18,7 +18,7 @@ docker exec agentstack-admin /opt/venv/bin/python /work/stack/<script>.py …   
 | | |
 |---|---|
 | `scripts/install.sh [--check] [--preloop-dir DIR] [--no-preloop]` | host check; install Preloop; bring up |
-| `scripts/up.sh [--composition full\|no-record\|runtime] [--check] [--recreate]` | build, start, claim, apply policy and principals, check |
+| `scripts/up.sh [--composition full\|no-record\|runtime] [--observer] [--check] [--recreate]` | build, start, claim, apply policy and principals, check; `--observer` adds codex's optional second quota source |
 | `scripts/down.sh [--volumes] [--now]` | stop the runs first, then the containers. `--volumes` also deletes logins, the Preloop database and the agent home |
 | `scripts/backup.sh [--out DIR] [--key FILE]` | one consistent, encrypted archive of everything that cannot be regenerated |
 | `scripts/restore.sh …` | bring a backup up as a *separate* instance, and verify it against the live one |

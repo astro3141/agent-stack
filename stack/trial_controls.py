@@ -922,9 +922,14 @@ def controls_composition():
           and bool(egress), True)
     optional = sorted(n for n, ps in profiled.items() if ps and n not in egress)
     # the screen's services (hub, ops, the replay dashboard) and recording are the optional ones
-    check("only these services are optional", optional, ["hub", "mlflow", "ops", "replay"])
-    for must in ("egress", "toolsvc", "fsmcp", "quota", "agent"):
+    # the screen (hub, ops, replay), recording, and the quota observer (codex's second source) are
+    # optional; the governed runtime, its tools and its only way out are not (issue #16)
+    check("only these services are optional", optional, ["hub", "mlflow", "ops", "quota", "replay"])
+    for must in ("egress", "fsmcp", "agent", "apiguard", "broker"):
         check(f"{must} can never be dropped", must in optional, False)
+    check("the #278 marker tool server is gone from the composition and the policy",
+          "toolsvc" not in open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
+          and "toolsvc" not in open("/work/policy/b-fsmcp.yaml", encoding="utf-8").read(), True)
 
     up = open("/work/scripts/up.sh", encoding="utf-8").read()
     for name in ("full", "no-record", "runtime"):

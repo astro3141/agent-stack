@@ -21,21 +21,11 @@ metadata:
   name: agentstack-b-fsmcp
   description: Option B - filesystem MCP behind Preloop with path rules
 mcp_servers:
-- name: agentstack-toolsvc
-  url: http://toolsvc:8000/mcp
-  transport: http-streaming
-  auth_type: none
 - name: agentstack-fsmcp
   url: http://fsmcp:8000/mcp
   transport: http-streaming
   auth_type: none
 tools:
-- name: write_marker
-  source: agentstack-toolsvc
-  enabled: true
-- name: list_markers
-  source: agentstack-toolsvc
-  enabled: true
 - name: write_file
   source: agentstack-fsmcp
   enabled: true

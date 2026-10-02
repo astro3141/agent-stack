@@ -209,6 +209,7 @@ If it is still refused, the observer's own login is the second source, and it mu
 account the routing login uses:
 
 ```bash
+scripts/up.sh --observer                 # the observer is a compose profile, off by default (issue #16)
 docker exec -it "$STACK-quota" codex login
 scripts/up.sh --check
 ```
@@ -330,7 +331,7 @@ instances, and the check passes on the ones where the scan landed.
 
 ```bash
 docker exec agentstack-admin /opt/venv/bin/python /work/stack/cfg.py rescan
-# {"ok": true, "policy": "policy/b-fsmcp.yaml", "scanned": ["…-toolsvc", "…-fsmcp"]}
+# {"ok": true, "policy": "policy/b-fsmcp.yaml", "scanned": ["…-fsmcp"]}
 ```
 
 `scripts/up.sh` now does this by itself: when the runtime cannot see the tools it **applies the
