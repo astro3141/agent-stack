@@ -319,6 +319,24 @@ def state_controls():
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 2e. binding
+def bind_controls():
+    """The hash is the stack's; which bytes, and what a mismatch means, are the package's (#12)."""
+    import hashlib
+    sys.path.insert(0, str(HERE / "steps"))
+    st = importlib.import_module("step")
+    root = Path(tempfile.mkdtemp(prefix="agentstack-bind-"))
+    (root / "a.txt").write_bytes(b"one draft\n")
+    check("bind: a file's binding is its sha256", st.bind_file(root / "a.txt") == hashlib.sha256(b"one draft\n").hexdigest())
+    check("bind: a text's binding is its UTF-8 sha256", st.bind_text("한 줄") == hashlib.sha256("한 줄".encode()).hexdigest())
+    sha = st.bind_file(root / "a.txt")
+    check("bind: a receipt made for these bytes is bound", st.bound({"context": sha, "members": {}}, sha))
+    check("bind: a receipt for other bytes is not", not st.bound({"context": "0" * 64}, sha))
+    check("bind: a receipt with no binding is not, and neither is an empty expectation",
+          not st.bound({"members": {}}, sha) and not st.bound({"context": ""}, ""))
+    shutil.rmtree(root, ignore_errors=True)
+
+
 # ---------------------------------------------------------------- 3. restart after the end event
 def run_controls():
     sys.path.insert(0, str(HERE))
@@ -360,6 +378,7 @@ codex_controls()
 kept_controls()
 grok_posture_controls()
 state_controls()
+bind_controls()
 run_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

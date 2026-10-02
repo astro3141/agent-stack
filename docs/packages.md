@@ -266,6 +266,30 @@ no git) without refusing anything, because that says nothing about the stack's a
 prints `note: requires.<key> is read by nothing in this stack` under the package, so the belief
 does not survive the first `list`.
 
+## Binding a result to its input
+
+A reviewer judges one draft; a lane trades on one packet; a verdict is about one tree. When the
+thing judged can change between the step that froze it and the step that reads the judgement, the
+judgement must say which bytes it was about, and the reader must refuse one about other bytes.
+Four packages did this, each in its own words (docs/record/PACKAGE-MATRIX.md, X2). The mechanism
+is the stack's now; the choice stays the package's.
+
+```python
+import step
+sha = step.bind_file(frozen_path)          # or step.bind_text(text): the name the result is bound to
+# … the fan-out carries the workflow's `context` back in every receipt, unchanged (CONTRACT) …
+if not step.bound(receipt, sha):           # a receipt for other bytes, or with no binding: not this round's
+    ...
+```
+
+- **The package decides what the input is** — a frozen file, a packet built from several, a
+  tree — and what a mismatch means (novel repairs; trading refuses; devflow reports).
+- **The stack carries the binding unchanged** (`context` in the receipt, `sha256` of every
+  produced file) and gives the three functions; it never decides that two hashes are "close".
+- novel is the measured instance: `packages/novel/controls.py` drives its triage through every
+  way a receipt can fail to be this round's (an older draft's, no receipt, a file changed after
+  the reviews step), and those controls run unchanged on the helper.
+
 ## State that outlives a run
 
 Most of what a package writes belongs to a run — the workspace, the evidence, the record — and

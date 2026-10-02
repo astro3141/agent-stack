@@ -94,3 +94,33 @@ def main(fn, **shape):
         answer["reason"] = f"{type(e).__name__}: {e}"[:300]
         out(**answer)
         return 0
+
+
+# ---- binding a result to the input it was made from --------------------------------------
+# Four packages hashed their inputs and bound results to the hash, each in its own words
+# (docs/record/PACKAGE-MATRIX.md, X2): novel's receipt `context` is the frozen draft's sha256 and
+# its triage refuses a review made for another draft; trading builds its packet twice and
+# compares; devflow hashes a tree. The mechanism is the same and lives here. What to bind —
+# which bytes are "the input", and whether a mismatch blocks or repairs — stays the workflow's.
+
+def bind_file(path, chunk=1 << 16):
+    """sha256 of a file's bytes, hex — the name a result is bound to."""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(chunk), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def bind_text(text):
+    """sha256 of a string's UTF-8 bytes, hex."""
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def bound(receipt, expected, key="context"):
+    """Whether a receipt (a dict with the `context` the fan-out carried back unchanged) was made
+    for `expected`. False for a missing key, an empty expectation, or a different one — a receipt
+    for another input is not this round's, and a receipt with no binding is not one either."""
+    return bool(expected) and isinstance(receipt, dict) and receipt.get(key) == expected

@@ -17,6 +17,25 @@ becoming untrustworthy — failing closed when it cannot tell whether something 
 inventing a measurement, never letting one member's failure touch another. Those are properties of
 the capability, not decisions about the work, and they stay in the platform.
 
+And the rule has a second half, said by the operator once the first had been applied for a while
+(2026-10-02): **the platform implements what is common, so that a workflow does not; it cannot
+provide everything, so what is specific the workflow implements — and the platform makes the
+place for it.** Common and specific are told apart the same way as capability and behaviour: two
+packages that each built the same mechanism in their own words are the evidence that it is
+common (docs/record/PACKAGE-MATRIX.md counts them), and the shape of what they built is *not*
+the evidence of what the platform should build, because they built around its absence. The
+places already exist, and new ones follow the pattern:
+
+| what is specific | the place the platform makes |
+|---|---|
+| a package's own rules, as controls | `packages/<p>/controls.py`, run by `scripts/packages.sh verify` |
+| the identities its steps run as | `packages/<p>/principals.yaml`, merged by `principals.py apply` |
+| a login flow of its own | `login:` in the manifest, driven by the panel |
+| data that arrives by name | `handoff/` |
+| state the next cycle needs | `<state_root>/<p>/`, declared with `requires.state` |
+| state that must live with the work | declared as `requires.state: "<where>"` — the platform knows where, and keeps nothing |
+| what a result is bound to | `step.bind_file` / `bind_text` / `bound` — the hash is the platform's, the choice of bytes is the workflow's |
+
 ## The capabilities, and the decision each one leaves to the caller
 
 | capability | guarantee | the caller decides |
