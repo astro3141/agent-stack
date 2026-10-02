@@ -813,9 +813,9 @@ def controls_panel():
     check("the panel can answer one", "/api/approvals/([0-9a-f-]{36})" in ops, True)
     check("and only with a decision it knows",
           'decision must be approve or decline' in ops, True)
-    for absent, why in (("/api/cycle", "starting a cycle"), ("/api/cleanup", "deleting runs"),
+    for route_gone, why in (("/api/cycle", "starting a cycle"), ("/api/cleanup", "deleting runs"),
                         ("/api/composition", "changing the composition")):
-        check(f"the panel does not offer {why}", absent in ops, False)
+        check(f"the panel does not offer {why}", route_gone in ops, False)
 
     # the run dashboard: one address for a person, and the container that holds the workspace
     # mount is not the one a browser talks to
