@@ -6,6 +6,10 @@ The prompt file may use {WS} for the run's shared workspace (/ws/<conductor run 
 every model step of the run shares, so a later step can read what an earlier one wrote.
 Writes are only possible through the Preloop MCP server (native write/shell are removed);
 Preloop's rules decide them. Emits the normalized result flat for Conductor.
+
+Where it runs is the role's business, not the caller's: a principal that declares an egress
+profile is handed to the broker (steps/broker_dispatch.py, same argv) and runs in that profile's
+container; any other runs here. A workflow names this step and never has to choose a door.
 """
 
 # What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
@@ -49,6 +53,22 @@ def shared_with_roles(*paths):
         except OSError:
             pass          # not ours to change: the step still runs, and it is the same directory
 
+
+# The door (§54). A role that declares an egress profile runs in that profile's container, through
+# the broker — the fan-out (steps/tasks.py) and a chain (steps/task_chain.py) already swap the
+# entrypoint for such a role, and a workflow that calls this step directly now gets the same swap
+# here, so a package need not know there are two doors (docs/record/PACKAGE-MATRIX.md, "the door
+# leaks into the workflow"). The argv is the same either way. Inside the profile's container the
+# runner has already dispatched (it marks its environment with AGENTSTACK_EGRESS_PROFILE) and this
+# step runs as itself. A role without a profile is untouched by this.
+if principal and not os.environ.get("AGENTSTACK_EGRESS_PROFILE") and not os.environ.get("AGENTSTACK_ROLE"):
+    try:
+        import role_egress
+        _profile = role_egress.profile_of(principal)
+    except Exception:
+        _profile = ""
+    if _profile:
+        os.execv(sys.executable, [sys.executable, "/work/stack/steps/broker_dispatch.py"] + sys.argv[1:])
 
 # Run as the role this step belongs to, when that role has one of its own. Everything after this
 # point is that role: its uid, and its egress. A step whose role declares no hosts is not re-executed
