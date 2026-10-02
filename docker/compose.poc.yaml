@@ -483,9 +483,16 @@ services:
   # agent — H1's whole point is that the *file* identity does not change. What changes is the
   # network it is born on, and what it is NOT given: no principals.env, no market/package env.
   # The Preloop principal is the trusted adapter's to present, never this environment's (§51).
+  # Every profile agent shares the main agent's home volume (the toolchain lives there, §3). A
+  # fresh named volume is filled from the image by the first container created on it, and compose
+  # creates containers in parallel: four fills at once collided on a symlink ("file exists",
+  # measured on the cold-start runner 2026-10-02, after eight runs that happened not to). The
+  # profile agents therefore wait for the main agent, which fills the volume alone.
   agent-probe:
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-probe
+    depends_on:
+      agent: {condition: service_started}
     init: true
     restart: unless-stopped
     volumes:
@@ -510,6 +517,8 @@ services:
   agent-closed:
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-closed
+    depends_on:
+      agent: {condition: service_started}
     init: true
     restart: unless-stopped
     volumes:
@@ -535,6 +544,8 @@ services:
     profiles: ["egress-research"]
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-research
+    depends_on:
+      agent: {condition: service_started}
     init: true
     restart: unless-stopped
     volumes:
@@ -560,6 +571,8 @@ services:
     profiles: ["egress-research-review"]
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-research-review
+    depends_on:
+      agent: {condition: service_started}
     init: true
     restart: unless-stopped
     volumes:
