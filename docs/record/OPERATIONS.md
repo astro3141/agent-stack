@@ -3660,6 +3660,21 @@ the four cases).
 Owed from that host: the raw billing answer (runbook, "Runs hold"), which says whether this is
 the plan or the proxy. Until then the profile's line is the operator's statement, dated.
 
+**Answered the same day (issue #11).** The raw billing answer from the account, through the
+egress proxy, with grok 1.0.40 / CodexBar 0.63.0 pinned:
+
+```
+config.currentPeriod        {type: USAGE_PERIOD_TYPE_WEEKLY, start: 2026-09-28T16:57:35Z, end: 2026-10-05T16:57:35Z}
+config.creditUsagePercent   null
+config.onDemandCap          {val: 0}      config.onDemandUsed  {val: 0}      config.prepaidBalance {val: 0}
+config.isUnifiedBillingUser true
+```
+
+A weekly period and no usage figure: the period-only answer CodexBar classifies as unknown rather
+than 0 %, exactly as its source reads. The plan, not the proxy, and not CodexBar. `grok: []`
+stands as the account's statement; when the vendor starts carrying a percent for it, the
+profile goes back to `[weekly]` and nothing else changes.
+
 ### §64 addendum 2: the 429 was ours (measured 2026-10-02)
 
 With `grok: []` in place, novel-a completed on that host — architect=codex, author=claude,
@@ -3755,3 +3770,65 @@ Still a person's decision, deliberately: a native tool a vendor cannot switch of
 `apply_patch`) is held for approval, and an unattended run that asks for one ends `DENIED` after
 the window. The stack does not shorten that window — approval is the answer the stack gives for
 a tool outside the posture, and a shorter window would turn "not approved" into "not asked".
+
+## 65. Update day 1 (measured 2026-10-02)
+
+The first run of docs/update-day.md, on the second install (Windows, Docker Desktop), after
+`drift.sh` reported eight components newer upstream. What moved, what was held, and what was run
+to say it still holds. The decision and the reading behind each pin: docs/record/DECISIONS-2026-10-02.md.
+
+**Moved, one commit each, on the branch:**
+
+| component | from → to | read before moving |
+|---|---|---|
+| codexbar | 0.63.0 → 0.70.0 | three hardenings of the Claude reading (#4129, #4115/#4083, #4126); Grok billing code identical at both tags |
+| claude-code | 2.1.278 → 2.1.287 | 2.1.281–287: no change to project `permissions.deny`; managed settings, headless MCP retries, OAuth messages |
+| supergateway | 4.0.0 → 4.1.0 | minor |
+
+**Held** (issue #17): codex 0.160 with codex-acp 2.1.1 and claude-agent-acp 0.85 — both adapters
+broke the tool-call contract on 2026-09-28 and the adapter reads that contract; acpx 0.19.4 with
+them; Conductor 0.1.41 (+45k lines); grok 1.0.46 (no changelog anywhere).
+
+**Measured.** Linux cold start on the new pins: green (cold-start-linux run 23, f009437), verify
+stack 18/18, trial 469/469, review 45/45. On the instance:
+
+```
+scripts/release.sh update --to f009437            refused: "claude: running '2.1.278', candidate image
+                                                  '2.1.287' — refusing an update whose toolchain would
+                                                  silently stay behind — the instance is untouched"
+scripts/release.sh update --to f009437 --replace-toolchain
+  toolchain  answers; the previous copy was removed
+  claude     2.1.287        conductor v0.1.37 · preloop_cli 0.15.0 · codex 0.155.1 · grok 1.0.40
+  ALL CHECKS PASSED         (quota knowable 0, router can choose yes, grok native tools denied yes)
+  rollback point            20261002-093412-f009437  (claude 2.1.278)
+scripts/verify.sh --level full                    21/21 — static 10/10, stack 18/18, full: router_controls
+                                                  26/26, auto PASS, novel-a PASS, all three reviewers COMPLETED
+claude N7 (one real call on 2.1.287)              auto run 41c0cd80: permissions.jsonl title=mcp__preloop__write_file,
+                                                  routed=preloop_mcp_rules, allow_once; events: preloop__write_file ×13,
+                                                  native Write/Edit 0
+```
+
+The refusal without `--replace-toolchain` is the right one — the toolchain lives in the home
+volume, not the image, so an image-only update would have left claude at 2.1.278 while the
+record said 2.1.287 — and update-day.md did not mention the flag (issue #20, fixed below).
+
+**The backup was run after, not before.** The procedure's "Before" backup was skipped and taken
+once the update had passed (issue #20). Valid as a snapshot of the same data: this round moved no
+Preloop version, so no schema migration happened, which is the one thing the backup exists for.
+
+```
+archive   ~/agentstack-backups/agentstack-backup-20261002-095538.tar.gz.enc   1.7 GB, 12 members, sha256 each
+key       ~/.agentstack-backup.key   64 B, not in the archive — the operator keeps a copy elsewhere
+in it     preloop.dump · release.json (f009437) · volumes agent-home, quota-home, route-creds ·
+          host mlflow, evidence-p281, evidence-ui-runs, config, policy, preloop-dir, research
+```
+
+**A finding on the way** (issue #20): `release.sh record` failed once with `No such image:
+sha256:448030c0…` — running containers held an image sha that a rebuild had pruned under them.
+`record` runs before anything is touched, so the instance was untouched; `scripts/up.sh
+--recreate` put every container on an image that exists, and the update then went through.
+`record` should say that is what happened, rather than fail on the daemon's words.
+
+Two more things learned by doing the procedure once: `update` records a rollback point itself,
+so the "Before" `record --tag` is a *named* point, not a second one; and the drift report's
+"newer" is a reading list, not a to-do — five of eight were held on what the reading said.
