@@ -8,8 +8,15 @@ name: cold start on linux
 # A runner has no provider logins, and never will: those are a person's accounts at Anthropic,
 # OpenAI and xAI. So the login and quota checks are expected to fail, and only those.
 
+# When it runs. A push to main proves that commit on a clean host; the weekly run catches what
+# changes underneath a commit that did not: Preloop's installer, the images this pulls, the
+# runner image. Both are the same job as the manual run.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 21 * * 0"   # Monday 06:17 KST
 
 permissions:
   contents: read
