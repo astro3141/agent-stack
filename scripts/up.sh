@@ -273,6 +273,13 @@ if docker ps --format '{{.Names}}' | grep -qx "$STACK-apiguard"; then
     echo "  WARN  the guard did not accept its configuration — the rules in effect are the old ones" >&2
 fi
 
+# Grok's native tools are off by a table in its own config file — written by hand on the first
+# install and by nothing since, until a second install ran a Grok lane without it (OPERATIONS
+# §64). Written here on every bring-up for every grok login the profiles name; idempotent.
+if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
+  in_agent '/opt/venv/bin/python /work/stack/grok_posture.py ensure 2>/dev/null' | grep -v '"no login"' | sed 's/^/   grok posture: /' || true
+fi
+
 echo "== isolation"
 check "agent default routes"            0   "$(in_agent 'ip route | grep -c default')"
 check "agent direct egress"             000 "$(in_agent 'curl -s -o /dev/null -w %{http_code} --max-time 5 https://pypi.org')"
@@ -306,6 +313,15 @@ echo "== logins (routing layer)"
 check "claude /route login"              true "$(in_agent 'CLAUDE_CONFIG_DIR=/route/claude claude auth status 2>/dev/null | python3 -c "import json,sys;print(str(json.load(sys.stdin).get(\"loggedIn\")).lower())"')"
 check "codex /route login"               yes "$(in_agent 'CODEX_HOME=/route/codex codex login status 2>&1 | grep -q "Logged in" && echo yes || echo no')"
 check "grok /route login"                yes "$(in_agent 'test -s /route/grok/auth.json && echo yes || echo no')"
+# The posture Grok's own config carries: deny Bash/Edit/Write/WebFetch/WebSearch, allow the Preloop
+# tools (stack/grok_posture.py). Without it a Grok lane writes with its native tool, waits for a
+# person, and ends DENIED. Reported for every grok login the profiles name; `--` when none exists.
+if in_agent 'test -s /route/grok/auth.json' >/dev/null 2>&1; then
+  check "grok native tools denied in its config" yes "$(in_agent '/opt/venv/bin/python /work/stack/grok_posture.py check --brief 2>/dev/null')"
+  in_agent '/opt/venv/bin/python /work/stack/grok_posture.py check 2>/dev/null' | grep -v '"ok"' | sed 's/^/        /' || true
+else
+  printf '  --    %-44s %s\n' "grok native tools denied in its config" "no grok login"
+fi
 # The observer's own login is a second source, not a requirement: codex is read with the login that
 # executes (OPERATIONS §29). Reported, not failed — a check that fails on something optional teaches
 # an operator to ignore checks.

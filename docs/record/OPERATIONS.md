@@ -3708,3 +3708,34 @@ with the profile's policy 26/26; with the static one 19/26, every miss "→ grok
 for. `router_controls.py` now takes the policy as its second argument, `verify.sh` passes the
 generated profile's, a case creates the path it sets, and `routing-policy.json` carries the same
 per-provider form as `research-default`.
+
+### §64 addendum 4: the Cold Reader's DENIED — a posture that lived in a hand-written file
+
+Full 21/21 on the second install, novel-a PASS — and in its receipt, `cold grok DENIED` after
+335 s, the review itself produced. Read from the call's `result.json`: `mcp_rule_denials: None`,
+one permission, `denial: approval_expired`, `acp_kind: edit`, `title: Write /ws/…/review_cold.json`,
+and the ACP-handed MCP server connected with `preloop__write_file` in its discovered tools. So
+Grok had the governed write and used its native one; the adapter held that for a person, as it
+does for every native tool a vendor cannot switch off; nobody was there; the window (~302 s)
+expired.
+
+Why the first install never saw this: FINDINGS-281, "Grok native tools removed (2026-09-22)" —
+the `[permission]` table (`deny` Bash/Edit/Write/WebFetch/WebSearch, `allow MCPTool(preloop__*)`)
+was written **by hand** into `/route/grok/config.toml`, measured (`NATIVE_UNAVAILABLE` when told
+to use the built-in write), and entered the matrix as "native write/shell: off (own deny rules)".
+Nothing in the tree wrote or checked that file. §31's arm64 pilot had already met the same wall —
+a Grok lane asking to run a shell command, held for a person — and recorded the approval clock,
+not the missing table. Claude's equivalent is a settings file the adapter writes into each run's
+workspace; Codex's is feature flags in its environment; Grok's was a file on one machine.
+
+Built: `stack/grok_posture.py` writes the measured table into every grok login the profiles name
+— on login (`login_helper.py`, the moment the status says connected) and on every bring-up
+(`up.sh`) — keeping the file's MCP entry, its other tables and any deny/allow entries of its own,
+with the previous file beside it; `up.sh --check` reports `grok native tools denied in its config`
+for a login that exists and `--` for none. Seven controls in `review_controls` cover a bare login,
+an existing file, a second run, and a file that does not parse (left alone, reported).
+
+Still a person's decision, deliberately: a native tool a vendor cannot switch off (Codex's
+`apply_patch`) is held for approval, and an unattended run that asks for one ends `DENIED` after
+the window. The stack does not shorten that window — approval is the answer the stack gives for
+a tool outside the posture, and a shorter window would turn "not approved" into "not asked".

@@ -152,6 +152,37 @@ docker exec agentstack-agent sh -c 'tok=$(/opt/venv/bin/python -c "import json; 
 # config.creditUsagePercent, or onDemandCap/onDemandUsed, is what CodexBar turns into the window; neither → none
 ```
 
+## A Grok lane ends DENIED after five minutes, on a Write
+
+**Look:** a member's receipt says `status: DENIED`, `attempt_outcomes: ['denied']`, about 300 s
+after it started; its `result.json` has `mcp_rule_denials: None` and one permission with
+`denial: approval_expired`, `acp_kind: edit`, `title: Write …`. The MCP server is connected and
+`preloop__write_file` is in its tool list.
+
+**What it means.** Grok produced its answer and saved it with its **native** `Write` instead of
+Preloop's `write_file`. The adapter holds a native write for a person (that is the rule for every
+vendor's native tool that cannot be switched off), nobody was there, and the approval window
+expired. Not quota, not a Preloop rule, not the MCP connection: the login's `config.toml` lacks
+the table that turns Grok's native tools off (FINDINGS-281, "Grok native tools removed"), which a
+`grok login` does not write. The first install had it by hand; a second did not (OPERATIONS §64).
+
+**Do:** nothing by hand. The table is written when a Grok login connects and on every
+`scripts/up.sh`, and `scripts/up.sh --check` reports it:
+
+```
+  ok    grok native tools denied in its config       yes
+```
+
+To see or write it now:
+
+```bash
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/grok_posture.py check
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/grok_posture.py ensure   # keeps config.toml.bak
+```
+
+An advisory role (novel-a's Cold Reader) does not fail the run; a required one holds it, and the
+hold's reason is this line.
+
 ## A fresh install: logged in, and one provider still unusable
 
 **Look:** the accounts view shows all three providers 연결됨, and one of them is refused:

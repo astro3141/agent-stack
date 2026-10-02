@@ -69,6 +69,7 @@ docker exec agentstack-admin /opt/venv/bin/python /work/stack/<script>.py …   
 | `elsewhere.py` | the switches elsewhere that would make this panel's claims untrue |
 | `router.py <policy.json> <obs-dir>` | one routing decision, from observations only |
 | `collect_obs.py <dir>` | collect the quota observations the router reads |
+| `grok_posture.py ensure\|check [<GROK_HOME>…]` | the `[permission]` table that turns Grok's native tools off, in its own config — written on login and on every bring-up, checked by `up.sh --check` |
 | `trial_controls.py` | every control, against synthetic inputs — the machinery, not the judgement |
 
 ## The panel

@@ -218,9 +218,12 @@ const PROVIDERS = {
     mcpViaConfig: true,
     // A call to a tool of the Preloop MCP server (registered as "preloop" in Grok's own config):
     // decided by Preloop's rules at the MCP proxy, so not sent to human approval as well.
-    // Normally unreachable: /route/grok/config.toml carries `[permission] allow =
+    // Normally unreachable: the login's config.toml carries `[permission] allow =
     // ["MCPTool(preloop__*)"]` and denies Bash/Edit/Write/WebFetch/WebSearch, so Grok neither
     // asks about Preloop MCP calls nor runs native write/shell tools. Kept as a fallback.
+    // That table is written by stack/grok_posture.py (on login, and on every bring-up) and
+    // checked by `up.sh --check` — it was hand-written once, and a second install ran without
+    // it: the Cold Reader wrote with native Write, waited for a person, and ended DENIED (§64).
     governedDownstream(raw) {
       const tc = raw.toolCall ?? {};
       return tc._meta?.["x.ai/tool"]?.name === "use_tool" && tc.rawInput?.variant === "UseTool"

@@ -219,6 +219,46 @@ fi
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 2c. Grok's posture in its own config
+def grok_posture_controls():
+    """The table that turns Grok's native tools off lives in Grok's config file, which a login does
+    not write. The second install ran a Grok lane without it (OPERATIONS §64). stack/grok_posture.py
+    writes it, keeps what is there, and checks it."""
+    import importlib
+    gp = importlib.import_module("grok_posture")
+    root = Path(tempfile.mkdtemp(prefix="agentstack-grok-"))
+    a, b, c = root / "a", root / "b", root / "c"
+    for d in (a, b, c):
+        d.mkdir()
+    check("grok posture: no login → nothing to write, said so", gp.ensure(str(a))["state"] == "no login")
+    (b / "auth.json").write_text("{}")
+    r1 = gp.ensure(str(b)); r2 = gp.ensure(str(b))
+    import tomllib as _t
+    doc = _t.loads((b / "config.toml").read_text())
+    check("grok posture: a bare login gets the block, parseable", r1["state"] == "written"
+          and set(gp.DENY) <= set(doc["permission"]["deny"]) and doc["permission"]["allow"] == gp.ALLOW
+          and doc["ui"]["remember_tool_approvals"] is False, (r1, doc))
+    check("grok posture: a second ensure changes nothing", r2["state"] == "ok" and not (b / "config.toml.bak").exists(), r2)
+    (c / "auth.json").write_text("{}")
+    (c / "config.toml").write_text('[mcp_servers.preloop]\nurl = "http://console/mcp/v1"\n[mcp_servers.preloop.http_headers]\n'
+                                   'Authorization = "Bearer x"\n\n[ui]\ntheme = "dark"\nremember_tool_approvals = true\n\n'
+                                   '[permission]\ndeny = ["Bash", "Custom"]\n')
+    r3 = gp.ensure(str(c))
+    doc = _t.loads((c / "config.toml").read_text())
+    check("grok posture: an existing file keeps its MCP entry, its [ui] keys and its own deny entries",
+          r3["state"] == "written" and doc["mcp_servers"]["preloop"]["url"] == "http://console/mcp/v1"
+          and doc["ui"] == {"theme": "dark", "remember_tool_approvals": False}
+          and "Custom" in doc["permission"]["deny"] and set(gp.DENY) <= set(doc["permission"]["deny"]), (r3, doc))
+    check("grok posture: and the previous file is kept beside it", (c / "config.toml.bak").exists() and "Custom" in (c / "config.toml.bak").read_text())
+    check("grok posture: check names what is missing", gp.check(str(c))["state"] == "ok"
+          and "deny lacks" in " ".join(r3["was_missing"]), r3)
+    (c / "config.toml").write_text("[permission\nbroken = \n")
+    r4 = gp.ensure(str(c))
+    check("grok posture: a file that does not parse is left alone and reported",
+          r4["state"] == "error" and (c / "config.toml").read_text().startswith("[permission\n"), r4)
+    shutil.rmtree(root, ignore_errors=True)
+
+
 # ---------------------------------------------------------------- 3. restart after the end event
 def run_controls():
     sys.path.insert(0, str(HERE))
@@ -258,6 +298,7 @@ def run_controls():
 policy_controls()
 codex_controls()
 kept_controls()
+grok_posture_controls()
 run_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

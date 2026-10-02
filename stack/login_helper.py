@@ -183,9 +183,19 @@ def cmd_status(provider, login):
     else:
         state = "connected" if acct.get("logged_in") else "not_connected"
     tail = ANSI.sub("", text)[-400:] if state == "failed" else ""
-    return {"provider": provider, "login": login, "state": state, "url": parsed["url"] if running else None,
-            "user_code": parsed["user_code"] if running else None, "needs_code": parsed["needs_code"] and running,
-            "account": acct, "detail": tail}
+    out = {"provider": provider, "login": login, "state": state, "url": parsed["url"] if running else None,
+           "user_code": parsed["user_code"] if running else None, "needs_code": parsed["needs_code"] and running,
+           "account": acct, "detail": tail}
+    if state == "connected" and provider == "grok":
+        # Grok's native tools are off by a table in its own config file, which a login does not
+        # write (stack/grok_posture.py). Written here, the moment the login exists, so that no
+        # Grok call ever runs on a login without it — idempotent, and reported with the status.
+        try:
+            import grok_posture
+            out["posture"] = grok_posture.ensure(str(p["home"]))
+        except Exception as e:                 # a status must still answer
+            out["posture"] = {"state": "error", "error": f"{type(e).__name__}: {e}"[:200]}
+    return out
 
 
 def cmd_code(provider, login):
