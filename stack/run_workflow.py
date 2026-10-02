@@ -193,6 +193,20 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
                     "docker/agent.Dockerfile's venv install and re-run scripts/up.sh --build. "
                     "A pure-Python dependency belongs in the package instead."}, ensure_ascii=False))
         return 3
+    # The stack revision the package says it needs at least (requires.stack.min). Only a floor this
+    # checkout verifiably does not contain refuses; "unverifiable" is reported by `packages.py
+    # stack` and refuses nothing, because it says nothing about the stack's age.
+    try:
+        floor = _pk.stack_of(pkg_name).get(pkg_name) if pkg_name else None
+    except Exception:
+        floor = None
+    if floor and floor.get("state") == "too_old":
+        print(json.dumps({
+            "error": f"this workflow's package needs a newer stack: {pkg_name} declares "
+                     f"requires.stack.min {floor['min']}, and this checkout does not contain it",
+            "hint": "scripts/release.sh update --to <a revision at or past it>, or pin an older "
+                    "package in config/packages.yaml"}, ensure_ascii=False))
+        return 3
     if gone:
         print(json.dumps({"error": "the stack cannot run this now: " + ", ".join(gone),
                           "why": {k: caps[k]["without_it"] for k in gone},
