@@ -281,6 +281,16 @@ if in_agent /work/stack/run_workflow.py start "$RID" child-run research-default 
 else bad "child-run did not complete ($RID)" "$(tail -3 "$TMP/child.log" | tr '\n' ';')"; fi
 
 in_agent /work/stack/ops_health.py > "$TMP/health.log" 2>&1 && ok "ops_health answers" || bad "ops_health failed" "$(tail -2 "$TMP/health.log" | tr '\n' ';')"
+# The adapter imports acpx by path (dist/runtime.js, dist/agent-registry.js) and the vendor
+# CLIs by name; an update day moves those pins (docs/update-day.md). Without a model call the
+# most this level can see is that the adapter loads and answers in its own shape: given no
+# request it must say FAILED in one JSON line — not die on a module it cannot find.
+r="$(docker exec "$STACK-agent" node /work/stack/run-agent.mjs /dev/null 2>&1 | tail -1 | nocr)"
+case "$r" in
+  *'"status": "FAILED"'*|*'"status":"FAILED"'*)
+    case "$r" in *"Cannot find"*|*"ERR_MODULE"*|*"ERR_REQUIRE"*) bad "the adapter cannot load its toolchain" "$r";; *) ok "the adapter loads with the pinned toolchain (acpx $(docker exec "$STACK-agent" sh -c 'node -p "require(\"/opt/npm-global/lib/node_modules/acpx/package.json\").version"' 2>/dev/null | nocr))";; esac;;
+  *) bad "the adapter did not answer in its own shape" "$r";;
+esac
 
 if [ "$LEVEL" = stack ]; then
   echo; echo "stack: $((CHECKS-FAILS))/$CHECKS passed"

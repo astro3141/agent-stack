@@ -84,46 +84,9 @@ def load(path, name, ws):
 # triage — novel's own judgement; pinned by packages/novel/controls.py since 2026-10
 
 
-# ---------------------------------------------------------------- lanes
-def controls_lanes():
-    print("lanes — a malformed proposal is one lane's result")
-    if absent("/work/packages/trading/steps/trade_stage.py", "lanes (trading as the fixture)"):
-        return
-    root = tempfile.mkdtemp(prefix="agentstack-lanes-")
-    ws = os.path.join(root, "run")
-    os.makedirs(ws)
-    ts = load("/work/packages/trading/steps/trade_stage.py", "trade_stage_ctl", ws)
-    _, packet, body, _ = ts.build_packet()
-    open(f"{ws}/packet.json", "w", encoding="utf-8").write(body)
-    syms = [s["symbol"] for s in packet["universe"]][:3]
-    good = {"lane": "base", "model_calls": 0, "refs": [],
-            "targets": [{"symbol": s, "weight": 0.2} for s in syms]}
-    broken = {
-        "empty_list": [],
-        "null_target": {"targets": [None]},
-        "bad_calls": {"targets": [{"symbol": syms[0], "weight": 0.2}], "model_calls": "two"},
-        "nan_weight": {"targets": [{"symbol": syms[0], "weight": float("nan")}]},
-        "symbol_list": {"targets": [{"symbol": [syms[0]], "weight": 0.2}]},
-        "refs_string": {"targets": [{"symbol": syms[0], "weight": 0.2}], "refs": "EV-001"},
-    }
-    json.dump(good, open(f"{ws}/lane_base.json", "w"))
-    for name, doc in broken.items():
-        json.dump(doc, open(f"{ws}/lane_{name}.json", "w"))
-    open(f"{ws}/lane_syntax.json", "w").write("{not json")
-
-    import io, contextlib
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        ts.cmd_evaluate()
-    res = json.loads(buf.getvalue().strip().splitlines()[-1])
-    rows = {r["lane"]: r for r in json.loads(res["report"])}
-    check("the evaluation finished at all", res["status"], "OK")
-    check("the sound lane is still scored", rows.get("base", {}).get("status"), "VALID")
-    for name in list(broken) + ["syntax"]:
-        check(f"{name} is that lane's INVALID", rows.get(name, {}).get("status"), "INVALID")
-    check("a report was written", os.path.isfile(f"{ws}/report.json"), True)
-    check("the comparison still names a best lane", res["best_lane"], "base")
-    shutil.rmtree(root, ignore_errors=True)
+# (what a valid lane proposal is, and how a malformed one is scored, is trading's judgement:
+#  packages/trading's own controls pin it — agent-stack-trading#2. The stack's fan-out is pinned
+#  below with a fixture of its own, #18.)
 
 
 # ---------------------------------------------------------------- roles
@@ -292,29 +255,25 @@ def controls_reviews_step():
 
 
 def controls_lanes_step():
+    """The real step, the real fanout, no model call — on a fixture of the stack's own (#18).
+    What the members are asked to write is any document; what it means is no step's."""
     print("lanes step — the real step, the real fanout, no model call")
-    if absent("/work/packages/trading/steps/trade_stage.py", "lanes step (trading as the fixture)"):
-        return
     root = tempfile.mkdtemp(prefix="agentstack-lanestep-")
     ws = real_ws()
-    ts = load("/work/packages/trading/steps/trade_stage.py", "ts_step", ws)
-    _, packet, body, _ = ts.build_packet()
-    open(f"{ws}/packet.json", "w", encoding="utf-8").write(body)
-    syms = [s["symbol"] for s in packet["universe"]][:2]
-    doc = json.dumps({"lane": "ai", "model_calls": 1, "refs": [],
-                      "targets": [{"symbol": s, "weight": 0.2} for s in syms]})
-    ts.cmd_baseline("base")                      # the workflow's own step, no model call
-    specs = ["ai:codex:codex:direct:/work/packages/trading/prompts/trade-lane.md:lane_ai.json",
-             "ai2:claude:claude:direct:/work/packages/trading/prompts/trade-lane2.md:lane_ai2.json"]
+    doc = json.dumps({"lane": "ai", "answer": 42})
+    specs = ["ai:codex:codex:direct:/dev/null:lane_ai.json",
+             "ai2:claude:claude:direct:/dev/null:lane_ai2.json"]
     res = run_step("/work/stack/steps/tasks.py", "tl_step",
                    ["lanes_round.json", "packet-sha", "research-default", *specs],
                    ws, doc, fail="ai2")
     check("the step ran", res.get("status"), "OK")
     check("two model lanes, one produced", (res.get("tasks"), res.get("produced")), (2, 1))
     check("the failed lane is named and alone", res.get("failed"), "ai2")
-    check("the deterministic lane needed no model", os.path.isfile(f"{ws}/lane_base.json"), True)
-    check("the receipt carries the cycle's packet",
-          json.load(open(f"{ws}/lanes_round.json")).get("context"), "packet-sha")
+    check("the produced lane's document is the member's, byte for byte",
+          open(f"{ws}/lane_ai.json", encoding="utf-8").read() if os.path.isfile(f"{ws}/lane_ai.json") else None, doc)
+    rec = json.load(open(f"{ws}/lanes_round.json"))
+    check("the receipt carries the cycle's context unchanged", rec.get("context"), "packet-sha")
+    check("and the contract version", rec.get("contract"), 1)
     shutil.rmtree(root, ignore_errors=True)
     shutil.rmtree(ws, ignore_errors=True)
 
@@ -443,10 +402,7 @@ def controls_boundary():
     check("no domain vocabulary in the capability's code", found, [])
     # (that each workflow still carries its own judgement is that workflow's control:
     # packages/novel/controls.py pins "what is required" for novel)
-    if not absent("/work/packages/trading/steps/trade_stage.py", "boundary (trading owns its judgements)"):
-        for name, want in (("what a valid proposal is", "INVALID"),
-                           ("the deterministic baseline", "momentum20")):
-            check(f"the workflow still owns: {name}", want in open("/work/packages/trading/steps/trade_stage.py", encoding="utf-8").read(), True)
+    # (that trading still owns what a valid proposal is and its baseline: trading's controls)
     check("nothing imports the removed fan-out wrappers",
           any(os.path.exists(p) for p in ("/work/stack/steps/novel_reviews.py",
                                           "/work/stack/steps/trade_lanes.py")), False)
@@ -456,16 +412,9 @@ def controls_boundary():
 # ---------------------------------------------------------------- members that are chains
 def controls_chains():
     print("chains — a lane may be a sequence of steps, and stays one lane's business")
-    if absent("/work/packages/trading/steps/trade_stage.py", "chains (trading as the fixture)"):
-        return
     root = tempfile.mkdtemp(prefix="agentstack-chain-")
     ws = real_ws()
-    ts = load("/work/packages/trading/steps/trade_stage.py", "ts_chain", ws)
-    _, packet, body, _ = ts.build_packet()
-    open(f"{ws}/packet.json", "w", encoding="utf-8").write(body)
-    syms = [x["symbol"] for x in packet["universe"]][:2]
-    doc = json.dumps({"model_calls": 1, "refs": [],
-                      "targets": [{"symbol": s, "weight": 0.2} for s in syms]})
+    doc = json.dumps({"lane": "chain", "answer": 42})       # any document: a fixture of the stack's own (#18)
 
     plan = {"members": [
         {"label": "chain", "steps": [
@@ -525,24 +474,8 @@ def controls_chains():
           [e["member"] for e in found], ["chain:s1", "chain:s3"])
     check("its script step is not an execution", len(found), 2)
 
-    # a lane that produced nothing is still in the comparison (its own workspace: the chain above
-    # left its artifact behind, and this asks what the comparison does with a lane that is absent)
-    shutil.rmtree(ws, ignore_errors=True)
-    ws = real_ws()
-    open(f"{ws}/packet.json", "w", encoding="utf-8").write(body)
-    ts2 = load("/work/packages/trading/steps/trade_stage.py", "ts_missing", ws)
-    json.dump({"members": [{"label": "GONE", "steps": []}, {"label": "solo", "steps": []}]},
-              open(f"{ws}/lanes_plan.json", "w"))
-    json.dump({"lane": "solo", "model_calls": 1, "refs": [],
-               "targets": [{"symbol": syms[0], "weight": 0.2}]}, open(f"{ws}/lane_solo.json", "w"))
-    import contextlib, io
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        ts2.cmd_evaluate()
-    out = json.loads(buf.getvalue().strip().splitlines()[-1])
-    check("a planned lane that produced nothing is MISSING, not absent",
-          (out.get("missing"), out["lanes"]), ("GONE", 2))
-    check("and it is not counted as valid", out["valid"], 1)
+    # (that a planned lane which produced nothing is MISSING in the comparison is trading's
+    #  judgement: its own controls)
     shutil.rmtree(root, ignore_errors=True)
     shutil.rmtree(ws, ignore_errors=True)
 
@@ -872,13 +805,12 @@ def controls_panel():
            cy.parse_args(["trading-b", "--retain-days", "14"])["retain_days"]], [None, "14"])
 
     # a router that holds before the roles step must not break the workflow's own hold message
-    # novel-a is this repository's; the two trading graphs are the trading package's and are
-    # checked when it is installed, skipped by name when it is not
-    for name in ("novel-a", "trading-b", "trading-shapes"):
+    # the in-tree workflows; a fetched package's graphs are that package's controls' (#18)
+    for name in ("novel-a",):
         import glob as _g2
         path = next((f for f in _g2.glob("/work/packages/*/*.yaml") if f.endswith("/" + name + ".yaml")), "")
         if not path:
-            absent(f"/work/packages/trading/{name}.yaml", f"{name}: the hold message (trading)")
+            check(f"{name}: the workflow is in the tree", path != "", True)
             continue
         y = open(path, encoding="utf-8").read()
         hold = [l for l in y.splitlines() if "HOLD:" in l]
@@ -1853,23 +1785,25 @@ def controls_packages():
 
     # the ported trading workflow, as a package: its own files address the package, and the
     # platform steps it calls are named rather than assumed
-    tp = here.get("trading") or {}
-    if tp.get("usable"):
-        check("the ported trading workflow is carried by the trading package",
-              {"trading-b", "trading-port", "trading-shapes"} <= set(tp.get("entries") or {}), True)
-        import glob as _g
-        own = [f for f in _g.glob("/work/packages/trading/**/*", recursive=True)
+    # every installed package, by the same rule: its prompts, fixtures and steps are its own,
+    # addressed inside the package — never the stack's (#18: no package is named here)
+    import glob as _g
+    for _pn, _pk in sorted(here.items()):
+        if not _pk.get("usable"):
+            continue
+        own = [f for f in _g.glob(f"/work/packages/{_pn}/**/*", recursive=True)
                if f.endswith((".py", ".yaml", ".md"))]
         text = "".join(open(f, encoding="utf-8", errors="replace").read() for f in own)
-        check("its prompts and fixtures are its own",
+        check(f"{_pn}: its prompts and fixtures are its own",
               "/work/stack/prompts" not in text and "/work/stack/fixtures" not in text, True)
-        check("its own steps are addressed inside the package",
-              "/work/stack/steps/arch_port.py" not in text
-              and "/work/stack/steps/packet_bridge.py" not in text, True)
-        # the dependency that used to reach into the platform now lives in the same package
-        check("the deterministic core it shares lives with it",
-              os.path.exists("/work/packages/trading/steps/trade_stage.py")
-              and "/work/stack/steps/trade_stage.py" not in text, True)
+        check(f"{_pn}: its own steps are addressed inside the package",
+              "/work/stack/steps/" + _pn not in text and f"/work/stack/steps/{_pn}_" not in text, True)
+    # and the stack's steps are the platform's only: no package's step lives under stack/steps
+    # (trade_stage.py once did — the dependency that reached into the platform, §30)
+    check("the stack's steps are the platform's only",
+          sorted(f for f in os.listdir("/work/stack/steps") if f.endswith(".py")),
+          ["admit_models.py", "agent_task.py", "broker_dispatch.py", "fanout.py", "record.py",
+           "roles.py", "route.py", "step.py", "task_chain.py", "tasks.py"])
 
     # what a second machine's pilot found, each one pinned where it was fixed
     rw_src = open("/work/stack/run_workflow.py", encoding="utf-8").read()
@@ -1959,16 +1893,7 @@ def controls_packages():
           and "market.env" in gi, True)
     check("the fetch is not a step of the platform",
           _os.path.exists("/work/stack/steps/live_packet.py"), False)
-    lp = (open("/work/packages/trading/steps/live_packet.py", encoding="utf-8").read()
-          if not absent("/work/packages/trading/steps/live_packet.py", "live packet (trading)") else "")
-    if lp:
-        check("it freezes a file and stops, so the bridge still fetches nothing",
-              "/work/handoff" in lp and "packet_bridge" not in lp.split('"""')[2], True)
-        check("and the packet says what it is not",
-              '"universe_version": "live-fetch"' in lp and "not_included" in lp, True)
-        check("the token is kept, because the vendor refuses a second one",
-              "TOKEN_CACHE" in lp and "~/.kis-token.json" in lp, True)
-
+    # (what trading's own fetch step does — freezing a file, keeping a token — is trading's: its controls)
     # a step's imports work wherever the step lives
     compose = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
     check("the step library is importable from a package's steps",
@@ -2474,7 +2399,6 @@ if __name__ == "__main__":
     controls_recorder()
     controls_reviews_step()
     controls_lanes_step()
-    controls_lanes()
     controls_roles()
     controls_record_and_screen()
     print(f"\n{len(PASS)}/{len(PASS) + len(FAIL)} controls passed")
