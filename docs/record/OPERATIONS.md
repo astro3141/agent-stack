@@ -4017,9 +4017,10 @@ runbook; its own login), and the command, built from the selection:
 `GET /api/runs`, a run's view, and stop stay. Stopping a run that is going is a judgement and
 stays on the panel, as the rule says.
 
-Not decided, and left as they were: the panel's configuration *apply* button and its *resume*
-button, both of which the same table also puts on the command side. They are the next question
-on #24 or a new one.
+Decided the same day, the same way: the *resume* button on the 실행 기록 tab and
+`POST /api/runs/<id>/resume` went too. A run that can be continued says so in its row, with the
+command (`run_workflow.py resume <id>`). The configuration *generate·apply* button (설정 상태
+card) stays as it was.
 
 Controls: review_controls pins the absence (no start, no precheck, no POST on the page or in the
 API), the presence of the command, and the contract's sentence.

@@ -573,7 +573,7 @@ async function loadRuns() {
       <td class="${DEC[d]||""}"><b>${esc(d)}</b></td>
       <td><button class="sub" data-replay="${esc(r.ui_id)}">그래프</button>` +
       (r.state === "running" ? `<button class="sub" data-stop="${esc(r.ui_id)}">중지</button>` : "") +
-      (r.resumable ? `<button class="sub" data-resume="${esc(r.ui_id)}">재개</button>` : "") +
+      (r.resumable ? ` <span class="muted">재개 가능 · <code>run_workflow.py resume ${esc(r.ui_id)}</code></span>` : "") +
       `</td></tr>`; }).join("");
   document.querySelectorAll("[data-stop]").forEach((b) => b.onclick = async (e) => {
     e.stopPropagation();
@@ -581,14 +581,6 @@ async function loadRuns() {
     b.disabled = true;
     const out = await api(`/api/runs/${b.dataset.stop}/stop`, {});
     alert(out && out.rc === 0 ? "중지를 요청했습니다: " + (out.output || "") : "중지하지 못했습니다: " + esc((out && (out.error || out.output)) || ""));
-    loadRuns();
-  });
-  document.querySelectorAll("[data-resume]").forEach((b) => b.onclick = async (e) => {
-    e.stopPropagation();
-    if (!confirm("중지된 지점부터 이어서 실행합니다. 끝난 단계는 다시 하지 않고, 멈춘 단계부터 다시 들어갑니다.")) return;
-    b.disabled = true;
-    const out = await api(`/api/runs/${b.dataset.resume}/resume`, {});
-    alert(out && out.resuming ? "재개했습니다." : "재개하지 못했습니다: " + esc((out && out.error) || ""));
     loadRuns();
   });
   document.querySelectorAll("[data-replay]").forEach((b) => b.onclick = async (e) => {

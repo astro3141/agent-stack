@@ -615,6 +615,8 @@ def panel_controls():
     check("panel: the ops API has no start endpoint", 'run_workflow.py", "start"' not in srv
           and "POST /api/runs  body" not in srv)
     check("panel: stopping a run that is going is still the panel's", "/stop" in srv and "data-stop" in hub)
+    check("panel: resume went with start — no button, no endpoint, the command shown instead",
+          "data-resume" not in hub and '/resume", p)' not in srv and "run_workflow.py resume" in hub)
     check("panel: the contract says so in its own words",
           "shows the command" in (WORK / "CONTRACT.md").read_text())
 
