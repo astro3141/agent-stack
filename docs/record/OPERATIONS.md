@@ -4031,3 +4031,43 @@ what was run.
 
 Controls: review_controls pins the absence (no start, no precheck, no POST on the page or in the
 API), the presence of the command, and the contract's sentence.
+
+## 71. The next five, in one pass (#13 #22 #23 #25 #26, 2026-10-02)
+
+The items the issues called "next", done on the same branch as #24 rather than one PR each.
+
+**#22 — execution facts are the platform's.** The record step reads the run's evidence
+directories (`<evidence_root>/<run>-*/execution.json`, which every routed call now leaves, §68)
+and joins them with what the step passed on `run_id`. A workflow that lists nothing — devflow's
+implementer and researcher calls were recorded NO_EXECUTION — is recorded with every call it
+made. "manual" reads none. Controls: listed nothing → both attempts recorded and no other run's;
+listed one → joined, nothing twice; no run → nothing.
+
+**#13 — a child run is linked.** `run_workflow.py start` from inside a step sees the parent's
+`CONDUCTOR_SELF_RUN_ID`: the child's meta carries `parent`, the child's Conductor gets
+`AGENTSTACK_PARENT_RUN`, the record step tags `parent.run_id` on every record it writes, and the
+child inherits `--suite`/`--case` from the parent when the caller gave none. `trajectory.py`
+lists a run's `children` and `parent`. devflow's `drive.py` gets the link by doing what it
+already does.
+
+**#23 — the contract runs.** `stack/doc_examples.py` executes the examples in docs/packages.md:
+every yaml block parses with a duplicate-key-refusing loader (the defect of §67), the manifest
+example is written to a temporary package and read by `packages.py`'s own reader (usable, known
+`requires` keys, known capabilities), every python block compiles. The static level runs it;
+10/10 at the time of writing. The contract version `contract: 1` travels with the execution
+record (§68), the fan-out receipt and a chain's answer.
+
+**#26 — the first success, measured.** With #24 the panel starts nothing, so "starts from the
+panel without a login" became "starts from the command without a login": the stack level's
+hello-lane run — a package declaring `capabilities: []`, through `run_workflow.py start`, on a
+host with no login — has been that measurement since run 26, and the line says so now. The
+manifest example's comment tells a new author to declare only what the steps use.
+
+**#25 — a package that brings its own runtime.** CONTRACT.md has the section: the doors it
+must pass (every model call through `agent_task.py`, whose argv any process in the agent
+container can run and which picks the broker or the local door from the role; approvals are
+Preloop's; a result is recorded by the record step or by the evidence it left) and what it may
+not do (write into `/route`, reach a vendor past the proxy, answer an approval). The callable
+form is the one that exists; #18's HTTP remote mechanics stay deferred.
+
+Controls: review_controls **120/120** (13 new). The stack level is the CI run named in PR #29.

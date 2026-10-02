@@ -624,6 +624,70 @@ def panel_controls():
           "shows the command" in (WORK / "CONTRACT.md").read_text())
 
 
+# ---------------------------------------------------------------- 9. the next five (#13 #22 #23 #25 #26)
+def next_controls():
+    """Execution facts collected by the platform; a child run linked to its parent; the
+    documented examples executed; the contract version carried; the own-runtime contract."""
+    sys.path.insert(0, str(HERE))
+    rw = importlib.import_module("run_workflow"); rs = importlib.import_module("runstate")
+    # #13: a run started from inside another run knows its parent and inherits the labels
+    rs.RUNS = Path(tempfile.mkdtemp(prefix="agentstack-child-"))
+    d = rs.RUNS / "parent-0000aaaa" / "tmp" / "conductor"; d.mkdir(parents=True)
+    (d / "conductor-p281-x-20260923-000000-cafe1234.events.jsonl").write_text("")
+    rw.meta_path("parent-0000aaaa").write_text(json.dumps({"ui_id": "parent-0000aaaa", "suite": "s9", "case": "c3", "state": "running"}))
+    check("child: a run a step starts carries the parent's Conductor id and inherits suite/case",
+          rw.child_context(env={"CONDUCTOR_SELF_RUN_ID": "cafe1234"}) == ("cafe1234", "s9", "c3"))
+    check("child: labels the caller gave are kept", rw.child_context("mine", "", env={"CONDUCTOR_SELF_RUN_ID": "cafe1234"}) == ("cafe1234", "mine", ""))
+    check("child: a run started by a person has no parent", rw.child_context(env={}) == ("", "", ""))
+    check("child: the parent travels to the child's Conductor and into its record",
+          '"AGENTSTACK_PARENT_RUN": parent' in (HERE / "run_workflow.py").read_text()
+          and '"parent.run_id": parent' in (HERE / "steps" / "record.py").read_text())
+    shutil.rmtree(rs.RUNS, ignore_errors=True)
+    # #22: the recorder reads what the evidence holds, listed or not
+    root = Path(tempfile.mkdtemp(prefix="agentstack-evid-"))
+    (root / "config" / "generated").mkdir(parents=True)
+    rt = json.loads(json.dumps(__import__("settings").DEFAULT_RUNTIME))
+    rt["paths"]["evidence_root"] = str(root / "evidence")
+    (root / "config" / "generated" / "runtime.json").write_text(json.dumps(rt))
+    ex = importlib.import_module("execution")
+    for name, rec in (("r7-a-claude", {"run_id": "r7-a-claude", "provider": "claude", "status": "FAILED"}),
+                      ("r7-a-claude-a2", {"run_id": "r7-a-claude-a2", "provider": "claude", "status": "COMPLETED"}),
+                      ("r7-x", {"status": "FAILED"})):                     # not an execution: no provider
+        ex.write(root / "evidence" / name, ex.record(**rec))
+    (root / "evidence" / "r8-other-codex").mkdir(); ex.write(root / "evidence" / "r8-other-codex", ex.record(run_id="r8-other-codex", provider="codex"))
+    code = ("import json, sys; sys.path.insert(0, '/work/stack'); sys.path.insert(0, '/work/stack/steps'); import record; "
+            "ex, errs = record.executions_of(json.loads(sys.argv[1])); print(json.dumps([e['run_id'] for e in ex]))")
+    env = {**os.environ, "AGENTSTACK_ROOT": str(root), "CONDUCTOR_SELF_RUN_ID": "r7"}
+    r = subprocess.run([sys.executable, "-c", code, "{}"], env=env, capture_output=True, text=True, timeout=60)
+    check("evidence: a run that listed nothing is recorded with every call its evidence holds, and no other run's",
+          r.stdout.strip() == '["r7-a-claude", "r7-a-claude-a2"]', r.stdout + r.stderr[-300:])
+    r = subprocess.run([sys.executable, "-c", code, json.dumps({"execute": {"run_id": "r7-a-claude-a2", "provider": "claude", "status": "COMPLETED"}})],
+                       env=env, capture_output=True, text=True, timeout=60)
+    check("evidence: what the step listed and what the evidence holds join on run_id, nothing twice",
+          sorted(json.loads(r.stdout or "[]")) == ["r7-a-claude", "r7-a-claude-a2"], r.stdout + r.stderr[-300:])
+    r = subprocess.run([sys.executable, "-c", code, "{}"], env={**env, "CONDUCTOR_SELF_RUN_ID": "manual"}, capture_output=True, text=True, timeout=60)
+    check("evidence: no Conductor run, nothing read", r.stdout.strip() == "[]", r.stdout + r.stderr[-300:])
+    shutil.rmtree(root, ignore_errors=True)
+    # #23: the documented examples run; a duplicate key is caught
+    de = importlib.import_module("doc_examples")
+    rows = de.check(str(WORK / "docs" / "packages.md"))
+    check("examples: every example in docs/packages.md passes", rows and all(not v.startswith("FAIL") for _, _, v in rows), [v for _, _, v in rows if v.startswith("FAIL")])
+    check("examples: the manifest example is read as a package by the stack's reader", any("a usable package" in v for _, _, v in rows))
+    bad = Path(tempfile.mkdtemp(prefix="agentstack-doc-")) / "d.md"
+    bad.write_text("```yaml\nname: x\nentry: w.yaml\nrequires:\n  capabilities: [egress]\nrequires:\n  python: [a]\n```\n")
+    v = de.check(str(bad))[0][2]
+    check("examples: a duplicate key is a failure, not the last value", v.startswith("FAIL duplicate key 'requires'"), v)
+    shutil.rmtree(bad.parent, ignore_errors=True)
+    check("examples: the static level runs them", "doc_examples.py" in (WORK / "scripts" / "verify.sh").read_text())
+    check("contract: the receipt and a chain carry the version",
+          '"contract": execution.CONTRACT' in (HERE / "steps" / "tasks.py").read_text()
+          and '"contract": execution.CONTRACT' in (HERE / "steps" / "task_chain.py").read_text())
+    # #25: the own-runtime contract names the doors
+    c = (WORK / "CONTRACT.md").read_text()
+    check("own runtime: the contract says every model call goes through agent_task.py and names what such a package may not do",
+          "## A package that brings its own runtime" in c and "Every model call goes through" in c and "may not do" in c)
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -637,6 +701,7 @@ execution_controls()
 door_controls()
 instance_controls()
 panel_controls()
+next_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

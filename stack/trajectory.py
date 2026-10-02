@@ -108,6 +108,18 @@ def evidence_of(view):
             "linked_to_a_call": sum(1 for i in items if i.get("execution_id"))}
 
 
+def children_of(conductor_run):
+    """The ui ids of runs whose meta names this run as the parent."""
+    if not conductor_run:
+        return []
+    out = []
+    for meta in sorted(glob.glob(f"{RUNS}/*/meta.json")):
+        m = _load(meta, {}) or {}
+        if m.get("parent") == conductor_run:
+            out.append(m.get("ui_id", ""))
+    return out
+
+
 def of_run(ui):
     view = _view(ui)
     if not view or view.get("error"):
@@ -141,6 +153,9 @@ def of_run(ui):
         "capabilities_at_start": view.get("capabilities"),
         "evidence": evidence_of(view),
         "calls": calls,
+        # runs a step of this run started (run_workflow.py, #13), by their ui id
+        "children": children_of(view.get("conductor_run")),
+        "parent": view.get("parent") or "",
     }
     t["assertions"] = {
         # each one is a fact about the run, not a judgement of its result
@@ -171,6 +186,9 @@ def _print(t):
           + (f"  suite={t['suite']}" if t["suite"] else "")
           + (f"  case={t['case']}" if t["case"] else ""))
     print(f"  steps            {' → '.join(t['steps'])}")
+    if t.get("parent") or t.get("children"):
+        print(f"  runs             " + (f"parent {t['parent']}  " if t.get("parent") else "")
+              + (f"children {', '.join(t['children'])}" if t.get("children") else ""))
     print(f"  model calls      {t['model_calls']}  {t['by_provider']}"
           + (f"  principals {t['by_principal']}" if t["by_principal"] else ""))
     print(f"  permission asks  {t['permission_requests']}"

@@ -36,7 +36,7 @@ that cannot be written does not lose the parent, and the failure is named in `re
 # What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
 # "guarded" — it recognises the repeat; "no" — it does the work again.
 REPEATABLE = "guarded"   # the same run and judgement return the record already written (idempotency_key)
-import json, os, sys, time, urllib.request
+import glob, json, os, sys, time, urllib.request
 
 sys.path.insert(0, "/work/stack")
 import execution
@@ -91,9 +91,30 @@ def experiment_id(payload):
         return call("/api/2.0/mlflow/experiments/create", {"name": name})["experiment_id"]
 
 
-def executions_of(payload):
-    """Every execution this run made: the primary one, any the workflow passes, and the members
-    of every fan-out receipt. A receipt that cannot be read is reported, not guessed at."""
+def from_evidence(cid):
+    """Every call this run made, read from the evidence directories themselves (#22).
+
+    Each routed call writes `<evidence_root>/<run>-<label>-<provider>[-a<n>]/execution.json`
+    (steps/agent_task.py, stack/execution.py). Reading them here means a workflow that lists
+    nothing — devflow's implementer and researcher calls, a chain a step started on its own —
+    is still recorded with every call it made. What a step passes is still read, and the two
+    are joined on `run_id`, so nothing is counted twice. "manual" (no Conductor run) reads none.
+    """
+    if not cid or cid == "manual":
+        return []
+    root = settings.runtime()["paths"]["evidence_root"]
+    out = []
+    for d in sorted(glob.glob(os.path.join(root, f"{cid}-*"))):
+        rec = execution.read(d)
+        if execution.is_execution(rec):
+            out.append({**execution.normalize(rec), "member": rec.get("member") or os.path.basename(d)[len(cid) + 1:]})
+    return out
+
+
+def executions_of(payload, cid=None):
+    """Every execution this run made: the primary one, any the workflow passes, the members
+    of every fan-out receipt — and whatever the evidence directories hold that none of those
+    named. A receipt that cannot be read is reported, not guessed at."""
     found, errors = [], []
     ex = payload.get("execute")
     if isinstance(ex, dict) and ex.get("run_id"):
@@ -117,6 +138,7 @@ def executions_of(payload):
                 found.extend(exs)
             else:
                 errors.append(f"receipt member {label}: no execution record")
+    found.extend(from_evidence(cid if cid is not None else os.environ.get("CONDUCTOR_SELF_RUN_ID", "")))
     seen, unique = set(), []
     for e in found:                       # a receipt and an `execute` can name the same execution
         if e["run_id"] in seen:
@@ -191,6 +213,9 @@ def record(payload):
     ck = payload.get("check") or {}
     rt = payload.get("route") or {}
     cid = os.environ.get("CONDUCTOR_SELF_RUN_ID", "")
+    # a run a step of another run started carries that run's id (run_workflow.py, #13): the two
+    # records join on it, the way a child execution joins its parent on mlflow.parentRunId
+    parent = os.environ.get("AGENTSTACK_PARENT_RUN", "")
     # what makes this record the same record: the run, and the judgement being recorded
     key = payload.get("idempotency_key") or (
         f"{cid}:{ck.get('decision', '')}" if cid else "")
@@ -211,7 +236,7 @@ def record(payload):
         # The check's own decision is the record; `status` says only that no model ran.
         decided = str(ck.get("decision") or "")
         rid = new_run(exp_id, f"{cid}-" + ("check" if decided else "hold"))
-        log(rid, {"conductor.run_id": cid, "idempotency_key": key,
+        log(rid, {"conductor.run_id": cid, "parent.run_id": parent, "idempotency_key": key,
                   "provider": "none",
                   "status": "NO_EXECUTION" if decided else "HOLD",
                   "gate.decision": decided or "NOT_RUN",
@@ -230,7 +255,7 @@ def record(payload):
     if len(exps) == 1:
         ex = exps[0]
         rid = new_run(exp_id, ex["run_id"])
-        log(rid, {**execution_tags(ex, ck, rt, cid), "idempotency_key": key}, execution_metrics(ex),
+        log(rid, {**execution_tags(ex, ck, rt, cid), "parent.run_id": parent, "idempotency_key": key}, execution_metrics(ex),
             [("provider", ex["provider"]), ("native_tools", "false")])
         res = os.path.join(ex["evidence_dir"], "result.json")
         if os.path.exists(res):
@@ -243,7 +268,7 @@ def record(payload):
     # Several executions: the parent carries the run's judgement, each child its own execution.
     done = [e for e in exps if e.get("status") == "COMPLETED"]
     rid = new_run(exp_id, f"{cid}-run")
-    log(rid, {"conductor.run_id": cid, "idempotency_key": key,
+    log(rid, {"conductor.run_id": cid, "parent.run_id": parent, "idempotency_key": key,
               "status": "COMPLETED" if len(done) == len(exps) else "PARTIAL",
               "gate.decision": ck.get("decision", ""), "gate.reason": ck.get("reason", ""),
               "file_sha256": ck.get("file_sha256", ""),
