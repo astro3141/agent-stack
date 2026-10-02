@@ -1,5 +1,12 @@
 # 남은 결정 4개와 그 근거 (2026-10-02)
 
+> **진행 상황 (같은 날, 추천대로 진행):** PR [#9](https://github.com/astro3141/agent-stack/pull/9)
+> 열림. update day 1차 핀 세 개(codexbar 0.70.0, claude-code 2.1.287, supergateway 4.1.0)는 각각
+> 커밋되어 cold-start-linux로 측정 중이며, 인스턴스 측 `release.sh update` → `verify.sh --level
+> full` → claude N7은 운영자 몫. 후보 6은 계약(docs/packages.md "State that outlives a run",
+> `requires.state`, `packages.py state`)으로, 후보 8은 안내("Child runs, and waiting on the world")로
+> 닫혔고, 후보 8의 측정 한 건(자식 run이 record에 부모 옆에 보이는가)은 아직 남아 있다.
+
 두 번째 설치(Windows)가 full 21/21로 끝난 시점에 남은 것들. 각 항목에 **무엇이 결정인지**, 그
 결정을 내릴 **자료**(패키지 제작자 관점은 docs/record/PACKAGE-MATRIX-*.md에 기록된 사실, in-tree
 패키지 제작자로서의 의견, 같은 부품의 실제 방향은 소스·체인지로그), 그리고 **추천**을 적는다.

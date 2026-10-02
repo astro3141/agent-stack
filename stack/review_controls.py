@@ -259,6 +259,31 @@ def grok_posture_controls():
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 2d. state that outlives a run
+def state_controls():
+    """One root, one directory per package, declared in the manifest, reported never deleted
+    (docs/packages.md, "State that outlives a run")."""
+    root = Path(tempfile.mkdtemp(prefix="agentstack-state-"))
+    (root / "config" / "generated").mkdir(parents=True)
+    rt = json.loads(json.dumps(__import__("settings").DEFAULT_RUNTIME))
+    rt["paths"]["state_root"] = str(root / "state")
+    (root / "config" / "generated" / "runtime.json").write_text(json.dumps(rt))
+    (root / "state" / "hello-lane").mkdir(parents=True)           # installed, declares no state
+    (root / "state" / "hello-lane" / "x").write_bytes(b"x" * 2048)
+    (root / "state" / "zz-nobody").mkdir()                         # no such package
+    env = {**os.environ, "AGENTSTACK_ROOT": str(root)}
+    r = subprocess.run([sys.executable, str(HERE / "packages.py"), "state", "--json"], env=env,
+                       capture_output=True, text=True, timeout=60)
+    got = json.loads(r.stdout or "{}").get("packages") or {}
+    check("state: an installed package's undeclared directory is reported as such",
+          got.get("hello-lane", {}).get("state") == "UNDECLARED" and got["hello-lane"]["kb"] == 2, got)
+    check("state: a directory with no package is a question, not a deletion",
+          got.get("zz-nobody", {}).get("state") == "NO PACKAGE" and (root / "state" / "zz-nobody").exists(), got)
+    import importlib
+    check("state: requires.state is a key something reads", "state" in importlib.import_module("packages").KNOWN_REQUIRES)
+    shutil.rmtree(root, ignore_errors=True)
+
+
 # ---------------------------------------------------------------- 3. restart after the end event
 def run_controls():
     sys.path.insert(0, str(HERE))
@@ -299,6 +324,7 @@ policy_controls()
 codex_controls()
 kept_controls()
 grok_posture_controls()
+state_controls()
 run_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

@@ -252,6 +252,7 @@ whose package needs what the stack has not got. These are the keys something rea
 | `egress` | hosts the package's scripts reach | `packages.py egress` (an audit, not a control) |
 | `python` | modules the image must carry | `packages.py python`, `run_workflow.py start` |
 | `stack` | the oldest stack revision the package runs on: `stack: {min: <commit>}` | `packages.py stack`, `run_workflow.py start` |
+| `state` | `state: true` — the package keeps state outside any run, under its own directory (below) | `packages.py state` |
 
 A package calls the stack's steps by absolute path and argv order, so one written against a newer
 stack fails on an older one in whatever way the missing feature fails — a brokered step refused as
@@ -264,6 +265,51 @@ no git) without refusing anything, because that says nothing about the stack's a
 `host_paths` — each believing the stack checked something it never looked at. `packages.py` now
 prints `note: requires.<key> is read by nothing in this stack` under the package, so the belief
 does not survive the first `list`.
+
+## State that outlives a run
+
+Most of what a package writes belongs to a run — the workspace, the evidence, the record — and
+goes with it (`cleanup.py`). Some does not: a ledger of what was already decided, a cache of a
+remote's answers, the last cycle's hand-over. Four packages kept such state in four places (a
+GitHub comment, `.devflow-cache`, `handoff/` used as a database, a `/research` mount), each with
+its own idea of who cleans it, because the stack named nowhere (docs/record/PACKAGE-MATRIX.md,
+X9). It names one place now:
+
+```
+<state_root>/<package>/        state_root is in config/environment.yaml (default /work/state)
+```
+
+- **The package owns it.** What is in there, its shape, and when it is pruned are the package's;
+  a step reaches it through the stack's settings (`step.runtime()["paths"]["state_root"]`), never
+  by a path of its own.
+- **It is declared.** `requires: {state: true}` in the manifest. `packages.py state` lists every
+  directory under the root with who declared it; one nobody declared is reported as a question,
+  not deleted — the stack removes runs, not a package's memory.
+- **It is not a hand-in.** Input still arrives through `handoff/` by name; state is what the
+  package writes for its own next run.
+- **It is not in git.** `state/` is ignored; a package that needs a fixture ships it in
+  `fixtures/`.
+
+That is the whole contract: a path, a declaration, a report. No helper, because a path and a
+rule are all four packages were missing.
+
+## Child runs, and waiting on the world
+
+A workflow that needs to run another, or to wait for something outside it to settle, does not
+need the stack for either — Conductor has both, at the revision this stack pins:
+
+- **`type: workflow`** runs a sub-workflow as a step, with `input_mapping`, and inside a
+  `for_each` group it fans out one child run per item (events `subworkflow_started` /
+  `subworkflow_completed`).
+- **`type: wait`** pauses for a parsed duration; polling is `wait` plus a route that loops back,
+  with no Python written.
+
+Two packages had built their own (`drive.py` shelling out to `run_workflow.py start/show`, a
+shell loop over `cycle.sh`), on the belief that the stack had no primitive; the child runs they
+start that way are not linked to their parent in the record. Prefer the engine's steps. What the
+stack still owes here is one measurement — that a child started by `type: workflow` under
+`run_workflow.py` appears in the record beside its parent — recorded in
+docs/record/DECISIONS-2026-10-02.md until it is taken.
 
 ## Asking for a retry
 

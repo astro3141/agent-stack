@@ -15,3 +15,4 @@ paths:
   evidence_root: /work/evidence/p281    # per-run evidence written by the execution layer
   observations: /obs                    # quota observer output (read-only in the agent)
   logins_root: /route                   # the routing layer's own provider logins
+  state_root: /work/state               # package state that outlives a run (docs/packages.md, "State that outlives a run")

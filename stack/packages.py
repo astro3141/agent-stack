@@ -50,7 +50,7 @@ NAME = re.compile(r"[a-z][a-z0-9-]{1,39}")
 # The keys of `requires:` something in this stack reads. A key outside this set is a comment —
 # and two packages carried one for weeks (`principals`, `host_paths`: docs/record/PACKAGE-MATRIX.md),
 # each believing the stack checked something it never looked at. `list` now says so by name.
-KNOWN_REQUIRES = {"capabilities", "env", "egress", "python", "stack"}
+KNOWN_REQUIRES = {"capabilities", "env", "egress", "python", "stack", "state"}
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
 
 
@@ -407,6 +407,53 @@ def stack_of(name=None):
     return out
 
 
+def state_root():
+    """Where package state that outlives a run lives (environment paths.state_root)."""
+    try:
+        sys.path.insert(0, "/work/stack")
+        import settings
+        return settings.runtime()["paths"].get("state_root") or "/work/state"
+    except Exception:
+        return "/work/state"
+
+
+def state_of():
+    """<state_root>/<package>/ — on disk, and whether the package declared it.
+
+    Four packages kept state outside any run in four places (PACKAGE-MATRIX X9: a GitHub comment
+    and .devflow-cache, handoff/ used as a database, a /research mount) because the stack named
+    nowhere. Now it names one directory per package, under one root, and a package says it uses
+    it with `requires: {state: true}`. This reports; it deletes nothing — a directory nobody
+    declared is a question for the operator (docs/packages.md, "State that outlives a run").
+    """
+    root = state_root()
+    pk = installed()
+    declared = {n for n, r in pk.items() if (r.get("requires") or {}).get("state")}
+    rows = {}
+    if os.path.isdir(root):
+        for entry in sorted(os.listdir(root)):
+            d = os.path.join(root, entry)
+            if not os.path.isdir(d):
+                continue
+            size = 0
+            for dp, _, fs in os.walk(d):
+                for f in fs:
+                    try:
+                        size += os.path.getsize(os.path.join(dp, f))
+                    except OSError:
+                        pass
+            if entry in declared:
+                state, why = "declared", "the package declares requires.state"
+            elif entry in pk:
+                state, why = "UNDECLARED", "the package is installed and does not declare requires.state"
+            else:
+                state, why = "NO PACKAGE", "no installed package of this name — an operator's question"
+            rows[entry] = {"path": d, "state": state, "why": why, "kb": size // 1024}
+    for n in sorted(declared - set(rows)):
+        rows[n] = {"path": os.path.join(root, n), "state": "declared, empty", "why": "nothing written yet", "kb": 0}
+    return {"root": root, "packages": rows}
+
+
 def login_of(name):
     """The official login a package declares, or {} — the same shape a provider's login has.
 
@@ -531,6 +578,16 @@ if __name__ == "__main__":
         else:
             for pkg, f in got.items():
                 print(f"{pkg:<12} {f['min']:<12} {f['state']:<13} {f['why']}")
+        sys.exit(0)
+    if a[:1] == ["state"]:
+        got = state_of()
+        if "--json" in a:
+            print(json.dumps(got, ensure_ascii=False))
+        elif not got["packages"]:
+            print(f"nothing under {got['root']}, and no installed package declares requires.state")
+        else:
+            for pkg, r in got["packages"].items():
+                print(f"{pkg:<12} {r['state']:<16} {r['kb']:>8} KB  {r['why']}")
         sys.exit(0)
     if a[:1] == ["logins"]:
         # one answer for the panel: what each package needs, and the login it declares
