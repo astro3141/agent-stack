@@ -9,8 +9,10 @@
 # out from under a run instead loses the step it was in and everything it had not recorded, and
 # leaves nothing to resume from. --now skips that and takes the containers down immediately.
 #
-# --volumes also deletes that instance's volumes: its provider logins, its Preloop database and
-# its agent home. It prints exactly what it will remove and refuses anything named differently.
+# --volumes also deletes that instance's volumes: its provider logins, its Preloop database, its
+# agent home and the role credentials. It prints exactly what it will remove and refuses anything
+# named differently. What a complete take-down is, is measured: the cold-start run checks that
+# nothing named for the instance is left (containers, networks, volumes).
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -f "$HERE/config/instance.env" ]; then
@@ -66,9 +68,20 @@ print(" ".join(r["ui_id"] for r in json.loads(out or "[]") if r.get("state") == 
 fi
 
 echo "== stopping"
+# Preloop first. Its api / console / gateway sit on this instance's networks (up.sh attaches them
+# with docker/preloop.agentstack.yaml), so taking the stack down first left `adminnet` and
+# `toolnet` behind as "Resource is still in use" — on every cold start, hidden behind `|| true`,
+# and found on the second instance (OPERATIONS §69 addendum). Containers go before the networks
+# they hold. The attachment file is named here as it was at bring-up, so compose knows those
+# networks are not its own to remove.
+docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
+  -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml" \
+  -f "$HERE/docker/preloop.agentstack.yaml" down || exit 1
 # every profile, whatever composition was up: nothing may be left behind because it was optional
-# every composition's services, and every provisioned egress profile's (the same list up.sh builds)
-_profiles="record,ui"
+# — every composition's services, the quota observer (a profile since #16; a down that did not
+# name it left the quota container standing), and every provisioned egress profile's (the same
+# list up.sh builds)
+_profiles="record,ui,observer"
 for _f in "$HERE"/docker/egress/profiles/*.allow; do
   [ -f "$_f" ] || continue
   _n="$(basename "$_f" .allow)"
@@ -76,15 +89,14 @@ for _f in "$HERE"/docker/egress/profiles/*.allow; do
   _profiles="$_profiles,egress-$_n"
 done
 (cd "$HERE/docker" && COMPOSE_PROFILES="$_profiles" docker compose -f compose.poc.yaml down --remove-orphans) || exit 1
-docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
-  -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml" down || exit 1
 
 if [ "$VOLUMES" = 1 ]; then
   # Exact names only. A prefix match would also take another instance's volumes: with
   # STACK=agentstackr, "agentstackr-second-route-creds" starts with "agentstackr-" too.
   VOLS=""
+  # every volume compose.poc.yaml declares, by its exact name, and Preloop's database
   for n in "$STACK-agent-home" "$STACK-ws" "$STACK-quota-home" "$STACK-route-creds" \
-           "$STACK-quota-obs" "${PRELOOP_PROJECT}_postgres-data"; do
+           "$STACK-quota-obs" "$STACK-role-egress" "${PRELOOP_PROJECT}_postgres-data"; do
     docker volume inspect "$n" >/dev/null 2>&1 && VOLS="$VOLS $n"
   done
   if [ -z "$VOLS" ]; then

@@ -95,3 +95,15 @@ jobs:
       - name: take it down the way an operator would
         if: always()
         run: bash scripts/down.sh --volumes || true
+
+      # What a complete take-down is, measured: the second instance found a quota container, two
+      # networks and a volume left behind, and every earlier run had printed "Resource is still in
+      # use" into the `|| true` above (OPERATIONS §69 addendum).
+      - name: nothing of the instance is left behind
+        if: always()
+        run: |
+          left="$( (docker ps -a --format 'container {{.Names}}' | grep ' agentstack-';
+                    docker network ls --format 'network {{.Name}}' | grep ' agentstack-';
+                    docker volume ls --format 'volume {{.Name}}' | grep -E ' (agentstack-|preloop-oss_)') || true)"
+          if [ -n "$left" ]; then echo "left behind after down.sh --volumes:"; echo "$left"; exit 1; fi
+          echo "nothing named for the instance is left: no container, network or volume"
