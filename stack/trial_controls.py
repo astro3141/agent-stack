@@ -1063,9 +1063,20 @@ def controls_review_findings():
             f.read() + chr(10) + "  zz-dup-one: {from: local}" + chr(10)
             + "  zz-dup-two: {from: local}" + chr(10))
     _pk.DECL = tmp_decl
+    # The two colliding packages are written into a packages root of this control's own — the
+    # real packages linked in, the fakes beside them — never into /work/packages: that tree is a
+    # bind mount the host owns, and on a Linux host the runtime cannot create a directory there
+    # (PermissionError on the cold-start runner, 2026-10-02; a Windows host has no such owner).
+    import tempfile as _tf
+    real_root = _pk.ROOT
+    tmp_root = _tf.mkdtemp(prefix="agentstack-pkgroot-")
+    for n in _o.listdir(real_root):
+        if not n.startswith("."):
+            _o.symlink(_o.path.join(real_root, n), _o.path.join(tmp_root, n))
+    _pk.ROOT = tmp_root
     try:
         for pkg, cap in (("zz-dup-one", "record"), ("zz-dup-two", "admission")):
-            d = f"/work/packages/{pkg}"
+            d = f"{tmp_root}/{pkg}"
             _o.makedirs(d, exist_ok=True)
             made.append(d)
             open(f"{d}/manifest.yaml", "w").write(chr(10).join(
@@ -1085,13 +1096,13 @@ def controls_review_findings():
         out = _j.loads(_sp.run([_sy.executable, "/work/stack/run_workflow.py", "start",
                                 "zzdup-probe", "zz-shared", "research-default"],
                                capture_output=True, text=True,
-                               env={**_o.environ, "AGENTSTACK_PACKAGES_YAML": tmp_decl}).stdout.strip())
+                               env={**_o.environ, "AGENTSTACK_PACKAGES_YAML": tmp_decl,
+                                    "AGENTSTACK_PACKAGES": tmp_root}).stdout.strip())
         check("and a run refused for it says which packages are fighting over the name",
               "both declare it" in (out.get("why") or ""), True)
     finally:
-        _pk.DECL = real_decl
-        for d in made:
-            _sh.rmtree(d, ignore_errors=True)
+        _pk.DECL, _pk.ROOT = real_decl, real_root
+        _sh.rmtree(tmp_root, ignore_errors=True)
     check("with the collision gone, the loader is itself again",
           "zz-shared" in _pk.workflows(), False)
 

@@ -184,11 +184,13 @@ done
 # the router controls mutate the live observations (<observations>/<provider>.json), which exist
 # only once the quota observer has seen a signed-in provider: without one they are skipped, named
 OBS="$(in_agent -c 'import settings; print(settings.runtime()["paths"]["observations"])' 2>/dev/null || echo /obs)"
-if docker exec "$STACK-agent" sh -c "ls $OBS/*.json >/dev/null 2>&1"; then
+# (the observer leaves a raw file there even with nobody signed in; what the controls mutate is the
+# normalized file of every provider, so those three are the condition)
+if docker exec "$STACK-agent" sh -c "test -f $OBS/claude.json && test -f $OBS/codex.json && test -f $OBS/grok.json"; then
   if in_agent /work/stack/router_controls.py "$OBS" > "$TMP/router_controls.log" 2>&1; then ok "router_controls: $(tail -1 "$TMP/router_controls.log")"
   else bad "router_controls reported failures" "$(grep -c '"ok": false' "$TMP/router_controls.log") case(s)"; tail -6 "$TMP/router_controls.log" | sed 's/^/        | /'; fi
 else
-  note "router_controls: no live observations in $OBS (no provider signed in) — skipped; the full level runs it"
+  note "router_controls: not every provider has a normalized observation in $OBS (nobody signed in) — skipped; the full level runs it"
 fi
 
 if bash scripts/packages.sh verify > "$TMP/pkg.log" 2>&1; then ok "packages.sh verify: locks and package controls"; else bad "packages.sh verify failed" "$(grep -E 'DRIFT|CHANGED|MISSING|FAILED' "$TMP/pkg.log" | head -5 | tr '\n' ';')"; fi
