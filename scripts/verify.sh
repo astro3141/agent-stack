@@ -223,17 +223,38 @@ for suite in trial_controls review_controls; do
   else bad "$suite reported failures" "$(grep -E '^\s*FAIL' "$TMP/$suite.log" | head -5 | tr '\n' ';')"; tail -6 "$TMP/$suite.log" | sed 's/^/        | /'; fi
   grep -E '^\s*skip' "$TMP/$suite.log" | sed 's/^/        /' | head -5 || true
 done
-# the router controls mutate the live observations (<observations>/<provider>.json), which exist
-# only once the quota observer has seen a signed-in provider: without one they are skipped, named
-OBS="$(in_agent -c 'import settings; print(settings.runtime()["paths"]["observations"])' 2>/dev/null || echo /obs)"
-# (the observer leaves a raw file there even with nobody signed in; what the controls mutate is the
-# normalized file of every provider, so those three are the condition)
-if docker exec "$STACK-agent" sh -c "test -f $OBS/claude.json && test -f $OBS/codex.json && test -f $OBS/grok.json"; then
-  if in_agent /work/stack/router_controls.py "$OBS" > "$TMP/router_controls.log" 2>&1; then ok "router_controls: $(tail -1 "$TMP/router_controls.log")"
+# The router controls start from live observations and inject faults into them. There is no live
+# file to start from: every run collects its own observations into its evidence directory, and the
+# only standing file is the observer's raw codex reading (/obs, read-only here). So collect once,
+# the way a run's first step does, and run the controls on that — when the router finds all three
+# providers eligible, since the control cases take that as their starting point.
+RC_OBS="/tmp/verify-obs-$$"
+rc_state="$(docker exec "$STACK-agent" sh -c "rm -rf $RC_OBS && mkdir -p $RC_OBS && /opt/venv/bin/python - $RC_OBS" <<'PYRC' 2>/dev/null | nocr
+import json, os, subprocess, sys
+sys.path.insert(0, "/work/stack")
+import settings
+d = sys.argv[1]
+prof = settings.profile("research-default")
+if not prof:
+    print("no profile research-default (run cfg.py generate)"); sys.exit(0)
+pol = prof["routing"]
+json.dump(pol, open(f"{d}/policy.json", "w"))
+subprocess.run([sys.executable, "/work/stack/collect_obs.py", d], capture_output=True, timeout=180,
+               env={**os.environ, "AGENTSTACK_MODEL_ROUTES": json.dumps(pol.get("model_route") or {}),
+                    "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {})})
+r = json.loads(subprocess.run([sys.executable, "/work/stack/router.py", f"{d}/policy.json", d],
+                              capture_output=True, text=True, timeout=60).stdout)
+bad = [f"{e['provider']}={e['why']}" for e in r["evaluated"] if not e.get("eligible")]
+print("ok" if not bad else "; ".join(bad))
+PYRC
+)"
+if [ "$rc_state" = ok ]; then
+  if in_agent /work/stack/router_controls.py "$RC_OBS" > "$TMP/router_controls.log" 2>&1; then ok "router_controls: $(tail -1 "$TMP/router_controls.log" | nocr)"
   else bad "router_controls reported failures" "$(grep -c '"ok": false' "$TMP/router_controls.log") case(s)"; tail -6 "$TMP/router_controls.log" | sed 's/^/        | /'; fi
 else
-  note "router_controls: not every provider has a normalized observation in $OBS (nobody signed in) — skipped; the full level runs it"
+  note "router_controls: skipped — the live router does not find every provider eligible, which the cases start from: ${rc_state:-the collection did not answer}"
 fi
+docker exec "$STACK-agent" rm -rf "$RC_OBS" >/dev/null 2>&1 || true
 
 if bash scripts/packages.sh verify > "$TMP/pkg.log" 2>&1; then ok "packages.sh verify: locks and package controls"; else bad "packages.sh verify failed" "$(grep -E 'DRIFT|CHANGED|MISSING|FAILED' "$TMP/pkg.log" | head -5 | tr '\n' ';')"; fi
 grep -E '^\s*none' "$TMP/pkg.log" | sed 's/^/        /' || true
@@ -271,14 +292,14 @@ run_and_show() {  # id workflow [inputs...] — prints the show line; 0 when com
 }
 RID="verify-auto-$(date +%s | tail -c 6)"
 if run_and_show "$RID" auto file_name=verify.txt content=V1; then
-  dec="$($PY -c "import json,sys; print((json.load(open('$TMP/$RID.show')).get('output') or {}).get('decision',''))" 2>/dev/null)"
+  dec="$(tail -1 "$TMP/$RID.show" | $PY -c "import json,sys; print((json.load(sys.stdin).get('output') or {}).get('decision',''))" 2>/dev/null | nocr)"
   [ "$dec" = PASS ] && ok "auto: one routed call, file written through Preloop, judged PASS ($RID)" \
                     || bad "auto completed but the judgement is '$dec' ($RID)" "$(tail -1 "$TMP/$RID.show" | head -c 300)"
 else bad "auto did not complete ($RID)" "$(tail -2 "$TMP/$RID.log" | tr '\n' ';')"; fi
 
 RID="verify-novel-$(date +%s | tail -c 6)"
 if run_and_show "$RID" novel-a max_repairs=1; then
-  dec="$($PY -c "import json,sys; print((json.load(open('$TMP/$RID.show')).get('output') or {}).get('decision',''))" 2>/dev/null)"
+  dec="$(tail -1 "$TMP/$RID.show" | $PY -c "import json,sys; print((json.load(sys.stdin).get('output') or {}).get('decision',''))" 2>/dev/null | nocr)"
   ok "novel-a: roles on separate principals, fan-out reviews, recorded — decision $dec ($RID)"
 else bad "novel-a did not complete ($RID)" "$(tail -2 "$TMP/$RID.log" | tr '\n' ';')"; fi
 

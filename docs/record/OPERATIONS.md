@@ -3586,3 +3586,39 @@ when an apply fails instead of only "apply failed"; `scripts/verify.sh --level s
 default Preloop would refuse. The gap stands as recorded — fail-closed classification is not
 expressible here — and the place to enforce it remains the principals' rules.
 
+## 64. The second install: Windows, Docker Desktop, Git Bash (measured 2026-10-02)
+
+The stack was brought up on a machine it had never run on — Windows 11, Docker Desktop on WSL2,
+Git Bash — from a clone of this branch, by a person running `scripts/verify.sh` at each level and
+reporting what failed. Three rounds; every finding was reproduced before it was changed. What was
+found, and what each turned out to be:
+
+| | observed | was | change |
+|---|---|---|---|
+| F1 | `admission: no — no generated profile 'research-default'` on an already-claimed Preloop | `cfg.py generate` ran only in the claim branch of `up.sh` | generated on every bring-up |
+| F2 | `exec: "C:/Program Files/Git/opt/venv/bin/python": no such file` | Git Bash rewrote `/opt/…` and `/work/…` arguments to `docker exec`; `up.sh` had the guard, `verify.sh` did not | `MSYS_NO_PATHCONV=1` in `verify.sh` |
+| F3 | six static checks failing with the one word `Python` | `python3` on that host is the Microsoft Store's app-execution alias, a stub that prints "Python" and exits 49 | `pick_py()`: the first of `python3`, `python`, `py -3` that runs a script; `PY=` overrides |
+| F3 | `UnicodeEncodeError: 'cp949' codec can't encode '\u2014'` in novel's controls | a cp949 console | `PYTHONUTF8=1` |
+| F4 | hello-lane's step "did not write where the helper points"; novel's repeat control counted a round | the host's native Python joined a POSIX `/tmp` path with a backslash; the same controls in the agent container: 32 ok | when the stack is up, step tests and package controls run in the agent container, with the runtime's interpreter |
+| F5 | `auto completed but the judgement is ''` while the run record said `decision: PASS` | `verify.sh` read the show file with the host Python by its POSIX path; `FileNotFoundError`, swallowed | the show line is piped on stdin |
+| F6 | `router_controls` always skipped, "not every provider has a normalized observation in /obs" | there is no such file: every run collects into its own evidence directory, and `/obs` holds only the observer's raw codex reading, read-only in the agent | `verify.sh` collects once, as a run's first step does, and runs the controls on that when all three are eligible |
+| F7 | novel-a `HOLD`: `grok: unknown: required weekly window not reported`; `claude: unknown: Claude OAuth usage endpoint is rate limited by Anthropic right now` | not a quota: the second is the vendor's usage endpoint refusing the reading (429, transient; `auto` had routed on claude minutes before); the first is a Grok reading with a timestamp and no window of weekly length, where the first install had measured `weekly 1 %` (FINDINGS-281, "Quota") | the observation now carries `reported_windows` — every window the vendor gave, as given — so the next HOLD says what was reported; the runbook ("Runs hold") says where to read it |
+| F8 | profile agents failing at start with symlink "file exists" on a cold start | four containers filling one new named volume at once | `depends_on` the main agent, so one fills it |
+
+What the rounds measured, on `81417d4`: static 10/10, stack 18/18, full 18/20 — the two being
+F5 (an auto run that passed, misread) and F7 (a held novel-a). F5 is fixed above. F7's Grok line is
+not: the collector now records what Grok reports, and the next reading on that host says whether
+the weekly window moved (a plan, CodexBar, or the vendor's response) or stopped being one — the
+profile's `require_windows` is the right place to answer that, and the answer is not known yet.
+
+Two readings of F6 differed, and the record should keep both: the report read "the observer
+collects only codex" as the cause. It is by design — the observer is codex's optional second
+source (§29), and Claude and Grok are read with the login that executes — but the check in
+`verify.sh` was written as though the observer produced every provider's normalized file, and so
+could never run. The report was right that nothing ran; the reason was the check.
+
+A quota observation from CodexBar has always carried the vendor's labels (`primary`/`secondary`)
+re-classified by length into `session`/`weekly`, and nothing else. A classification that fails
+silently is the one thing a fail-closed router cannot explain, so the raw list travels with it now.
+
+Linux, the same commits: cold start green, verify stack 18/18 (`cold-start-linux` run 16).

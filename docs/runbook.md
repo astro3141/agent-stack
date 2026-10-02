@@ -97,6 +97,31 @@ docker exec agentstack-agent sh -c 'CLAUDE_CONFIG_DIR=/route/claude HTTPS_PROXY=
 **Do:** sign in again from the panel's 계정 tab. That is a person's job — the stack will not do it
 and cannot. Then `up.sh --check` should show `0` again (OPERATIONS §24).
 
+**Two more "unknown" lines, measured on a second install (OPERATIONS §64), and what each is:**
+
+```
+grok:   unknown: required weekly window not reported
+claude: unknown: Claude OAuth usage endpoint is rate limited by Anthropic right now …
+```
+
+The second is the vendor's usage endpoint refusing the reading (HTTP 429), not the account's quota:
+wait a few minutes and re-collect (`scripts/up.sh --check`). The first means CodexBar answered for
+Grok, with a timestamp, but no window the router could call *weekly* — the profile requires one
+(`quota.require_windows`), and a provider that reports none is unknown, not free. What Grok did
+report is in the observation itself, in the run's own evidence or from a fresh reading:
+
+```bash
+docker exec agentstack-agent sh -c 'cat /work/evidence/p281/route-<run>/obs/grok.json'   # reported_windows
+docker exec agentstack-agent sh -c 'GROK_HOME=/route/grok HOME=/route/grok/home HTTPS_PROXY=http://egress:8888 \
+  codexbar usage --provider grok --json'
+```
+
+`reported_windows` is every window the vendor gave, as given (label, percent, minutes, reset); a
+window with no `windowMinutes` cannot be classified and appears only there. Whether the answer is
+a changed plan, a changed CodexBar, or a changed vendor response, that line says which — and what to
+change (the profile's required windows, or the collector's classification) is decided from it, not
+from the HOLD.
+
 ## A fresh install: logged in, and one provider still unusable
 
 **Look:** the accounts view shows all three providers 연결됨, and one of them is refused:

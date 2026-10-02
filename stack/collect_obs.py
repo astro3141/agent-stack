@@ -73,6 +73,30 @@ def window_name(minutes):
     return "session" if minutes <= 24 * 60 else "weekly"
 
 
+def windows_of(u):
+    """CodexBar's `primary`/`secondary` of one provider, in the router's shape.
+
+    Returns (windows, reported): `windows` keyed session/weekly by the window's length, and
+    `reported` every window the vendor gave, as given — label, percent, minutes, reset. A window
+    without `windowMinutes` cannot be classified and is left out of `windows`; it is still in
+    `reported`. Measured on the second install (2026-10-02): Grok, which had reported a weekly
+    window on the first (FINDINGS-281 "Quota"), came back "required weekly window not reported",
+    and the observation carried nothing to say what *was* reported. Now it does.
+    """
+    wins, reported = {}, []
+    for k in ("primary", "secondary"):
+        w = (u or {}).get(k)
+        if not w:
+            continue
+        reported.append({"label": k, "used_percent": w.get("usedPercent"),
+                         "window_minutes": w.get("windowMinutes"), "resets_at": w.get("resetsAt")})
+        name = window_name(w.get("windowMinutes"))
+        if name and w.get("usedPercent") is not None:
+            wins[name] = {"used_percent": w["usedPercent"], "resets_at": w.get("resetsAt"),
+                          "window_minutes": w.get("windowMinutes")}
+    return wins, reported
+
+
 LEDGER = os.environ.get("AGENTSTACK_CODEX_LEDGER", f"{LOGINS}/codex-session-ledger.jsonl")
 
 
@@ -138,16 +162,12 @@ def codex_direct():
     if not item:
         return None
     u = item.get("usage") or {}
-    wins = {}
-    for k in ("primary", "secondary"):
-        w = u.get(k)
-        if w and w.get("usedPercent") is not None:
-            wins[window_name(w.get("windowMinutes"))] = {"used_percent": w["usedPercent"],
-                "resets_at": w.get("resetsAt"), "window_minutes": w.get("windowMinutes")}
+    wins, reported = windows_of(u)
     if not wins:
         return None
     return {"source": f"codexbar-route:{item.get('source')}", "observed_at": u.get("updatedAt"),
-            "account": fp((u.get("identity") or {}).get("accountEmail") or ""), "windows": wins}
+            "account": fp((u.get("identity") or {}).get("accountEmail") or ""), "windows": wins,
+            "reported_windows": reported}
 
 
 def codex_from_observer():
@@ -157,14 +177,9 @@ def codex_from_observer():
         return {"observed_at": raw.get("collected_at"), "windows": {}, "account": None,
                 "error": f"codexbar exit {raw.get('exit')}"}
     u = item.get("usage") or {}
-    wins = {}
-    for k in ("primary", "secondary"):
-        w = u.get(k)
-        if w and w.get("usedPercent") is not None:
-            wins[window_name(w.get("windowMinutes"))] = {"used_percent": w["usedPercent"],
-                "resets_at": w.get("resetsAt"), "window_minutes": w.get("windowMinutes")}
+    wins, reported = windows_of(u)
     return {"observed_at": u.get("updatedAt") or raw.get("collected_at"), "windows": wins,
-            "account": fp((u.get("identity") or {}).get("accountEmail") or u.get("accountEmail") or ""),
+            "reported_windows": reported, "account": fp((u.get("identity") or {}).get("accountEmail") or u.get("accountEmail") or ""),
             "source": f"codexbar:{item.get('source')}"}
 
 
@@ -188,14 +203,15 @@ try:
         # the reading is taken with the credential that executes, like Grok's
         cands.append({"source": d["source"], "observed_at": d["observed_at"],
                       "observed_account": d["account"], "identity_basis": "same-credential",
-                      "windows": d["windows"]})
+                      "windows": d["windows"], "reported_windows": d["reported_windows"]})
 except Exception:
     pass
 try:
     o = codex_from_observer()
     cands.append({"source": o.get("source", "codexbar"), "observed_at": o["observed_at"],
                   "observed_account": o.get("account"), "identity_basis": "email",
-                  "windows": o["windows"], **({"error": o["error"]} if o.get("error") else {})})
+                  "windows": o["windows"], "reported_windows": o.get("reported_windows", []),
+                  **({"error": o["error"]} if o.get("error") else {})})
 except FileNotFoundError:
     pass
 if cands:
@@ -224,17 +240,14 @@ if ROUTES.get("grok") == "direct":
                            "GROK_HOME": login_dir("grok"), **EGRESS})
         item = next((x for x in json.loads(p.stdout or "[]") if x.get("provider") == "grok"), None)
         u = (item or {}).get("usage") or {}
-        wins = {}
-        for k in ("primary", "secondary"):
-            w = u.get(k)
-            if w and w.get("usedPercent") is not None:
-                wins[window_name(w.get("windowMinutes"))] = {"used_percent": w["usedPercent"],
-                    "resets_at": w.get("resetsAt"), "window_minutes": w.get("windowMinutes")}
+        wins, reported = windows_of(u)
         acct = fp((u.get("identity") or {}).get("accountEmail") or "")
         write("grok", {"provider": "grok", "source": f"codexbar:{(item or {}).get('source')}",
                        "observed_at": u.get("updatedAt"), "observed_account": acct,
                        "executing_account": acct if item else None,
                        "identity_basis": "same-credential", "model_route": "direct", "windows": wins,
+                       # what the vendor said, as said — the line to read when a window is "not reported"
+                       "reported_windows": reported, "extra_windows": u.get("extraRateWindows") or [],
                        **({} if item else {"error": (p.stderr or "")[-200:]})})
     except Exception as e:
         write("grok", {"provider": "grok", "source": "codexbar", "observed_at": None,
@@ -264,19 +277,14 @@ def codexbar_claude_direct():
                        env={**os.environ, "CLAUDE_CONFIG_DIR": login_dir("claude"), **EGRESS})
     item = next((x for x in json.loads(p.stdout or "[]") if x.get("provider") == "claude"), None)
     u = (item or {}).get("usage") or {}
-    wins = {}
-    for k in ("primary", "secondary"):
-        w = u.get(k)
-        if w and w.get("usedPercent") is not None:
-            wins[window_name(w.get("windowMinutes"))] = {"used_percent": w["usedPercent"],
-                "resets_at": w.get("resetsAt"), "window_minutes": w.get("windowMinutes")}
+    wins, reported = windows_of(u)
     ident = "route-login:claude:" + (json.load(open(f"{login_dir('claude')}/.claude.json")).get("oauthAccount") or {}).get("organizationUuid", "unknown")
     return {"provider": "claude", "source": f"codexbar:{(item or {}).get('source')}",
             # the vendor's own timestamp when it gives one; otherwise when this reading was taken
             "observed_at": u.get("updatedAt") or (taken_at if wins else None),
             "observed_account": ident if item else None,
             "executing_account": ident, "identity_basis": "same-credential", "model_route": "direct",
-            "windows": wins, "extra_windows": u.get("extraRateWindows") or [],
+            "windows": wins, "reported_windows": reported, "extra_windows": u.get("extraRateWindows") or [],
             # CodexBar answers with an item that carries an `error` when it cannot read the
             # account — an expired login, most often. Carrying it here is what lets the router say
             # *why* a provider is unusable instead of "unparseable observed_at" (OPERATIONS §33).
