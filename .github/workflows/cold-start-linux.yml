@@ -78,12 +78,19 @@ jobs:
           print("\nthe stack came up on a host that had none of it; only the provider logins failed")
           PY
 
-      - name: keep the log
+      # The stack is up and nobody is signed in: exactly the `stack` level of scripts/verify.sh —
+      # the checks, the three control suites, package locks and controls, one hello-lane run.
+      - name: verify at the stack level
+        run: set -o pipefail; bash scripts/verify.sh --level stack 2>&1 | tee /tmp/verify.log
+
+      - name: keep the logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cold-start-log
-          path: /tmp/cold-start.log
+          path: |
+            /tmp/cold-start.log
+            /tmp/verify.log
 
       - name: take it down the way an operator would
         if: always()

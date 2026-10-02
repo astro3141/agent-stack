@@ -38,7 +38,13 @@ a button for it, that is the signal to write it down in `config/`, not in a scre
 ```bash
 scripts/up.sh --check                                    # about twenty questions, and the capabilities
 docker exec agentstack-agent /opt/venv/bin/python /work/stack/ops_health.py
+scripts/verify.sh                                        # both of the above, the controls, one run — at the level this machine allows
 ```
+
+`verify.sh` has three levels and picks the one the machine can do: `static` on a checkout with
+no Docker, `stack` on a running instance with nobody signed in (what the GitHub runner does),
+`full` when the providers are signed in — then it also makes one routed call and one role-split
+run, both recorded. Each level prints first what it cannot see.
 
 `up.sh --check` changes nothing. Read it in three parts: **isolation** (the agent has no route out
 except the allowlist proxy), **services and the boundary** (Preloop answers, and the runtime may

@@ -47,17 +47,14 @@ A `newer` line is a question, not an instruction. Three kinds of answer:
 
 ```bash
 scripts/release.sh update --to <rev>        # records what runs now, moves the workspace, rebuilds, checks
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/trial_controls.py    # the machinery
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/router_controls.py
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/review_controls.py
-scripts/packages.sh verify                  # every installed package still at its pinned commit
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/packages.py stack   # no package floor violated
+scripts/verify.sh --level full              # the checks, the three control suites, package locks,
+                                            # controls and floors, then hello-lane, auto and novel-a
 ```
 
-4. One real run per package that has a cheap one — `hello-lane`, `auto`, `novel-a` — and, for a
-   provider CLI change, the N7 native-tool check on the vendor that changed (OPERATIONS §7). What
-   you are looking for is the thing a control cannot see: a CLI that now writes through its own
-   tool instead of Preloop's, a session file that moved, a login that stopped refreshing.
+4. `verify.sh --level full` makes the cheap runs (`hello-lane`, `auto`, `novel-a`). For a provider
+   CLI change, add the N7 native-tool check on the vendor that changed (OPERATIONS §7) by hand:
+   what you are looking for is the thing a control cannot see — a CLI that now writes through its
+   own tool instead of Preloop's, a session file that moved, a login that stopped refreshing.
 5. Merge when the controls and the runs are clean. Record the measurements in OPERATIONS.md under a
    new section, as every other change here is recorded: what was updated, from what to what, and
    what was run to say it still holds.
