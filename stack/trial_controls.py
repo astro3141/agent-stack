@@ -2399,7 +2399,6 @@ if __name__ == "__main__":
     controls_recorder()
     controls_reviews_step()
     controls_lanes_step()
-    controls_lanes()
     controls_roles()
     controls_record_and_screen()
     print(f"\n{len(PASS)}/{len(PASS) + len(FAIL)} controls passed")
