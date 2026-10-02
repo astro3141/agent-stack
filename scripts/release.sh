@@ -268,7 +268,7 @@ cmd_update() {
   # its own image tag. Until this passes, /work and the `:local` tags are exactly as they were.
   echo "== candidate $TO"
   CAND_DIR="$(u "${TMPDIR:-/tmp}")/agentstack-candidate-$$"
-  CAND_IMAGE="agentstack/governed-runtime:cand-$(git_here rev-parse --short "$TO")"
+  CAND_IMAGE="$STACK/governed-runtime:cand-$(git_here rev-parse --short "$TO")"
   git_here worktree add --quiet --detach "$(m "$CAND_DIR")" "$TO" || fail "could not prepare a candidate worktree"
   # A worktree is the whole repository, and this stack may sit below its root (it does in the
   # repository layout, poc/281-routing/). The candidate's docker/ is therefore under the same

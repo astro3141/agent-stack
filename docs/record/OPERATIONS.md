@@ -3934,3 +3934,29 @@ router end to end, the one door to a call); trial_controls' two pins that assert
 three-way door now assert the single one, and its screen pin reads the event reader instead of
 `eval`-ing a line of `run_workflow.py`'s source. Static 10/10. The stack level is the CI run
 named in PR #21.
+
+## 69. The second cold start: a fresh clone beside the live instance (measured 2026-10-02)
+
+What a new person receives, measured on the second install's machine (Windows, Docker Desktop):
+a fresh clone in its own directory, its own `config/instance.env` (`coldverify`, its own ports),
+brought up beside the live instance. **Full 21/21**, and `router_controls`, which the stack
+level skips without logins, **26/26** after signing in. No remnant of an earlier name in the
+remote (`cadp278-broker` is gone); `.cadp-backup.key` stays as the reader of older backups.
+
+Docker Desktop failed to start first, twice, with the stale-socket pattern of §5
+(`sailor-ingest.sock`, then `docker-secrets-engine/engine.sock` and `dockerInference`): a
+Docker Desktop defect with open reports, not this stack's to guarantee — the stack's one duty is
+`install.sh --check` stopping at "start Docker", which it does. The recovery is §5's.
+
+Three things verify does not see, found by doing it, each checked in the code before it moved:
+
+| found | verified | done |
+|---|---|---|
+| every instance built `agentstack/*:local`, so the second instance's build re-tagged the images the live one was running on; the live containers kept their (now untagged) image until recreated, and a recreate would run the live tree on the new toolchain | **yes** — six fixed image names in `docker/compose.poc.yaml`, `up -d --build` on every bring-up; what `release.sh record` reports as "a rebuild pruned it under the running container" (§66, #20) | images are `${STACK:-agentstack}/…` (18 lines); the release candidate image is `$STACK/governed-runtime:cand-…` too |
+| a bare `docker compose …` in the second instance's directory used the live instance's names and made `agentstack-*` networks there | **yes** — `docker/.env` is gitignored and nothing on a clone wrote it; `up.sh` exported `STACK` into its own environment only; `restore.sh` alone wrote the file | `scripts/instance_env.sh`: `config/instance.env` → `docker/.env`, key by key, keeping what else is there; `up.sh` runs it on every bring-up and `restore.sh` on a restore |
+| a third instance fails inside compose with "address pools fully subnetted" | **yes** — 14 networks in the composition + Preloop's one = 15; Docker's default pools hold about 31; two instances fill them | `install.sh --check` counts the subnets in use against what this instance needs and names the remedy: wider `default-address-pools` in the daemon (docs/install.md), not fewer networks — each one is a boundary of §48–§55 |
+
+Controls: review_controls **100/100** (8 new: every image named for the instance, the candidate
+image, the env writer end to end — takes the keys, keeps the rest, idempotent, no-op without
+instance.env — the two callers, the headroom check, and 15 as the measured count). The stack
+level is the CI run named in PR #21; the full level is the measurement above.

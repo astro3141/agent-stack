@@ -565,6 +565,43 @@ def door_controls():
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 7. a second instance beside the first
+def instance_controls():
+    """What the second cold start found (OPERATIONS §69): images named for the instance,
+    docker/.env in step with instance.env, networks counted before the build."""
+    comp = (WORK / "docker" / "compose.poc.yaml").read_text()
+    imgs = re.findall(r"^\s+image: (\S+)", comp, re.M)
+    ours = [i for i in imgs if "agentstack" in i]
+    check("instance: every image of this stack is named for the instance",
+          ours and all(i.startswith("${STACK:-agentstack}/") for i in ours), ours)
+    check("instance: the candidate image a release builds is too",
+          'CAND_IMAGE="$STACK/governed-runtime:cand-' in (WORK / "scripts" / "release.sh").read_text())
+    root = Path(tempfile.mkdtemp(prefix="agentstack-inst-"))
+    (root / "config").mkdir(); (root / "docker").mkdir()
+    (root / "config" / "instance.env").write_text("# the second one\nSTACK=agst2\nHUB_PORT=8880\nPRELOOP_PROJECT=preloop-two\n")
+    (root / "docker" / ".env").write_text("POC_HOST_DIR=/home/you/agent-stack-two\nSTACK=agentstack\n")
+    subprocess.run(["bash", str(WORK / "scripts" / "instance_env.sh"), str(root)], check=True, timeout=30)
+    got = dict(l.split("=", 1) for l in (root / "docker" / ".env").read_text().splitlines() if "=" in l)
+    check("instance: docker/.env takes every key instance.env names, and keeps the rest",
+          got == {"POC_HOST_DIR": "/home/you/agent-stack-two", "STACK": "agst2", "HUB_PORT": "8880", "PRELOOP_PROJECT": "preloop-two"}, got)
+    subprocess.run(["bash", str(WORK / "scripts" / "instance_env.sh"), str(root)], check=True, timeout=30)
+    check("instance: … and a second run changes nothing",
+          (root / "docker" / ".env").read_text().count("STACK=") == 1 and dict(l.split("=", 1) for l in (root / "docker" / ".env").read_text().splitlines() if "=" in l) == got)
+    (root / "config" / "instance.env").unlink()
+    subprocess.run(["bash", str(WORK / "scripts" / "instance_env.sh"), str(root)], check=True, timeout=30)
+    check("instance: no instance.env, nothing written", dict(l.split("=", 1) for l in (root / "docker" / ".env").read_text().splitlines() if "=" in l) == got)
+    up = (WORK / "scripts" / "up.sh").read_text(); rs = (WORK / "scripts" / "restore.sh").read_text()
+    check("instance: up.sh and restore.sh write it through the one script",
+          'scripts/instance_env.sh" "$HERE"' in up and 'scripts/instance_env.sh" "$WORKSPACEU"' in rs)
+    ins = (WORK / "scripts" / "install.sh").read_text()
+    check("instance: the host check counts network headroom before a build can run out",
+          "network headroom" in ins and "NEED_NETS=15" in ins and "default-address-pools" in ins)
+    check("instance: 15 is what the composition actually has, plus Preloop's one",
+          len(re.findall(r"^  [a-z][a-z-]*:\s*$", comp.split("\nnetworks:\n", 1)[1].split("\n\n")[0], re.M)) + 1 == 15,
+          comp.split("\nnetworks:\n", 1)[1].split("\n\n")[0][:200])
+    shutil.rmtree(root, ignore_errors=True)
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -576,6 +613,7 @@ run_controls()
 event_controls()
 execution_controls()
 door_controls()
+instance_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

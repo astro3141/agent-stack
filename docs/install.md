@@ -125,6 +125,29 @@ PRELOOP_CONSOLE_PORT=3020
 Never point a second instance at a first one's Preloop (`--no-preloop` with a shared directory):
 the policy and the principals would be applied to **that** account.
 
+Three things the second cold start found (OPERATIONS §69), each now handled:
+
+- **Images are named for the instance** (`${STACK}/governed-runtime:local` and so on). Before
+  this every instance built `agentstack/*:local`, so a second instance's build re-tagged the
+  images the live one was running on; the live containers kept their image until recreated,
+  and `release.sh record` reported it as a pruned image.
+- **`docker/.env` is written from `config/instance.env`** by `up.sh` (and `restore.sh`), key by
+  key, keeping anything else in it. A bare `docker compose …` in the second instance's directory
+  therefore names that instance; before this it fell back to the live instance's names.
+- **Networks are counted before the build.** One instance is 15 networks (14 of its own, each an
+  isolation boundary, plus Preloop's), and Docker's default address pools hold about 31 — two
+  instances fit, a third fails inside compose with "address pools fully subnetted".
+  `install.sh --check` says how many are in use and how many this instance needs. For more than
+  two instances, widen the daemon's pools (Docker Desktop: Settings → Docker Engine; Linux:
+  `/etc/docker/daemon.json`) and restart Docker:
+
+  ```json
+  {"default-address-pools": [{"base": "10.200.0.0/16", "size": 24}]}
+  ```
+
+  That is 256 networks of 254 addresses each. Fewer networks per instance is not the remedy:
+  each one is a boundary something was measured against.
+
 ## Addresses
 
 | | |

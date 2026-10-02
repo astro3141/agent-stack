@@ -33,6 +33,8 @@ if [ -f "$HERE/config/instance.env" ]; then
     case "$k" in ''|'#'*) continue;; esac
     eval "[ -n \"\${$k:-}\" ]" || eval "$k=\$v"
   done < "$HERE/config/instance.env"
+  # and compose run by hand in this directory must name the same instance: docker/.env (§69)
+  bash "$HERE/scripts/instance_env.sh" "$HERE"
 fi
 PRELOOP_DIR="${PRELOOP_DIR:-$HOME/.preloop-oss}"
 # docker on Windows needs native paths; path conversion is off below (MSYS_NO_PATHCONV)

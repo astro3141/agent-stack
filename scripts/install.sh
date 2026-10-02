@@ -69,6 +69,23 @@ else
   need "docker compose >= 2.24" "" "have $cv — 2.24 introduced env_file.required and !reset"
 fi
 
+# One instance is 15 networks (14 in docker/compose.poc.yaml, each an isolation boundary of
+# §48–§55, and Preloop's own), and Docker's default address pools hold about 31. A second
+# instance fits; a third fails inside compose with "address pools fully subnetted", which says
+# nothing about networks. Counted here instead (measured on the second cold start, OPERATIONS
+# §69). The remedy is the daemon's `default-address-pools` (docs/install.md), not fewer networks.
+NEED_NETS=15; POOL_NETS=31
+nets="$(docker network ls -q 2>/dev/null | wc -l | tr -d ' ')"
+if [ -n "$nets" ]; then
+  used=$((nets - 2))                       # host and none take no subnet
+  [ "$used" -lt 0 ] && used=0
+  if [ $((used + NEED_NETS)) -le "$POOL_NETS" ]; then
+    need "network headroom" "$used of ~$POOL_NETS subnets in use, this instance needs $NEED_NETS"
+  else
+    need "network headroom" "" "$used subnets in use, this instance needs $NEED_NETS, Docker's default pools hold ~$POOL_NETS — widen default-address-pools (docs/install.md) or take an instance down"
+  fi
+fi
+
 # The agent image picks its Node and CodexBar by architecture. amd64 is what this stack has been
 # built and run on; arm64 is parameterized and untried, which is worth saying before a build rather
 # than after it. Anything else fails at those lines by design.

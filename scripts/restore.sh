@@ -295,8 +295,8 @@ PRELOOP_GATEWAY_PORT=$PRELOOP_GATEWAY_PORT
 PRELOOP_CONSOLE_PORT=$PRELOOP_CONSOLE_PORT
 RESTORED_FROM=$(basename "$ARCHIVEU")
 EOF
-# compose run by hand in that directory needs the same values
-sed 's/^#.*//' "$WORKSPACEU/config/instance.env" | grep -v '^$' > "$WORKSPACEU/docker/.env"
+# compose run by hand in that directory needs the same values — the one writer up.sh uses too
+bash "$WORKSPACEU/scripts/instance_env.sh" "$WORKSPACEU"
 say "instance.env" "config/instance.env, docker/.env"
 
 # ---------------------------------------------------------------- 6. start
