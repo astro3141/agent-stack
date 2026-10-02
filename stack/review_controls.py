@@ -281,6 +281,18 @@ def state_controls():
           got.get("zz-nobody", {}).get("state") == "NO PACKAGE" and (root / "state" / "zz-nobody").exists(), got)
     import importlib
     check("state: requires.state is a key something reads", "state" in importlib.import_module("packages").KNOWN_REQUIRES)
+    # state kept with the work, elsewhere: declared as a string, reported as a place, never a directory
+    pkgs = root / "packages"; (pkgs / "remote-one").mkdir(parents=True)
+    (pkgs / "remote-one" / "manifest.yaml").write_text("name: remote-one\nversion: 0.0.1\nentry: w.yaml\nrequires:\n  state: \"github issue comments\"\n")
+    (pkgs / "remote-one" / "w.yaml").write_text("name: remote-one\nagents: []\n")
+    (root / "config" / "packages.yaml").write_text("packages:\n  - remote-one\n")
+    env2 = {**env, "AGENTSTACK_PACKAGES": str(pkgs), "AGENTSTACK_PACKAGES_YAML": str(root / "config" / "packages.yaml")}
+    r = subprocess.run([sys.executable, str(HERE / "packages.py"), "state", "--json"], env=env2,
+                       capture_output=True, text=True, timeout=60)
+    got = json.loads(r.stdout or "{}").get("packages") or {}
+    check("state: a package that keeps state with the work is reported as a place, not a directory",
+          got.get("remote-one", {}).get("state") == "remote" and "github issue comments" in got["remote-one"]["why"]
+          and "not in this stack's backup" in got["remote-one"]["why"], got)
     shutil.rmtree(root, ignore_errors=True)
 
 

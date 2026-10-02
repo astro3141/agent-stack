@@ -252,7 +252,7 @@ whose package needs what the stack has not got. These are the keys something rea
 | `egress` | hosts the package's scripts reach | `packages.py egress` (an audit, not a control) |
 | `python` | modules the image must carry | `packages.py python`, `run_workflow.py start` |
 | `stack` | the oldest stack revision the package runs on: `stack: {min: <commit>}` | `packages.py stack`, `run_workflow.py start` |
-| `state` | `state: true` — the package keeps state outside any run, under its own directory (below) | `packages.py state` |
+| `state` | `state: true` — the package keeps state outside any run, under its own directory (below); `state: "<where>"` — it keeps state with the work, elsewhere, and this says where | `packages.py state` |
 
 A package calls the stack's steps by absolute path and argv order, so one written against a newer
 stack fails on an older one in whatever way the missing feature fails — a brokered step refused as
@@ -300,6 +300,23 @@ X9). It names one place now:
 
 That is the whole contract: a path, a declaration, a report. No helper, because a path and a
 rule are all four packages were missing.
+
+**Two kinds of state, and the root is the place for one of them.** Asked (issue #14), the two
+packages that keep the most state answered differently, and both are right:
+
+| | lives | because | declared as |
+|---|---|---|---|
+| trading's segment ledger | `<state_root>/trading/` | the next cycle on *this* instance needs it; nobody else reads it | `state: true` |
+| devflow's task state | the task's GitHub issue (a sentence for people; counters and done-keys for the machine) | a person must read "who does what, and it resumes when" **where the work is**, and the budgets, rounds and the list of commits devflow pushed must outlive this machine, a reinstall, a wiped workspace | `state: "github issue comments"` |
+
+State that lives with the work is the package's, end to end: the stack has no place for it and
+should not pretend to. What the stack does is **know where it is** — `packages.py state` reports
+it, and the backup says it is not covered. One rule travels with it, because the stack's own
+guarantee does: *a reading nobody authenticated is not a reading.* A package that reads its
+state back from a place others can write (an issue comment, a wiki page) verifies who wrote it
+before trusting a counter or a done-key — devflow found, in its own controls, that a forged
+marker comment reset its budgets (issue #14), which is a fail-open of exactly the kind the
+platform refuses in itself.
 
 ## Child runs, and waiting on the world
 
