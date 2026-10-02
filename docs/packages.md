@@ -87,9 +87,8 @@ workflows:                    # or `entry: workflow.yaml` for a single one
   my-lane: workflow.yaml
 requires:
   capabilities: [tool_rights, egress, record, admission]   # the runner refuses a run without them
-runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
-requires:
   python: [pydantic]          # modules you import that the image must already carry
+runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
 ```
 
 **Bring your own code; declare only what you cannot.** A pure-Python dependency belongs *in* the
@@ -203,10 +202,16 @@ arrives from outside a run.
 
 ## The output of a model step
 
-`stack/steps/agent_task.py` (and the brokered door, `broker_dispatch.py`) answers with one shape,
-and every workflow that routes on it declares some of it in its `output:` block — three packages
-had each copied their own subset, one of them twice (docs/record/PACKAGE-MATRIX.md, X10b). This is
-the whole set; declare what you route on and copy the lines, do not retype them:
+`stack/steps/agent_task.py` answers with one shape — the **execution record**, owned by
+`stack/execution.py` — and every workflow that routes on it declares some of it in its `output:`
+block; three packages had each copied their own subset, one of them twice
+(docs/record/PACKAGE-MATRIX.md, X10b). The same record is what a fan-out keeps in its receipt
+(every attempt of every member), what a chain keeps for each of its model steps, what the
+recorder turns into an MLflow run, and what `trajectory.py` sums; a copy is written beside the
+adapter's raw result as `<evidence_dir>/execution.json`, so the evidence directory carries the
+platform's record of the call whether or not any step passed it on. A record carries
+`contract: 1`, the version of this shape. This is the whole set (a control compares this list
+with `execution.FIELDS`); declare what you route on and copy the lines, do not retype them:
 
 ```yaml
     output:
@@ -240,6 +245,18 @@ the whole set; declare what you route on and copy the lines, do not retype them:
 A YAML anchor (`output: &agent_out` on the first model step, `output: *agent_out` on the rest)
 keeps one copy per workflow; `packages/research-r/research-r.yaml` shows it.
 
+**Where a call runs is not the workflow's to choose.** A role that declares an egress profile is
+handed to the broker by `agent_task.py` itself (§54); a fan-out and a chain start the same step
+and never choose a door, and neither does a workflow that calls it directly.
+
+**What the screen reads, it reads from what a step said, not from the step's name.** The panel
+shows a run's routing decision and its MLflow record. It recognises the routing step by its
+output (`decision` + `evaluated` + `provider`, which is what `stack/steps/route.py` answers) and
+the recording step by its output (`mlflow_run_id`, what `stack/steps/record.py` answers) —
+name them `route` and `record_pass` or `choose_provider` and `persist_result`; the screen is the
+same. Until this the screen read a step *named* `route` and steps whose names began with
+`record` (OPERATIONS §68).
+
 ## What it needs of the stack
 
 `requires:` in the manifest is read, key by key, by `stack/packages.py`; the runner refuses a run
@@ -252,7 +269,7 @@ whose package needs what the stack has not got. These are the keys something rea
 | `egress` | hosts the package's scripts reach | `packages.py egress` (an audit, not a control) |
 | `python` | modules the image must carry | `packages.py python`, `run_workflow.py start` |
 | `stack` | the oldest stack revision the package runs on: `stack: {min: <commit>}` | `packages.py stack`, `run_workflow.py start` |
-| `state` | `state: true` — the package keeps state outside any run, under its own directory (below) | `packages.py state` |
+| `state` | `state: true` — the package keeps state outside any run, under its own directory (below); `state: "<where>"` — it keeps state with the work, elsewhere, and this says where | `packages.py state` |
 
 A package calls the stack's steps by absolute path and argv order, so one written against a newer
 stack fails on an older one in whatever way the missing feature fails — a brokered step refused as
@@ -265,6 +282,30 @@ no git) without refusing anything, because that says nothing about the stack's a
 `host_paths` — each believing the stack checked something it never looked at. `packages.py` now
 prints `note: requires.<key> is read by nothing in this stack` under the package, so the belief
 does not survive the first `list`.
+
+## Binding a result to its input
+
+A reviewer judges one draft; a lane trades on one packet; a verdict is about one tree. When the
+thing judged can change between the step that froze it and the step that reads the judgement, the
+judgement must say which bytes it was about, and the reader must refuse one about other bytes.
+Four packages did this, each in its own words (docs/record/PACKAGE-MATRIX.md, X2). The mechanism
+is the stack's now; the choice stays the package's.
+
+```python
+import step
+sha = step.bind_file(frozen_path)          # or step.bind_text(text): the name the result is bound to
+# … the fan-out carries the workflow's `context` back in every receipt, unchanged (CONTRACT) …
+if not step.bound(receipt, sha):           # a receipt for other bytes, or with no binding: not this round's
+    ...
+```
+
+- **The package decides what the input is** — a frozen file, a packet built from several, a
+  tree — and what a mismatch means (novel repairs; trading refuses; devflow reports).
+- **The stack carries the binding unchanged** (`context` in the receipt, `sha256` of every
+  produced file) and gives the three functions; it never decides that two hashes are "close".
+- novel is the measured instance: `packages/novel/controls.py` drives its triage through every
+  way a receipt can fail to be this round's (an older draft's, no receipt, a file changed after
+  the reviews step), and those controls run unchanged on the helper.
 
 ## State that outlives a run
 
@@ -287,29 +328,55 @@ X9). It names one place now:
   not deleted — the stack removes runs, not a package's memory.
 - **It is not a hand-in.** Input still arrives through `handoff/` by name; state is what the
   package writes for its own next run.
-- **It is not in git.** `state/` is ignored; a package that needs a fixture ships it in
-  `fixtures/`.
+- **It is not in git, and it is in the backup.** `state/` is ignored by git and copied by
+  `scripts/backup.sh` (restored by `scripts/restore.sh`), because it is the one thing a package
+  writes that neither a run nor the repository can give back — trading's segment ledger, say.
+  A package that needs a fixture ships it in `fixtures/`.
+- **Hand-in is not state, and a refreshed credential is neither.** Three kinds, measured on
+  trading (issue #14): what a cycle *reads and must not change* (its pins — frozen by hash at
+  registration, verified every cycle) stays a hand-in under `handoff/`; what the *next* cycle
+  needs (ledger, pending executions, re-entry decision table, durable attempts, receipts, lane
+  accumulations) is state, here; a provider login the CLI rewrites on refresh is neither — it
+  lives with the logins and is regenerated by signing in, not restored.
 
 That is the whole contract: a path, a declaration, a report. No helper, because a path and a
 rule are all four packages were missing.
 
+**Two kinds of state, and the root is the place for one of them.** Asked (issue #14), the two
+packages that keep the most state answered differently, and both are right:
+
+| | lives | because | declared as |
+|---|---|---|---|
+| trading's segment ledger | `<state_root>/trading/` | the next cycle on *this* instance needs it; nobody else reads it | `state: true` |
+| devflow's task state | the task's GitHub issue (a sentence for people; counters and done-keys for the machine) | a person must read "who does what, and it resumes when" **where the work is**, and the budgets, rounds and the list of commits devflow pushed must outlive this machine, a reinstall, a wiped workspace | `state: "github issue comments"` |
+
+State that lives with the work is the package's, end to end: the stack has no place for it and
+should not pretend to. What the stack does is **know where it is** — `packages.py state` reports
+it, and the backup says it is not covered. One rule travels with it, because the stack's own
+guarantee does: *a reading nobody authenticated is not a reading.* A package that reads its
+state back from a place others can write (an issue comment, a wiki page) verifies who wrote it
+before trusting a counter or a done-key — devflow found, in its own controls, that a forged
+marker comment reset its budgets (issue #14), which is a fail-open of exactly the kind the
+platform refuses in itself.
+
 ## Child runs, and waiting on the world
 
-A workflow that needs to run another, or to wait for something outside it to settle, does not
-need the stack for either — Conductor has both, at the revision this stack pins:
+Measured (issue #13, `stack/cases/child-run.yaml`, cold-start-linux run 26): a parent that starts
+hello-lane with a `type: workflow` step, then waits. **The child's step saw the parent's run id**
+— `5ed2fd86` on both sides — so a Conductor sub-workflow is *the same run* with a nested graph:
+one `CONDUCTOR_SELF_RUN_ID`, one workspace under it, one evidence namespace (`route-<run>`,
+`admit-<run>`), one record. That settles what each is for:
 
-- **`type: workflow`** runs a sub-workflow as a step, with `input_mapping`, and inside a
-  `for_each` group it fans out one child run per item (events `subworkflow_started` /
-  `subworkflow_completed`).
-- **`type: wait`** pauses for a parsed duration; polling is `wait` plus a route that loops back,
-  with no Python written.
-
-Two packages had built their own (`drive.py` shelling out to `run_workflow.py start/show`, a
-shell loop over `cycle.sh`), on the belief that the stack had no primitive; the child runs they
-start that way are not linked to their parent in the record. Prefer the engine's steps. What the
-stack still owes here is one measurement — that a child started by `type: workflow` under
-`run_workflow.py` appears in the record beside its parent — recorded in
-docs/record/DECISIONS-2026-10-02.md until it is taken.
+- **`type: workflow`** composes graphs. Use it to reuse a workflow's steps inside yours; the
+  child writes into your workspace and its model calls land in your record. Do not use it for a
+  run that needs a workspace, a record or an evidence directory of its own — a second `route`
+  step in the child would write over the parent's.
+- **`type: wait`** pauses (`duration: 1s`, measured `waited_seconds` 1.001); polling is `wait`
+  plus a route that loops back. No Python.
+- **A run of its own** is started through the stack's door, `run_workflow.py start`, as devflow's
+  `drive.py` does — which was right, not a workaround. What the stack still owes there is the
+  link: a child started from a step should carry its parent's `--suite`/`--case` so the record
+  reads them together (issue #13, remaining).
 
 ## Asking for a retry
 

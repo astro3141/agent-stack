@@ -79,13 +79,9 @@ def accounts(profile):
     if "error" in prof or "routing" not in prof:
         return {"error": f"unknown profile {profile!r}"}
     routing = prof["routing"]
-    # quota observations + the router's own evaluation, with this profile's policy
-    obs_dir = f"/tmp/ops-obs-{secrets.token_hex(4)}"
-    routes = json.dumps(routing["model_route"])
-    logins = json.dumps(routing.get("login") or {})
-    ev = jexec(["sh", "-c", 'AGENTSTACK_MODEL_ROUTES="$1" AGENTSTACK_LOGINS="$5" "$2" /work/stack/collect_obs.py "$3" >/dev/null 2>&1; '
-                'printf %s "$4" > "$3/policy.json"; "$2" /work/stack/router.py "$3/policy.json" "$3"; rm -rf "$3"',
-                "sh", routes, PY, obs_dir, json.dumps(routing), logins], timeout=180)
+    # quota observations + the router's own evaluation, with this profile's policy — asked
+    # through the one door every caller of the router uses (stack/admission.py)
+    ev = jexec([PY, "/work/stack/admission.py", profile], timeout=180)
     evaluated = {e["provider"]: e for e in (ev.get("evaluated") or [])}
     rows = []
     for name in routing["candidates"]:

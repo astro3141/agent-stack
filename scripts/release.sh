@@ -43,7 +43,7 @@ PY_IN_AGENT="/opt/venv/bin/python"
 RELEASES="${RELEASE_DIR:-$HOME/agentstack-releases}"
 RELEASESU="$(u "$RELEASES")"; RELEASES="$(m "$RELEASESU")"
 # services of this stack (the agent and the observer share one image)
-SERVICES="agent mlflow toolsvc fsmcp egress ops hub"
+SERVICES="agent mlflow fsmcp egress ops hub"
 TOOLS="claude conductor preloop_cli codex grok node"
 
 say()  { printf '  %-42s %s\n' "$1" "$2"; }
@@ -196,6 +196,15 @@ cmd_record() {
     [ -n "$ref" ] || continue
     id="$(docker inspect -f '{{.Image}}' "$STACK-$s")"
     keep="${ref%%:*}:rel-$TAG"
+    # A running container can reference an image a later rebuild pruned from under it
+    # (containerd snapshotter, tag reassigned; measured on the second install, OPERATIONS §65).
+    # The daemon's words for that are "No such image"; these are ours, with the way out.
+    if ! docker image inspect "$id" >/dev/null 2>&1; then
+      rm -rf "$DEST"
+      echo "  $STACK-$s runs image $id, which no longer exists — a rebuild pruned it under the running container." >&2
+      echo "  scripts/up.sh --recreate puts every container on an image that exists; then record again." >&2
+      fail "cannot keep a release whose image is gone — nothing has been changed"
+    fi
     docker tag "$id" "$keep"
     echo "$s $ref $id $keep" >> "$DEST/images.txt"
     say "image $s" "$keep"
@@ -221,6 +230,7 @@ cmd_record() {
     echo "recorded_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "workspace_revision=$REV"
     echo "workspace_dir=$HERE"
+    echo "backup_at_update=${BACKUP_NOTE:-}"      # empty for a plain record; what update saw
     echo "stack=$STACK"
     echo "format=2"                  # 2: configuration sources only (no config/generated)
     for t in $TOOLS; do echo "tool.$t=$(tool_running "$t")"; done
@@ -258,7 +268,7 @@ cmd_update() {
   # its own image tag. Until this passes, /work and the `:local` tags are exactly as they were.
   echo "== candidate $TO"
   CAND_DIR="$(u "${TMPDIR:-/tmp}")/agentstack-candidate-$$"
-  CAND_IMAGE="agentstack/governed-runtime:cand-$(git_here rev-parse --short "$TO")"
+  CAND_IMAGE="$STACK/governed-runtime:cand-$(git_here rev-parse --short "$TO")"
   git_here worktree add --quiet --detach "$(m "$CAND_DIR")" "$TO" || fail "could not prepare a candidate worktree"
   # A worktree is the whole repository, and this stack may sit below its root (it does in the
   # repository layout, poc/281-routing/). The candidate's docker/ is therefore under the same
@@ -282,6 +292,21 @@ cmd_update() {
     echo "  re-run with --replace-toolchain to replace /home/agent/.local." >&2
     fail "refusing an update whose toolchain would silently stay behind — the instance is untouched"
   fi
+
+  # The one thing a rollback cannot undo is a Preloop schema migration, and the backup is what
+  # covers it (docs/update-day.md). Taking it is a person's decision, so this says, and records,
+  # rather than refuses — update day 1 skipped it and took it after (OPERATIONS §65).
+  BACKUPS="${BACKUP_DIR:-$HOME/agentstack-backups}"
+  last_backup="$(ls -t "$BACKUPS"/agentstack-backup-*.tar.gz.enc 2>/dev/null | head -1 || true)"
+  if [ -z "$last_backup" ]; then
+    echo "  WARN  no backup under $BACKUPS — a rollback does not undo a Preloop schema migration; scripts/backup.sh first if this update moves Preloop" >&2
+    BACKUP_NOTE="none found under $BACKUPS"
+  else
+    age_d=$(( ( $(date +%s) - $(stat -c %Y "$last_backup" 2>/dev/null || stat -f %m "$last_backup") ) / 86400 ))
+    [ "$age_d" -gt 7 ] && echo "  WARN  the newest backup is $age_d days old ($(basename "$last_backup"))" >&2
+    BACKUP_NOTE="$(basename "$last_backup") ($age_d days old)"
+  fi
+  say "backup" "$BACKUP_NOTE"
 
   echo "== keeping the release in use before changing anything"
   ( TAG=""; cmd_record )

@@ -17,6 +17,7 @@ providers:                        # order = preference
 
 quota:
   max_age_s: 1800                 # an observation older than this is "stale" → not eligible
+  reuse_s: 120                    # a kept reading younger than this is presented again, not taken again (OPERATIONS §64)
   require_windows:                # a provider must report these windows to be eligible —
     claude: [weekly]              # a list applies to every provider; a mapping, per provider
     codex: [weekly]

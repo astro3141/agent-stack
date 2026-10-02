@@ -132,10 +132,10 @@ def fix_for(e):
     """
     why = str(e.get("why") or "")
     who = e.get("provider") or "the provider"
-    if "nothing has observed this account" in why:
-        return (f"the quota observer has no {who} login: "
-                f"`docker exec -it $STACK-quota {who} login`, with the SAME account the routing "
-                f"login uses — a different one answers account_mismatch, which is the point of it")
+    if "nothing has read this provider's login" in why or "nothing has observed this account" in why:
+        return (f"no readable {who} login: sign in on the panel's 계정 tab (the routing login under "
+                f"/route/{who}). The quota observer is codex's optional second source, not the fix — "
+                f"only if you want it too: `docker exec -it $STACK-quota codex login`, the SAME account")
     return (f"sign in again for {who} (the panel's 계정 tab, or the provider's own login "
             f"under /route)")
 
@@ -146,26 +146,13 @@ def unknowable(profile="research-default"):
     The same three parts in the same order — this profile's routing policy, a fresh collection of
     observations, the router's own evaluation — so what this reports is what a run would meet.
     """
-    import subprocess, tempfile
-    prof = settings.profile(profile)
-    if not prof:
-        return [{"provider": "(all)", "why": f"unknown: no generated profile {profile!r}"}]
-    with tempfile.TemporaryDirectory() as d:
-        pol = prof["routing"]
-        with open(f"{d}/policy.json", "w") as f:
-            json.dump(pol, f)
-        os.makedirs(f"{d}/obs", exist_ok=True)
-        env = {**os.environ, "AGENTSTACK_MODEL_ROUTES": json.dumps(pol.get("model_route") or {}),
-               "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {})}
-        subprocess.run([sys.executable, "/work/stack/collect_obs.py", f"{d}/obs"],
-                       capture_output=True, env=env, timeout=180)
-        r = subprocess.run([sys.executable, "/work/stack/router.py", f"{d}/policy.json", f"{d}/obs"],
-                           capture_output=True, text=True, timeout=60)
+    import admission
     try:
-        ev = json.loads(r.stdout)["evaluated"]
-    except Exception:
+        return admission.unknown(admission.evaluate(profile))
+    except LookupError:
+        return [{"provider": "(all)", "why": f"unknown: no generated profile {profile!r}"}]
+    except RuntimeError:
         return [{"provider": "(all)", "why": "unknown: the router did not answer"}]
-    return [e for e in ev if str(e.get("why") or "").startswith("unknown:")]
 
 
 def risks():

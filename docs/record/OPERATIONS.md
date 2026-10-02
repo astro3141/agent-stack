@@ -3660,6 +3660,21 @@ the four cases).
 Owed from that host: the raw billing answer (runbook, "Runs hold"), which says whether this is
 the plan or the proxy. Until then the profile's line is the operator's statement, dated.
 
+**Answered the same day (issue #11).** The raw billing answer from the account, through the
+egress proxy, with grok 1.0.40 / CodexBar 0.63.0 pinned:
+
+```
+config.currentPeriod        {type: USAGE_PERIOD_TYPE_WEEKLY, start: 2026-09-28T16:57:35Z, end: 2026-10-05T16:57:35Z}
+config.creditUsagePercent   null
+config.onDemandCap          {val: 0}      config.onDemandUsed  {val: 0}      config.prepaidBalance {val: 0}
+config.isUnifiedBillingUser true
+```
+
+A weekly period and no usage figure: the period-only answer CodexBar classifies as unknown rather
+than 0 %, exactly as its source reads. The plan, not the proxy, and not CodexBar. `grok: []`
+stands as the account's statement; when the vendor starts carrying a percent for it, the
+profile goes back to `[weekly]` and nothing else changes.
+
 ### §64 addendum 2: the 429 was ours (measured 2026-10-02)
 
 With `grok: []` in place, novel-a completed on that host — architect=codex, author=claude,
@@ -3755,3 +3770,193 @@ Still a person's decision, deliberately: a native tool a vendor cannot switch of
 `apply_patch`) is held for approval, and an unattended run that asks for one ends `DENIED` after
 the window. The stack does not shorten that window — approval is the answer the stack gives for
 a tool outside the posture, and a shorter window would turn "not approved" into "not asked".
+
+## 65. Update day 1 (measured 2026-10-02)
+
+The first run of docs/update-day.md, on the second install (Windows, Docker Desktop), after
+`drift.sh` reported eight components newer upstream. What moved, what was held, and what was run
+to say it still holds. The decision and the reading behind each pin: docs/record/DECISIONS-2026-10-02.md.
+
+**Moved, one commit each, on the branch:**
+
+| component | from → to | read before moving |
+|---|---|---|
+| codexbar | 0.63.0 → 0.70.0 | three hardenings of the Claude reading (#4129, #4115/#4083, #4126); Grok billing code identical at both tags |
+| claude-code | 2.1.278 → 2.1.287 | 2.1.281–287: no change to project `permissions.deny`; managed settings, headless MCP retries, OAuth messages |
+| supergateway | 4.0.0 → 4.1.0 | minor |
+
+**Held** (issue #17): codex 0.160 with codex-acp 2.1.1 and claude-agent-acp 0.85 — both adapters
+broke the tool-call contract on 2026-09-28 and the adapter reads that contract; acpx 0.19.4 with
+them; Conductor 0.1.41 (+45k lines); grok 1.0.46 (no changelog anywhere).
+
+**Measured.** Linux cold start on the new pins: green (cold-start-linux run 23, f009437), verify
+stack 18/18, trial 469/469, review 45/45. On the instance:
+
+```
+scripts/release.sh update --to f009437            refused: "claude: running '2.1.278', candidate image
+                                                  '2.1.287' — refusing an update whose toolchain would
+                                                  silently stay behind — the instance is untouched"
+scripts/release.sh update --to f009437 --replace-toolchain
+  toolchain  answers; the previous copy was removed
+  claude     2.1.287        conductor v0.1.37 · preloop_cli 0.15.0 · codex 0.155.1 · grok 1.0.40
+  ALL CHECKS PASSED         (quota knowable 0, router can choose yes, grok native tools denied yes)
+  rollback point            20261002-093412-f009437  (claude 2.1.278)
+scripts/verify.sh --level full                    21/21 — static 10/10, stack 18/18, full: router_controls
+                                                  26/26, auto PASS, novel-a PASS, all three reviewers COMPLETED
+claude N7 (one real call on 2.1.287)              auto run 41c0cd80: permissions.jsonl title=mcp__preloop__write_file,
+                                                  routed=preloop_mcp_rules, allow_once; events: preloop__write_file ×13,
+                                                  native Write/Edit 0
+```
+
+The refusal without `--replace-toolchain` is the right one — the toolchain lives in the home
+volume, not the image, so an image-only update would have left claude at 2.1.278 while the
+record said 2.1.287 — and update-day.md did not mention the flag (issue #20, fixed below).
+
+**The backup was run after, not before.** The procedure's "Before" backup was skipped and taken
+once the update had passed (issue #20). Valid as a snapshot of the same data: this round moved no
+Preloop version, so no schema migration happened, which is the one thing the backup exists for.
+
+```
+archive   ~/agentstack-backups/agentstack-backup-20261002-095538.tar.gz.enc   1.7 GB, 12 members, sha256 each
+key       ~/.agentstack-backup.key   64 B, not in the archive — the operator keeps a copy elsewhere
+in it     preloop.dump · release.json (f009437) · volumes agent-home, quota-home, route-creds ·
+          host mlflow, evidence-p281, evidence-ui-runs, config, policy, preloop-dir, research
+```
+
+**A finding on the way** (issue #20): `release.sh record` failed once with `No such image:
+sha256:448030c0…` — running containers held an image sha that a rebuild had pruned under them.
+`record` runs before anything is touched, so the instance was untouched; `scripts/up.sh
+--recreate` put every container on an image that exists, and the update then went through.
+`record` should say that is what happened, rather than fail on the daemon's words.
+
+Two more things learned by doing the procedure once: `update` records a rollback point itself,
+so the "Before" `record --tag` is a *named* point, not a second one; and the drift report's
+"newer" is a reading list, not a to-do — five of eight were held on what the reading said.
+
+## 66. Six issues in one pass, measured on cold-start-linux run 26 (2026-10-02)
+
+After update day 1 the remaining stack work (DECISIONS-2026-10-02.md, issues #12 #13 #15 #16
+#20) went into one branch, one commit per issue, one CI run. e7fc354: cold start green, verify
+stack **19/19**, trial_controls **470/470**, review_controls **58/58**, novel 32/32.
+
+**#15 declared, not assumed.** A profile that runs grok with `tools.native_tools: true` is
+refused by `cfg.py` with the reason (Grok's posture is per login, §64 addendum 4). The collector's
+reuse window is the profile's `quota.reuse_s` (default 120, below `max_age_s`, generated into the
+routing policy, passed by every caller). A provider nobody has read says "sign in on the panel;
+the quota observer is not it" — the old line sent the second install's reader to the observer.
+
+**#20 release.sh.** `record` names a container whose image a rebuild pruned and the way out
+(`up.sh --recreate`); `update` says whether a backup exists and how old, records it in
+`release.kv`, and does not refuse.
+
+**#13 a child run and a wait, measured.** `stack/cases/child-run.yaml` (a built-in: hello-lane as
+a `type: workflow` step, a 1 s `type: wait`, a step that reports both run ids) ran at the stack
+level:
+
+```
+child-run: the child step saw run id '5ed2fd86' - the parent is '5ed2fd86' (same_run: yes, waited 1.001 s)
+```
+
+A Conductor sub-workflow is the same run with a nested graph — same id, workspace, evidence
+namespace, record. It composes graphs; it is not a run of its own. devflow's `drive.py`, which
+starts child runs through `run_workflow.py start`, was right; what the stack owes is the record
+link (`--suite`/`--case` carried from a step). docs/packages.md says so now, from the measurement
+rather than from the engine's documentation, which was the point. `cycle.py` carries `key=value`
+inputs to the run (the matrix's §4 stack defect).
+
+**#12 the contract's second half.** CONTRACT.md: the platform implements what is common and makes
+the place for what is specific, with the table of places. `step.bind_file/bind_text/bound` is the
+binding four packages had each written; novel's triage uses it and its 32 controls pass unchanged.
+
+**#16 composition.** `toolsvc` (the #278 marker tool server; nothing called it) is gone from the
+composition, the policy and the Dockerfile; the quota observer is the compose profile `observer`
+(`up.sh --observer`, kept once its volume exists). The cold start now brings up fifteen agentstack
+containers instead of seventeen, and the policy scans one tool server. An instance brought up
+before this keeps `agentstack-toolsvc` registered in its Preloop account until an apply prunes
+it; no tool of it is in the policy, so nothing reaches it.
+
+## 67. An outside review, verified before the merge (2026-10-02)
+
+Before PR #21 was merged an external review of the branch arrived: scores, a table of "confirmed
+defects", and recommendations. Each claim was checked against the code on the branch rather than
+taken on its word. What held, and what was done about it:
+
+| claim | verified | done |
+|---|---|---|
+| a fan-out member whose process cannot start leaves its row without an end; the step reading the rows dies for every member | **yes** — `run_all` with `/nonexistent/x` beside `true`: the failed row had `argv, key, started_at` and nothing else | `fanout.py` catches the start failure: the row gets `ended_at`, returncode 127, the reason in stderr, `start_failed` |
+| a retry replaces the first attempt's result; its call and its evidence directory leave the receipt and the record counts one call where two were made | **yes** — `by_label[label] = r` overwrote; `run_id` was the same, so the second attempt wrote into the first's evidence directory | every attempt's result is kept (`attempt_results`); the attempt number travels to the call (`AGENTSTACK_ATTEMPT`), which names its evidence `-a<n>`; `model_calls` counts attempts; trajectory counts fan-out retries |
+| the panel shows "no approvals waiting" when the approvals API could not be read | **yes** — `showWaiting(0)` on any non-list | "could not read" is its own state: a `?` badge, a red line with the reason |
+| the 15 s refresh rebuilds the approvals table and loses a reason being typed | **yes** | typed values and focus are kept across the rebuild |
+| the first example (hello-lane, no model call) cannot be started from the panel without a routed provider | **yes** — the start gate was `valid && ROUTE` for every workflow | the gate reads the workflow's `capabilities` (now in `/api/workflows`): HOLD blocks only a workflow that asks for `admission` |
+| the usage header says "remaining" over a column that shows used % | **yes** | header reads 사용량 |
+| the manifest example in docs/packages.md has `requires:` twice | **yes** (YAML keeps the second: `capabilities` vanished from the example) | merged |
+| CONTRACT's "what belongs on a screen" puts starting a run and applying configuration on the command side; the panel does both | **yes** | not a code fix: #24, the operator decides whether the rule or the panel changes |
+| execution facts should be collected by the platform, not listed by the step | design — agreed in principle (CONTRACT, common parts are the stack's) | #22 |
+| the step/request/result contract should carry a version and its documented examples should be tested | design — the duplicate `requires:` is the evidence | #23 |
+| a package that brings its own runtime (trading) has no extension contract | design — follows #18 and the trading author's answer | #25 |
+| a new author's first success should be measured, not assumed | design — the hello-lane gate is the evidence | #26 |
+
+Six controls were added for the two step defects (`review_controls.py`: a member that cannot
+start, the member beside it, env reaching the process; a retried member end to end through
+`tasks.py` with a fake chain that fails on attempt 1 and produces on attempt 2 — both attempts
+in the receipt, the retry named apart, two calls reported). The old `fanout.py` fails the first
+of them; review_controls 64/64, static 10/10.
+
+What the review scored and this record does not: a score is a reviewer's summary; the rows above
+are what was measured.
+
+## 68. The connective tissue, read as code: five signs, verified, three of them cut (2026-10-02)
+
+A second outside reading — of the structure this time, not the behaviour — said the big
+boundary (platform / workflow) holds and the *connections* between execution, state and record
+had grown rules nobody owns. Its criterion was the right one: not how long a file is, but how
+many other places one has to know to change one thing. Each sign was checked on `main@f114ce9`
+before anything moved:
+
+| sign | verified | done |
+|---|---|---|
+| step names are an API: the screen read a step *named* `route` and steps whose names start with `record` | **yes** — `run_workflow.py` 487 and 496 | `stack/runevents.py` reads the event log and recognises the router and the recorder by what they *answered* (`decision`+`evaluated`+`provider`; `mlflow_run_id`), under any name. A step named `route` that did not route is not read as the router (control) |
+| the view writes: `view()` built the screen's answer and repaired `meta.json` on the way | **yes** — 513–525 | `stack/runstate.py` owns the run's state; `recover()` is the one explicit restoration and `run_workflow.read()` calls it by name; `view()` writes nothing (control: a view leaves meta untouched; read persists) |
+| the door is chosen in three places: `agent_task.py`, `tasks.py` and `task_chain.py` each decided broker-or-local | **yes** — agent_task 56, tasks 98, task_chain 44 | the fan-out and a chain start `agent_task.py` and never choose; the swap lives where the call is made, once |
+| results are re-packed by hand along `agent_task → receipt → record → trajectory`, so a field could vanish mid-way (which is how §67's lost attempt happened) | **yes** | `stack/execution.py`: one record (`FIELDS`, `contract: 1`), `record()`/`normalize()`/`problems()`, `of_member()` for what a receipt member made; `agent_task.py` writes it to stdout *and* `<evidence_dir>/execution.json`; the receipt keeps every attempt in it; the recorder counts executions through it (every attempt, every chain step); the trajectory reads the platform's copy first. A control holds docs/packages.md's `output:` list equal to `FIELDS` |
+| the router is asked in three moves by six callers (route step, admit_models, capabilities, ops_health, ops API, verify.sh), each with its own copy of the moves | **yes** — the reuse window had reached five of six | `stack/admission.py`: `evaluate(profile | policy, candidates, evidence_dir)`; the six ask it. A collector that fails is reported (`collect_error`) and the router says "unknown", never a crash in the step |
+| `run-agent.mjs` carries provider config, principal auth, approvals, ACP, ledger and result storage in one file | **yes** (497 lines, module-level `LOGIN`/`PRINCIPAL`) | not here: it runs only with a model call, which no stack-level check makes. #27, with the fixture to take before cutting |
+
+What did not move: `cfg.py` (long, and one thing), the package/platform boundary itself, and
+`run_workflow.py`'s commands — it still starts, stops, resumes and answers, 616 → 525 lines,
+with the reading and the state elsewhere. Nothing a package calls changed: `agent_task.py`'s
+argv and output keys, the receipt's keys, the record step's payload, `run_workflow.py`'s
+commands and the view's fields are the same, plus `contract` and `attempt_results`.
+
+Controls: review_controls **92/92** (28 new: the event reader under foreign names, the pure
+view and the explicit restore, the execution record and its document, the one door to the
+router end to end, the one door to a call); trial_controls' two pins that asserted the *old*
+three-way door now assert the single one, and its screen pin reads the event reader instead of
+`eval`-ing a line of `run_workflow.py`'s source. Static 10/10. The stack level is the CI run
+named in PR #21.
+
+## 69. The second cold start: a fresh clone beside the live instance (measured 2026-10-02)
+
+What a new person receives, measured on the second install's machine (Windows, Docker Desktop):
+a fresh clone in its own directory, its own `config/instance.env` (`coldverify`, its own ports),
+brought up beside the live instance. **Full 21/21**, and `router_controls`, which the stack
+level skips without logins, **26/26** after signing in. No remnant of an earlier name in the
+remote (`cadp278-broker` is gone); `.cadp-backup.key` stays as the reader of older backups.
+
+Docker Desktop failed to start first, twice, with the stale-socket pattern of §5
+(`sailor-ingest.sock`, then `docker-secrets-engine/engine.sock` and `dockerInference`): a
+Docker Desktop defect with open reports, not this stack's to guarantee — the stack's one duty is
+`install.sh --check` stopping at "start Docker", which it does. The recovery is §5's.
+
+Three things verify does not see, found by doing it, each checked in the code before it moved:
+
+| found | verified | done |
+|---|---|---|
+| every instance built `agentstack/*:local`, so the second instance's build re-tagged the images the live one was running on; the live containers kept their (now untagged) image until recreated, and a recreate would run the live tree on the new toolchain | **yes** — six fixed image names in `docker/compose.poc.yaml`, `up -d --build` on every bring-up; what `release.sh record` reports as "a rebuild pruned it under the running container" (§66, #20) | images are `${STACK:-agentstack}/…` (18 lines); the release candidate image is `$STACK/governed-runtime:cand-…` too |
+| a bare `docker compose …` in the second instance's directory used the live instance's names and made `agentstack-*` networks there | **yes** — `docker/.env` is gitignored and nothing on a clone wrote it; `up.sh` exported `STACK` into its own environment only; `restore.sh` alone wrote the file | `scripts/instance_env.sh`: `config/instance.env` → `docker/.env`, key by key, keeping what else is there; `up.sh` runs it on every bring-up and `restore.sh` on a restore |
+| a third instance fails inside compose with "address pools fully subnetted" | **yes** — 14 networks in the composition + Preloop's one = 15; Docker's default pools hold about 31; two instances fill them | `install.sh --check` counts the subnets in use against what this instance needs and names the remedy: wider `default-address-pools` in the daemon (docs/install.md), not fewer networks — each one is a boundary of §48–§55 |
+
+Controls: review_controls **100/100** (8 new: every image named for the instance, the candidate
+image, the env writer end to end — takes the keys, keeps the rest, idempotent, no-op without
+instance.env — the two callers, the headroom check, and 15 as the measured count). The stack
+level is the CI run named in PR #21; the full level is the measurement above.

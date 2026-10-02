@@ -19,9 +19,17 @@ Three layers, and only the first is automatic:
 ```bash
 scripts/up.sh --check                       # the stack is healthy before it is changed
 scripts/backup.sh                           # the Preloop database, logins, MLflow — not part of a release
-scripts/release.sh record --tag pre-$(date +%Y%m)   # what runs now, kept: images, toolchain, configuration
+scripts/release.sh record --tag pre-$(date +%Y%m)   # a *named* rollback point (update records one itself, unnamed)
 scripts/drift.sh                            # what moved since last time
 ```
+
+The backup is the one step a rollback cannot stand in for: a Preloop schema migration is not
+undone by `rollback`. It was skipped once (OPERATIONS §65) and taken afterwards, which was valid
+only because that round moved no Preloop version. Take it first.
+
+If `record` fails with `No such image: sha256:…`, a rebuild pruned an image a running container
+still references; `scripts/up.sh --recreate` puts every container on an image that exists, and
+nothing has been touched yet (§65).
 
 A `newer` line is a question, not an instruction. Three kinds of answer:
 
@@ -46,10 +54,16 @@ A `newer` line is a question, not an instruction. Three kinds of answer:
 3. On the instance:
 
 ```bash
-scripts/release.sh update --to <rev>        # records what runs now, moves the workspace, rebuilds, checks
+scripts/release.sh update --to <rev> [--replace-toolchain]
+                                            # records what runs now, moves the workspace, rebuilds, checks
 scripts/verify.sh --level full              # the checks, the three control suites, package locks,
                                             # controls and floors, then hello-lane, auto and novel-a
 ```
+
+`--replace-toolchain` is needed whenever a CLI pin in `docker/agent.Dockerfile` moved (claude-code,
+codex, grok, the acp adapters, acpx): the toolchain lives in the home volume, not the image, and
+`update` **refuses** an update whose toolchain would silently stay behind — measured, §65:
+`claude: running '2.1.278', candidate image '2.1.287'`. The refusal leaves the instance untouched.
 
 4. `verify.sh --level full` makes the cheap runs (`hello-lane`, `auto`, `novel-a`). For a provider
    CLI change, add the N7 native-tool check on the vendor that changed (OPERATIONS §7) by hand:

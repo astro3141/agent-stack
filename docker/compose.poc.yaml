@@ -98,7 +98,7 @@ services:
     build:
       context: .
       dockerfile: agent.Dockerfile
-    image: agentstack/governed-runtime:local
+    image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent
     # PID 1 here is the service itself, and a service is not a reaper: every provider CLI
     # the adapter starts and every child the file server spawns is left as a zombie when
@@ -168,7 +168,7 @@ services:
     build:
       context: .
       dockerfile: mlflow.Dockerfile
-    image: agentstack/mlflow:3.16.1
+    image: ${STACK:-agentstack}/mlflow:3.16.1
     container_name: ${STACK:-agentstack}-mlflow
     init: true
     restart: unless-stopped
@@ -203,30 +203,13 @@ services:
       --artifacts-destination /mlflow/artifacts
       --workers 1
 
-  toolsvc:
-    build:
-      context: .
-      dockerfile: toolsvc.Dockerfile
-    image: agentstack/toolsvc:local
-    container_name: ${STACK:-agentstack}-toolsvc
-    init: true
-    restart: unless-stopped
-    networks:
-      toolnet:
-        # instance-independent name: the Preloop policy addresses the tool servers by it
-        aliases: [toolsvc]
-    volumes:
-      - type: bind
-        source: ${POC_HOST_DIR:-..}/evidence/n1-markers
-        target: /markers
-
   # #281 option B: filesystem MCP behind Preloop. On toolnet only: the agent cannot reach it
   # except through Preloop's MCP proxy, which is where the rules are evaluated.
   fsmcp:
     build:
       context: .
       dockerfile: fsmcp.Dockerfile
-    image: agentstack/fsmcp:local
+    image: ${STACK:-agentstack}/fsmcp:local
     container_name: ${STACK:-agentstack}-fsmcp
     init: true
     restart: unless-stopped
@@ -241,8 +224,12 @@ services:
   # Holds provider credentials and has egress, so it runs no service and joins no network the
   # agent is on; it only writes observation files into quota-obs.
   quota:
-    image: agentstack/governed-runtime:local
+    image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-quota
+    # Optional: codex's second quota source (OPERATIONS §29). Off unless `scripts/up.sh --observer`
+    # (or a quota-home volume already exists): without its own login it only ran codexbar every
+    # five minutes into exit 1 (second install, issue #16).
+    profiles: ["observer"]
     init: true
     restart: unless-stopped
     networks:
@@ -262,7 +249,7 @@ services:
     build:
       context: .
       dockerfile: egress.Dockerfile
-    image: agentstack/egress:local
+    image: ${STACK:-agentstack}/egress:local
     container_name: ${STACK:-agentstack}-egress
     init: true
     restart: unless-stopped
@@ -286,7 +273,7 @@ services:
   # the guard refuses exactly those writes. Same image as the agent (it carries the Preloop CLI
   # and this tree's toolchain), no workspace, no provider logins, and unreachable from the agent.
   admin:
-    image: agentstack/governed-runtime:local
+    image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-admin
     depends_on:
       agent: {condition: service_started}   # it shares agent-home: filled by the main agent first
@@ -332,7 +319,7 @@ services:
     build:
       context: ..
       dockerfile: docker/ops.Dockerfile
-    image: agentstack/ops:local
+    image: ${STACK:-agentstack}/ops:local
     container_name: ${STACK:-agentstack}-ops
     depends_on:
       agent: {condition: service_started}   # it shares agent-home: filled by the main agent first
@@ -382,7 +369,7 @@ services:
   # published port does nothing (OPERATIONS.md §14). It holds no credentials, has no Docker
   # access, and mounts the workspace read-only: it renders an event log and nothing else.
   replay:
-    image: agentstack/governed-runtime:local
+    image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-replay
     init: true
     restart: unless-stopped
@@ -404,7 +391,7 @@ services:
     build:
       context: ..
       dockerfile: docker/hub.Dockerfile
-    image: agentstack/hub:local
+    image: ${STACK:-agentstack}/hub:local
     container_name: ${STACK:-agentstack}-hub
     init: true
     restart: unless-stopped
@@ -424,7 +411,7 @@ services:
   # network, out of routing reach. Alias `egress`, port 8888 — so inside a profile, every step,
   # CLI and adapter keeps the exact configuration it has today and lands on this list.
   egress-probe-proxy:
-    image: agentstack/egress:local
+    image: ${STACK:-agentstack}/egress:local
     container_name: ${STACK:-agentstack}-egress-probe
     init: true
     restart: unless-stopped
@@ -437,7 +424,7 @@ services:
         aliases: [egress]
 
   egress-closed-proxy:
-    image: agentstack/egress:local
+    image: ${STACK:-agentstack}/egress:local
     container_name: ${STACK:-agentstack}-egress-closed
     init: true
     restart: unless-stopped
@@ -457,7 +444,7 @@ services:
   # with no container is refused by name, which is the answer a missing list should get.
   egress-research-proxy:
     profiles: ["egress-research"]
-    image: agentstack/egress:local
+    image: ${STACK:-agentstack}/egress:local
     container_name: ${STACK:-agentstack}-egress-research
     init: true
     restart: unless-stopped
@@ -471,7 +458,7 @@ services:
 
   egress-research-review-proxy:
     profiles: ["egress-research-review"]
-    image: agentstack/egress:local
+    image: ${STACK:-agentstack}/egress:local
     container_name: ${STACK:-agentstack}-egress-research-review
     init: true
     restart: unless-stopped
@@ -493,7 +480,7 @@ services:
   # measured on the cold-start runner 2026-10-02, after eight runs that happened not to). The
   # profile agents therefore wait for the main agent, which fills the volume alone.
   agent-probe:
-    image: agentstack/governed-runtime:local
+    image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-probe
     depends_on:
       agent: {condition: service_started}
@@ -519,7 +506,7 @@ services:
         aliases: [runner-probe]
 
   agent-closed:
-    image: agentstack/governed-runtime:local
+    image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-closed
     depends_on:
       agent: {condition: service_started}
@@ -546,7 +533,7 @@ services:
 
   agent-research:
     profiles: ["egress-research"]
-    image: agentstack/governed-runtime:local
+    image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-research
     depends_on:
       agent: {condition: service_started}
@@ -573,7 +560,7 @@ services:
 
   agent-research-review:
     profiles: ["egress-research-review"]
-    image: agentstack/governed-runtime:local
+    image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-research-review
     depends_on:
       agent: {condition: service_started}
@@ -602,7 +589,7 @@ services:
   # its process; and no vendor CLI ever runs under it, which is what kept per-role uids poisonous
   # in §48–§50. It alone receives principals.env; the profile agents receive no credential at all.
   broker:
-    image: agentstack/governed-runtime:local
+    image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-broker
     init: true
     restart: unless-stopped

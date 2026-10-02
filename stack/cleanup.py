@@ -36,11 +36,12 @@ from pathlib import Path
 sys.path.insert(0, "/work/stack")
 import settings
 import run_workflow
+import runstate
 
 RT = settings.runtime()
 WS = Path(RT["paths"]["workspace_root"])
 EVID = Path(RT["paths"]["evidence_root"])          # /work/evidence/p281
-RUNS = run_workflow.RUNS                            # /work/evidence/ui-runs
+RUNS = runstate.RUNS                                # /work/evidence/ui-runs
 RUN_ID = re.compile(r"^[0-9a-f]{8}")
 
 

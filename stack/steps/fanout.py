@@ -15,14 +15,16 @@ thread per child and each child stamps its own end.
 # What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
 # "guarded" — it recognises the repeat; "no" — it does the work again.
 REPEATABLE = "no"   # it starts whatever it was given
-import subprocess, threading, time
+import os, subprocess, threading, time
 
 
 def run_all(jobs):
     """jobs: [{"key": str, "argv": [..], **extra}] → (rows, wall_s)
 
     Each row carries the job's extras plus: started_at, ended_at (offsets in seconds from the
-    first start), stdout, stderr, returncode.
+    first start), stdout, stderr, returncode — every row, including one whose process could not
+    be started (returncode 127, the reason in stderr, `start_failed`). A job may carry `env`,
+    added to the child's environment.
     """
     t0 = time.time()
     rows = [dict(j) for j in jobs]
@@ -30,10 +32,19 @@ def run_all(jobs):
 
     def work(row):
         row["started_at"] = round(time.time() - t0, 2)
-        p = subprocess.Popen(row["argv"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        out, err = p.communicate()
+        env = {**os.environ, **(row.get("env") or {})} if row.get("env") else None
+        try:
+            p = subprocess.Popen(row["argv"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            out, err, rc = *p.communicate(), p.returncode
+        except Exception as e:                           # noqa: BLE001 — an executable that is not
+            # there, a path that cannot be run: this member failed to *start*. It used to leave
+            # the row without an end, and the step reading the rows died on every member's behalf
+            # (review 2026-10-02) — one member's failure touching the others, which is the one
+            # thing this module promises not to let happen.
+            out, err, rc = "", f"{type(e).__name__}: {e}", 127
+            row["start_failed"] = True
         row["ended_at"] = round(time.time() - t0, 2)      # this child's own end, not the loop's
-        row["stdout"], row["stderr"], row["returncode"] = out, err, p.returncode
+        row["stdout"], row["stderr"], row["returncode"] = out, err, rc
 
     for row in rows:
         t = threading.Thread(target=work, args=(row,), daemon=True)

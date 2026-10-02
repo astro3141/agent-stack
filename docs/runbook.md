@@ -109,7 +109,7 @@ The second is the vendor's usage endpoint refusing the reading (HTTP 429), not t
 first step, the panel's accounts view and dashboard, `up.sh --check`, `verify.sh`) took its own
 live reading, and none was kept. The collector now keeps the last good reading beside the login
 (`/route/.quota/<provider>-<login>.json`), presents it again for 120 s instead of asking
-(`AGENTSTACK_OBS_REUSE_S`), and when the vendor refuses, lets it stand in with the refusal beside it
+(the profile's `quota.reuse_s`), and when the vendor refuses, lets it stand in with the refusal beside it
 (`source: cache:…`, `live_failed`). The router judges the kept reading's age exactly as before, so
 a 429 that outlasts `max_age_s` is still `stale`, honestly. If you still see this line, the
 provider has had no good reading since the stack came up: wait a few minutes and re-collect
@@ -188,8 +188,8 @@ hold's reason is this line.
 **Look:** the accounts view shows all three providers 연결됨, and one of them is refused:
 
 ```
-codex   불일치   unknown: nothing has observed this account yet (executing='email:4d34…')
-                 — the quota observer has no login for it
+codex   불일치   unknown: nothing has read this provider's login yet (executing='email:4d34…')
+                 — sign in on the panel; the quota observer is not it
 ```
 
 **What it means.** The router uses a provider only when the account that was **observed** is the
@@ -209,6 +209,7 @@ If it is still refused, the observer's own login is the second source, and it mu
 account the routing login uses:
 
 ```bash
+scripts/up.sh --observer                 # the observer is a compose profile, off by default (issue #16)
 docker exec -it "$STACK-quota" codex login
 scripts/up.sh --check
 ```
@@ -330,7 +331,7 @@ instances, and the check passes on the ones where the scan landed.
 
 ```bash
 docker exec agentstack-admin /opt/venv/bin/python /work/stack/cfg.py rescan
-# {"ok": true, "policy": "policy/b-fsmcp.yaml", "scanned": ["…-toolsvc", "…-fsmcp"]}
+# {"ok": true, "policy": "policy/b-fsmcp.yaml", "scanned": ["…-fsmcp"]}
 ```
 
 `scripts/up.sh` now does this by itself: when the runtime cannot see the tools it **applies the

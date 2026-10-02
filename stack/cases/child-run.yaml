@@ -1,0 +1,71 @@
+# A stack-owned fixture: a parent that starts another workflow as a step and waits — the two
+# capabilities docs/packages.md says come from Conductor rather than from this stack. Nothing in
+# it calls a model, so it runs at the stack level of scripts/verify.sh, on any machine.
+#
+# What it measures (issue #13): the run id a child's step sees. hello-lane's step writes into
+# <workspace_root>/<run id>/, so the path it reports *is* the id the child ran under; `report`
+# puts it beside the parent's own. Same id → a child's evidence directory and record would
+# collide with its parent's; different → they stand apart, and the record can link them.
+workflow:
+  name: child-run
+  description: Start hello-lane as a sub-workflow, wait a second, report which run id the child saw
+  entry_point: child
+  input:
+    profile:
+      type: string
+      required: false
+      default: research-default
+      description: execution profile — taken and recorded, not used here
+    text:
+      type: string
+      required: false
+      default: "from the parent"
+      description: what the child writes
+  limits:
+    max_iterations: 8
+    timeout_seconds: 300
+
+agents:
+  - name: child
+    type: workflow
+    workflow: /work/packages/hello-lane/workflow.yaml
+    input_mapping:
+      text: "{{ workflow.input.text }}"
+    output:
+      path: {type: string}
+      sha256: {type: string}
+      chars: {type: string}
+    routes:
+      - to: pause
+
+  - name: pause
+    type: wait
+    duration: 1s
+    reason: the polling pattern — wait, then a route decides whether to loop back
+    routes:
+      - to: report
+
+  - name: report
+    type: script
+    description: The parent's run id beside the one the child's step saw
+    command: "${POC_PY:-/opt/venv/bin/python}"
+    args: ["/work/stack/cases/report_child.py", "{{ child.output.path }}", "{{ pause.output.waited_seconds }}"]
+    output:
+      parent_run: {type: string}
+      child_run: {type: string}
+      same_run: {type: string}
+      waited_seconds: {type: string}
+    routes:
+      - to: done
+
+  - name: done
+    type: terminate
+    status: success
+    reason: "child ran as {{ report.output.child_run }}, parent is {{ report.output.parent_run }}"
+
+output:
+  parent_run: "{{ report.output.parent_run }}"
+  child_run: "{{ report.output.child_run }}"
+  same_run: "{{ report.output.same_run }}"
+  child_path: "{{ child.output.path }}"
+  waited_seconds: "{{ report.output.waited_seconds }}"

@@ -171,13 +171,15 @@ def controls_roles():
 def controls_record_and_screen():
     print("screen — every recording step's MLflow result reaches the run screen")
     # (what novel-a.yaml sends to its record steps is novel's: packages/novel/controls.py)
-    src = open("/work/stack/run_workflow.py", encoding="utf-8").read()
-    conds = re.findall(r'elif t == "script_completed" and (.+?):\n', src)
-    cond = next((c for c in conds if "record" in c), "")
-    for step in ("record", "record_hold", "record_pass", "record_block", "record_cycle"):
-        check(f"the screen reads {step}", bool(eval(cond, {"d": {"agent_name": step}, "str": str})), True)
+    # by what the step answered, not by its name (stack/runevents.py): a recording step is one
+    # whose output carries mlflow_run_id, whatever the workflow calls it
+    import importlib as _il_ev
+    _ev = _il_ev.import_module("runevents")
+    for step in ("record", "record_hold", "record_pass", "record_block", "record_cycle", "persist_result"):
+        check(f"the screen reads {step}",
+              _ev.is_record({"mlflow_run_id": "x", "experiment_id": "1"}) and not _ev.is_routing({"mlflow_run_id": "x"}), True)
     check("an unrelated step is not read as a record",
-          bool(eval(cond, {"d": {"agent_name": "route"}, "str": str})), False)
+          _ev.is_record({"decision": "ROUTE", "provider": "claude", "evaluated": "[]"}), False)
 
 
 # ------------------------------------------------- the fan-out steps, with the real fanout module
@@ -922,9 +924,14 @@ def controls_composition():
           and bool(egress), True)
     optional = sorted(n for n, ps in profiled.items() if ps and n not in egress)
     # the screen's services (hub, ops, the replay dashboard) and recording are the optional ones
-    check("only these services are optional", optional, ["hub", "mlflow", "ops", "replay"])
-    for must in ("egress", "toolsvc", "fsmcp", "quota", "agent"):
+    # the screen (hub, ops, replay), recording, and the quota observer (codex's second source) are
+    # optional; the governed runtime, its tools and its only way out are not (issue #16)
+    check("only these services are optional", optional, ["hub", "mlflow", "ops", "quota", "replay"])
+    for must in ("egress", "fsmcp", "agent", "apiguard", "broker"):
         check(f"{must} can never be dropped", must in optional, False)
+    check("the #278 marker tool server is gone from the composition and the policy",
+          "toolsvc" not in open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
+          and "toolsvc" not in open("/work/policy/b-fsmcp.yaml", encoding="utf-8").read(), True)
 
     up = open("/work/scripts/up.sh", encoding="utf-8").read()
     for name in ("full", "no-record", "runtime"):
@@ -1278,8 +1285,11 @@ def controls_multi_model_admission():
           in src.replace('"why"', "'why'"), True)
     check("and the step decides nothing: no HOLD, no exit code, no refusal of the run",
           ("HOLD" not in src and "SystemExit(1)" not in src), True)
+    # the narrowing is admission.py's (one door to the router, §68): this step names who, the
+    # door keeps the profile's thresholds, windows and logins
     check("the profile's own thresholds are kept; only who is asked about changes",
-          'pol["candidates"] = wanted' in src, True)
+          "candidates=wanted" in src
+          and 'pol["candidates"] = list(candidates)' in open("/work/stack/admission.py", encoding="utf-8").read(), True)
 
 
 def controls_h1_integration():
@@ -1294,10 +1304,14 @@ def controls_h1_integration():
     tk = open("/work/stack/steps/tasks.py", encoding="utf-8").read()
     ch = open("/work/stack/steps/task_chain.py", encoding="utf-8").read()
     bd = open("/work/stack/steps/broker_dispatch.py", encoding="utf-8").read()
-    check("the fan-out swaps the entrypoint on the mapping and changes nothing else",
-          ("role_egress.profile_of(principal)" in tk and "broker_dispatch.py" in tk), True)
-    check("a chain's model step swaps the same way",
-          ("role_egress.profile_of(st" in ch and "broker_dispatch.py" in ch), True)
+    at = open("/work/stack/steps/agent_task.py", encoding="utf-8").read()
+    # one door (§68): the swap is agent_task.py's, and the fan-out and a chain start it and never
+    # choose — three copies of the rule used to live in three files
+    check("the door is chosen once, in agent_task.py, on the role's declaration",
+          ("role_egress.profile_of(principal)" in at and "broker_dispatch.py" in at), True)
+    check("the fan-out and a chain start agent_task.py and do not choose",
+          ("broker_dispatch" not in tk and "broker_dispatch" not in ch
+           and "agent_task.py" in tk and "agent_task.py" in ch), True)
     check("the brokered step keeps agent_task's argv contract",
           ("sys.argv[1:6]" in bd and "sys.argv[8]" in bd), True)
     check("and carries no secret: the request is the prompt and the role's name",
@@ -1858,7 +1872,7 @@ def controls_packages():
           '"--agent-kinds", "claude-code,codex"' in boot, True)
     check("admission is the router's answer, not one source's file",
           'json.load(open("/obs/codex.raw.json"' not in capsrc
-          and "would take" in capsrc and "router.py" in capsrc, True)
+          and "would take" in capsrc and "admission.evaluate(" in capsrc, True)
     check("a package's declared capabilities are read by the runner",
           "def requires_of(" in pk_src and "packages.requires_of(workflow)" in rw_src, True)
     check("a run id used twice is an answer, not a traceback",
@@ -2059,7 +2073,8 @@ def controls_docs():
                                    "observed_at": _now.isoformat()}, _pol, _now)["why"]
     check("an observation nobody made is unknown, not a mismatch",
           absent.startswith("unknown:"), True)
-    check("and it says which login is missing", "quota observer" in absent, True)
+    check("and it sends the reader to the panel, not to the observer",
+          "sign in on the panel" in absent and "observer is not it" in absent, True)
     check("two accounts that really differ are still a mismatch",
           differ.startswith("account_mismatch:"), True)
     # A vendor that reports no usage figure (measured: Grok's CLI proxy, §64) is unknown unless
@@ -2277,7 +2292,7 @@ def controls_resume():
                             "agent_name": "author"}}
         finished = {"type": "workflow_completed", "timestamp": 2,
                     "data": {"output": {"decision": "PASS"}}}
-        rw.RUNS = root
+        rw.runstate.RUNS = root
         meta = {"ui_id": "u1", "state": "finished", "launcher_pid": 1, "instance": "x"}
 
         log.write_text(_json.dumps(stopped) + chr(10))
@@ -2308,7 +2323,7 @@ def controls_resume():
         log = d / "conductor-p281-novel-a-20260101-000000-abcd1234.events.jsonl"
         first = '{"type": "workflow_failed", "data": {}}'
         log.write_text(first + chr(10))
-        rw.RUNS = root
+        rw.runstate.RUNS = root
         check("the stop that a resume starts from is not read as its end",
               rw.run_ended("u2", len(first) + 1), False)
         check("and what the resume itself writes is", rw.run_ended("u2", 0), True)

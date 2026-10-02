@@ -86,23 +86,11 @@ def probe(profile=DEFAULT_PROFILE):
     # was not going to use — cost-first names the same three providers in a different order, and a
     # profile with different thresholds would have been judged on thresholds nobody asked for.
     try:
-        import subprocess, tempfile
-        prof = settings.profile(profile)
-        if prof is None:
+        if settings.profile(profile) is None:
             raise FileNotFoundError(f"no profile named {profile!r}")
-        pol = prof.get("routing") or {}
-        with tempfile.TemporaryDirectory() as tmp:
-            os.makedirs(f"{tmp}/obs", exist_ok=True)
-            json.dump(pol, open(f"{tmp}/policy.json", "w"))
-            env = {**os.environ, "AGENTSTACK_MODEL_ROUTES": json.dumps(pol.get("model_route") or {}),
-                   "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {})}
-            subprocess.run([sys.executable, "/work/stack/collect_obs.py", f"{tmp}/obs"],
-                           capture_output=True, env=env, timeout=180)
-            out = subprocess.run([sys.executable, "/work/stack/router.py",
-                                  f"{tmp}/policy.json", f"{tmp}/obs"],
-                                 capture_output=True, text=True, timeout=60).stdout
-        d = json.loads(out)
-        usable = [e["provider"] for e in d.get("evaluated") or [] if e.get("eligible")]
+        import admission
+        d = admission.evaluate(profile)
+        usable = admission.eligible(d)
         fresh = bool(usable)
         detail = (f"under {profile}, the router would take {usable[0]}" if fresh
                   else f"under {profile}, no eligible provider: " + "; ".join(

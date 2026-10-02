@@ -8,6 +8,7 @@ providers:
 
 quota:
   max_age_s: 1800
+  reuse_s: 120                    # a kept reading younger than this is presented again, not taken again (OPERATIONS §64)
   require_windows:                # per provider — the same statement as research-default (OPERATIONS §64)
     codex: [weekly]
     grok: []

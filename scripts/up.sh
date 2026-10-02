@@ -13,12 +13,14 @@
 #   no-record  without MLflow — runs execute, nothing about them is recorded or comparable
 #   runtime    without MLflow and without the screen — runs start from the CLI only
 #
-# What is never optional: Preloop (tool rights and approvals), the egress allowlist proxy, the
-# file tool server and the quota observer. Dropping any of those does not make the stack smaller,
-# it makes it something else — one that cannot say what an agent was allowed to do.
+# What is never optional: Preloop (tool rights and approvals), the egress allowlist proxy and
+# the file tool server. Dropping any of those does not make the stack smaller, it makes it
+# something else — one that cannot say what an agent was allowed to do. The quota observer is
+# optional (--observer): every provider is read with the login that executes (OPERATIONS §29),
+# and the observer is codex's second source, for an operator who signs it in.
 #
 # No manual step afterwards: Preloop joins the PoC networks through docker/preloop.agentstack.yaml,
-# every PoC container restarts on its own, the quota observer's loop is its container process,
+# every PoC container restarts on its own, the observer's loop (when on) is its container process,
 # and logins / Preloop's database / MLflow live in volumes or bind mounts.
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,6 +33,8 @@ if [ -f "$HERE/config/instance.env" ]; then
     case "$k" in ''|'#'*) continue;; esac
     eval "[ -n \"\${$k:-}\" ]" || eval "$k=\$v"
   done < "$HERE/config/instance.env"
+  # and compose run by hand in this directory must name the same instance: docker/.env (§69)
+  bash "$HERE/scripts/instance_env.sh" "$HERE"
 fi
 PRELOOP_DIR="${PRELOOP_DIR:-$HOME/.preloop-oss}"
 # docker on Windows needs native paths; path conversion is off below (MSYS_NO_PATHCONV)
@@ -40,6 +44,7 @@ MODE="up"; COMPOSITION="${COMPOSITION:-full}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --composition) COMPOSITION="${2:-full}"; shift 2;;
+    --observer) OBSERVER=1; shift;;
     --check|--recreate|up) MODE="$1"; shift;;
     *) echo "unknown argument: $1" >&2; exit 2;;
   esac
@@ -59,6 +64,12 @@ for _f in "$HERE"/docker/egress/profiles/*.allow; do
   case "$_n" in closed|probe) continue;; esac
   COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}egress-$_n"
 done
+# The quota observer — codex's optional second source with a login of its own (§29) — is a compose
+# profile: on with --observer, and kept on once its volume exists (an operator who signed in there
+# once keeps it). Without a login it only polled into exit 1 (second install, issue #16).
+if [ "${OBSERVER:-0}" = 1 ] || docker volume inspect "${STACK:-agentstack}-quota-home" >/dev/null 2>&1; then
+  COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}observer"
+fi
 export COMPOSE_PROFILES
 # One instance per name: STACK selects container/volume/network names and the published ports.
 # The defaults are the live instance; a restored copy runs under another name (scripts/restore.sh).
@@ -101,7 +112,7 @@ if [ "$MODE" != "--check" ]; then
   chmod -R a+rwX "$HERE/config/generated" "$HERE/evidence" 2>/dev/null || true
 
   echo "== PoC stack (composition: $COMPOSITION)"
-  # `--build` because the images whose source is this tree (agent, ops, hub, toolsvc, fsmcp,
+  # `--build` because the images whose source is this tree (agent, ops, hub, fsmcp,
   # egress, mlflow) are built from it: without it an edit to ops/server.py or hub/index.html
   # simply does not reach the running stack, and nothing says so. Layers are cached, so an
   # unchanged tree costs a few seconds.
@@ -115,9 +126,10 @@ if [ "$MODE" != "--check" ]; then
   drop=""
   case ",$COMPOSE_PROFILES," in *,record,*) ;; *) drop="$drop mlflow";; esac
   case ",$COMPOSE_PROFILES," in *,ui,*) ;; *) drop="$drop ops hub replay";; esac
+  case ",$COMPOSE_PROFILES," in *,observer,*) ;; *) drop="$drop quota";; esac
   if [ -n "$drop" ]; then
     echo "   not in this composition:$drop"
-    (cd "$HERE/docker" && COMPOSE_PROFILES="record,ui" docker compose -f compose.poc.yaml rm -sf $drop >/dev/null) || exit 1
+    (cd "$HERE/docker" && COMPOSE_PROFILES="record,ui,observer" docker compose -f compose.poc.yaml rm -sf $drop >/dev/null) || exit 1
   fi
   # The generated settings (config/generated/: runtime.json, profiles/<name>.json) are derived from
   # config/ and git-ignored, so a fresh clone has none — and they used to be generated only on the
@@ -329,8 +341,13 @@ fi
 # The observer's own login is a second source, not a requirement: codex is read with the login that
 # executes (OPERATIONS §29). Reported, not failed — a check that fails on something optional teaches
 # an operator to ignore checks.
-printf '  --    %-44s %s
+if docker ps --format '{{.Names}}' | grep -qx "$STACK-quota"; then
+  printf '  --    %-44s %s
 ' "observer codex login (optional)"   "$(docker exec "$STACK-quota" sh -c 'codex login status 2>&1 | grep -q "Logged in" && echo yes || echo no' 2>/dev/null)"
+else
+  printf '  --    %-44s %s
+' "observer codex login (optional)"   "not in this composition (scripts/up.sh --observer)"
+fi
 echo "== quota observer"
 # A login file can exist while its token is dead: the router then reports the provider as
 # ineligible for an *unknown* reason, and every run that needs it holds. Being at a limit or

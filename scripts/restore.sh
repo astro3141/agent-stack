@@ -225,6 +225,7 @@ replace_with evidence-runs runs "$WORKSPACEU/evidence"
 replace_with evidence-conductor-events conductor-events "$WORKSPACEU/evidence"
 replace_with config config "$WORKSPACEU"
 replace_with policy policy "$WORKSPACEU"
+replace_with state state "$WORKSPACEU"            # package state (docs/packages.md, "State that outlives a run")
 if untar_host research "$STAGE/x-research"; then
   RES_SRC="$STAGE/x-research/$(ls "$STAGE/x-research" | head -1)"
   rm -rf "$WORKSPACEU/evidence/research"; mkdir -p "$WORKSPACEU/evidence"
@@ -294,8 +295,8 @@ PRELOOP_GATEWAY_PORT=$PRELOOP_GATEWAY_PORT
 PRELOOP_CONSOLE_PORT=$PRELOOP_CONSOLE_PORT
 RESTORED_FROM=$(basename "$ARCHIVEU")
 EOF
-# compose run by hand in that directory needs the same values
-sed 's/^#.*//' "$WORKSPACEU/config/instance.env" | grep -v '^$' > "$WORKSPACEU/docker/.env"
+# compose run by hand in that directory needs the same values — the one writer up.sh uses too
+bash "$WORKSPACEU/scripts/instance_env.sh" "$WORKSPACEU"
 say "instance.env" "config/instance.env, docker/.env"
 
 # ---------------------------------------------------------------- 6. start

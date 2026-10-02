@@ -39,6 +39,7 @@ REPEATABLE = "guarded"   # the same run and judgement return the record already 
 import json, os, sys, time, urllib.request
 
 sys.path.insert(0, "/work/stack")
+import execution
 import settings
 
 
@@ -109,17 +110,11 @@ def executions_of(payload):
             errors.append(f"receipt {os.path.basename(str(rp))}: {type(e).__name__}")
             continue
         for label, m in sorted((rec.get("members") or {}).items()):
-            r = (m or {}).get("result")
-            if not isinstance(r, dict):
-                errors.append(f"receipt member {label}: no execution record")
-                continue
-            steps = [st for st in (r.get("steps") or [])
-                     if isinstance(st, dict) and st.get("run_id") and st.get("kind") == "model"]
-            if steps:
-                # a member that is a chain is several executions, and each gets its own run
-                found.extend({**st, "member": f"{label}:{st.get('step', '')}"} for st in steps)
-            elif r.get("run_id") and r.get("provider"):
-                found.append({**r, "member": label})
+            # every attempt the member made, and every model step of a chain — each its own run
+            # (stack/execution.py owns what counts as one; this step does not pick fields)
+            exs = execution.of_member(label, m or {})
+            if exs:
+                found.extend(exs)
             else:
                 errors.append(f"receipt member {label}: no execution record")
     seen, unique = set(), []

@@ -101,6 +101,14 @@ def validate_profile(p, name, env):
     q = p.get("quota") or {}
     if not (isinstance(q.get("max_age_s"), int) and q["max_age_s"] > 0):
         errs.append(f"profile {name}: quota.max_age_s must be a positive integer")
+    # The reuse window is the operator's number, not the collector's: a kept reading younger than
+    # this is presented again instead of taken again (collect_obs.py `kept`). It has to sit under
+    # max_age_s, or a reading could be reused past the point the router would call it stale.
+    rs = q.get("reuse_s", 120)
+    if not (isinstance(rs, int) and not isinstance(rs, bool) and rs >= 0):
+        errs.append(f"profile {name}: quota.reuse_s must be a non-negative integer (seconds)")
+    elif isinstance(q.get("max_age_s"), int) and rs >= q["max_age_s"]:
+        errs.append(f"profile {name}: quota.reuse_s ({rs}) must be below quota.max_age_s ({q['max_age_s']})")
     req = q.get("require_windows") or []
     if isinstance(req, dict):          # per provider: {claude: [weekly], grok: []}
         for n, ws in req.items():
@@ -123,6 +131,14 @@ def validate_profile(p, name, env):
     t = p.get("tools") or {}
     if not isinstance(t.get("native_tools"), bool):
         errs.append(f"profile {name}: tools.native_tools must be true/false")
+    # Grok's native tools are turned off by a table in its login's own config file, written by the
+    # stack for every grok login (stack/grok_posture.py) — per login, not per run, because Grok
+    # offers no per-run switch. A profile that runs grok with native tools on would be overridden
+    # without a word; it is refused instead, so the limitation is a declaration, not a surprise.
+    if t.get("native_tools") is True and any((pr or {}).get("name") == "grok" for pr in provs):
+        errs.append(f"profile {name}: grok cannot run with tools.native_tools: true — its posture is set per "
+                    "login (stack/grok_posture.py), not per run; a profile that needs Grok's native tools "
+                    "needs a login directory of its own without that table, which this stack does not provision")
     # read-only native tools that may run without asking; anything that writes or executes is refused
     bad = [x for x in (t.get("native_allow") or []) if x not in ("WebSearch", "WebFetch")]
     if bad:
@@ -212,6 +228,7 @@ def cmd_generate(quiet=False):
             "model_route": {x["name"]: x["route"] for x in p["providers"]},
             "login": {x["name"]: x.get("login") or x["name"] for x in p["providers"]},
             "max_age_s": p["quota"]["max_age_s"],
+            "reuse_s": p["quota"].get("reuse_s", 120),
             "require_windows": p["quota"].get("require_windows") or [],
             "max_used_percent": p["quota"].get("max_used_percent") or {},
         }

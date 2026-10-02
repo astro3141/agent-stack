@@ -230,26 +230,19 @@ done
 # providers eligible, since the control cases take that as their starting point.
 RC_OBS="/tmp/verify-obs-$$"
 rc_state="$(docker exec -i "$STACK-agent" sh -c "rm -rf $RC_OBS && mkdir -p $RC_OBS && /opt/venv/bin/python - $RC_OBS" <<'PYRC' 2>/dev/null | nocr
-import json, os, subprocess, sys
+import json, sys
 sys.path.insert(0, "/work/stack")
-import settings
-d = sys.argv[1]
-prof = settings.profile("research-default")
-if not prof:
+import admission
+try:
+    r = admission.evaluate("research-default", evidence_dir=sys.argv[1])
+except LookupError:
     print("no profile research-default (run cfg.py generate)"); sys.exit(0)
-pol = prof["routing"]
-json.dump(pol, open(f"{d}/policy.json", "w"))
-subprocess.run([sys.executable, "/work/stack/collect_obs.py", d], capture_output=True, timeout=180,
-               env={**os.environ, "AGENTSTACK_MODEL_ROUTES": json.dumps(pol.get("model_route") or {}),
-                    "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {})})
-r = json.loads(subprocess.run([sys.executable, "/work/stack/router.py", f"{d}/policy.json", d],
-                              capture_output=True, text=True, timeout=60).stdout)
 bad = [f"{e['provider']}={e['why']}" for e in r["evaluated"] if not e.get("eligible")]
 print("ok" if not bad else "; ".join(bad))
 PYRC
 )"
 if [ "$rc_state" = ok ]; then
-  if in_agent /work/stack/router_controls.py "$RC_OBS" "$RC_OBS/policy.json" > "$TMP/router_controls.log" 2>&1; then ok "router_controls: $(tail -1 "$TMP/router_controls.log" | nocr)"
+  if in_agent /work/stack/router_controls.py "$RC_OBS/obs" "$RC_OBS/policy.json" > "$TMP/router_controls.log" 2>&1; then ok "router_controls: $(tail -1 "$TMP/router_controls.log" | nocr)"
   else bad "router_controls reported failures" "$(grep -c '"ok": false' "$TMP/router_controls.log") case(s)"; tail -6 "$TMP/router_controls.log" | sed 's/^/        | /'; fi
 else
   note "router_controls: skipped — the live router does not find every provider eligible, which the cases start from: ${rc_state:-the collection did not answer}"
@@ -267,6 +260,17 @@ if in_agent /work/stack/run_workflow.py start "$RID" hello-lane research-default
    && in_agent /work/stack/run_workflow.py show "$RID" 2>/dev/null | tail -1 | grep -q '"completed_ok": true'; then
   ok "hello-lane ran to completion ($RID) — a package step through Conductor, no model"
 else bad "hello-lane did not complete ($RID)" "$(tail -3 "$TMP/hello.log" | tr '\n' ';')"; fi
+
+# A sub-workflow and a wait, through this stack's door (stack/cases/child-run.yaml, #13). The
+# measurement is which run id the child's step saw; it is printed, and docs/packages.md says what
+# it means once a machine has said it.
+RID="verify-child-$(date +%s | tail -c 6)"
+if in_agent /work/stack/run_workflow.py start "$RID" child-run research-default text=child > "$TMP/child.log" 2>&1 \
+   && in_agent /work/stack/run_workflow.py show "$RID" 2>/dev/null | tail -1 | tee "$TMP/$RID.show" | grep -q '"completed_ok": true'; then
+  ok "child-run ran to completion ($RID) — hello-lane as a sub-workflow, then a wait"
+  # an apostrophe inside a single-quoted Python string ended the string once; measured by its silence (run 25)
+  tail -1 "$TMP/$RID.show" | $PY -c "import json,sys; o=(json.load(sys.stdin).get('output') or {}); print('  note  child-run: the child step saw run id', repr(o.get('child_run')), '- the parent is', repr(o.get('parent_run')), '(same_run:', o.get('same_run'), ', waited', o.get('waited_seconds'), 's)')" 2>&1 | nocr || true
+else bad "child-run did not complete ($RID)" "$(tail -3 "$TMP/child.log" | tr '\n' ';')"; fi
 
 in_agent /work/stack/ops_health.py > "$TMP/health.log" 2>&1 && ok "ops_health answers" || bad "ops_health failed" "$(tail -2 "$TMP/health.log" | tr '\n' ';')"
 

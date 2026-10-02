@@ -24,12 +24,7 @@ FIXTURES = "/work/packages/novel/fixtures"
 out = step.out
 
 
-def sha_file(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+sha_file = step.bind_file          # the stack's binding, under the name this package's controls use
 
 
 def cmd_stage():
@@ -156,7 +151,7 @@ def read_round(meta):
         return None
     if not isinstance(r, dict) or not isinstance(r.get("members"), dict):
         return None
-    if not meta.get("draft_sha256") or r.get("context") != meta["draft_sha256"]:
+    if not step.bound(r, meta.get("draft_sha256")):
         return None                      # a receipt for another draft is not this round's
     return r
 

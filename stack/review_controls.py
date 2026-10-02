@@ -4,7 +4,7 @@ no provider, no model call.
 
 usage (agent container): /opt/venv/bin/python /work/stack/review_controls.py
 """
-import base64, contextlib, hashlib, importlib, io, json, os, shutil, subprocess, sys, tempfile, time
+import base64, contextlib, hashlib, importlib, io, json, os, re, shutil, subprocess, sys, tempfile, time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -107,6 +107,21 @@ def policy_controls():
     # a legacy state record (before stages were tracked) is re-applied once, never trusted
     st = cfg.load_state(); st["preloop_active"].pop("scan", None); cfg.save_state(st); r, n = apply()
     check("policy: record without scan stage is not trusted", n == 1 and list(r.values()) == ["applied"], (r, n))
+
+    # declared, not assumed (issue #15): grok with native tools is refused, the reuse window is the
+    # profile's and must sit under max_age_s, and it reaches the generated routing policy
+    import yaml as _y
+    prof = _y.safe_load((root / "config" / "profiles" / "research-default.yaml").read_text())
+    envy = _y.safe_load((root / "config" / "environment.yaml").read_text())
+    e1 = cfg.validate_profile({**prof, "tools": {**prof["tools"], "native_tools": True}}, "research-default", envy)[0]
+    check("profile: grok with native_tools: true is refused, saying the posture is per login",
+          any("grok" in e and "per login" in e for e in e1), e1)
+    e2 = cfg.validate_profile({**prof, "quota": {**prof["quota"], "reuse_s": prof["quota"]["max_age_s"]}}, "research-default", envy)[0]
+    check("profile: reuse_s at or above max_age_s is refused", any("reuse_s" in e for e in e2), e2)
+    check("profile: reuse_s is validated as a number", any("reuse_s" in e for e in
+          cfg.validate_profile({**prof, "quota": {**prof["quota"], "reuse_s": "soon"}}, "research-default", envy)[0]))
+    gen = json.loads((root / "config" / "generated" / "profiles" / "research-default.json").read_text())
+    check("profile: reuse_s reaches the generated routing policy", gen["routing"].get("reuse_s") == prof["quota"].get("reuse_s", 120), gen["routing"])
 
     for ws, ok in [("/ws", True), ("/ws/alt", True), ("/ws/", True), ("/data", False), ("/ws/../data", False),
                    ("/ws/./alt", False), ("/wsx", False), ("/ws/alt/..", False), ("ws/alt", False)]:
@@ -281,18 +296,115 @@ def state_controls():
           got.get("zz-nobody", {}).get("state") == "NO PACKAGE" and (root / "state" / "zz-nobody").exists(), got)
     import importlib
     check("state: requires.state is a key something reads", "state" in importlib.import_module("packages").KNOWN_REQUIRES)
+    # a scheduled cycle carries the workflow's inputs through (PACKAGE-MATRIX §4, #13)
+    cy = importlib.import_module("cycle")
+    a = cy.parse_args(["trading-b", "research-default", "day=2026-10-02", "--by", "scheduler", "--retain-days", "3"])
+    check("cycle: key=value words are the workflow's inputs, not a profile",
+          a["inputs"] == {"day": "2026-10-02"} and a["profile"] == "research-default" and a["by"] == "scheduler", a)
+    check("cycle: a bare profile still parses without inputs", cy.parse_args(["x"])["inputs"] == {})
+    check("cycle: the inputs reach the run's argv",
+          'argv += [f"{k}={v}" for k, v in sorted((inputs or {}).items())]' in (HERE / "cycle.py").read_text())
+    # state kept with the work, elsewhere: declared as a string, reported as a place, never a directory
+    pkgs = root / "packages"; (pkgs / "remote-one").mkdir(parents=True)
+    (pkgs / "remote-one" / "manifest.yaml").write_text("name: remote-one\nversion: 0.0.1\nentry: w.yaml\nrequires:\n  state: \"github issue comments\"\n")
+    (pkgs / "remote-one" / "w.yaml").write_text("name: remote-one\nagents: []\n")
+    (root / "config" / "packages.yaml").write_text("packages:\n  - remote-one\n")
+    env2 = {**env, "AGENTSTACK_PACKAGES": str(pkgs), "AGENTSTACK_PACKAGES_YAML": str(root / "config" / "packages.yaml")}
+    r = subprocess.run([sys.executable, str(HERE / "packages.py"), "state", "--json"], env=env2,
+                       capture_output=True, text=True, timeout=60)
+    got = json.loads(r.stdout or "{}").get("packages") or {}
+    check("state: a package that keeps state with the work is reported as a place, not a directory",
+          got.get("remote-one", {}).get("state") == "remote" and "github issue comments" in got["remote-one"]["why"]
+          and "not in this stack's backup" in got["remote-one"]["why"], got)
+    shutil.rmtree(root, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- 2e. binding
+def bind_controls():
+    """The hash is the stack's; which bytes, and what a mismatch means, are the package's (#12)."""
+    import hashlib
+    sys.path.insert(0, str(HERE / "steps"))
+    st = importlib.import_module("step")
+    root = Path(tempfile.mkdtemp(prefix="agentstack-bind-"))
+    (root / "a.txt").write_bytes(b"one draft\n")
+    check("bind: a file's binding is its sha256", st.bind_file(root / "a.txt") == hashlib.sha256(b"one draft\n").hexdigest())
+    check("bind: a text's binding is its UTF-8 sha256", st.bind_text("한 줄") == hashlib.sha256("한 줄".encode()).hexdigest())
+    sha = st.bind_file(root / "a.txt")
+    check("bind: a receipt made for these bytes is bound", st.bound({"context": sha, "members": {}}, sha))
+    check("bind: a receipt for other bytes is not", not st.bound({"context": "0" * 64}, sha))
+    check("bind: a receipt with no binding is not, and neither is an empty expectation",
+          not st.bound({"members": {}}, sha) and not st.bound({"context": ""}, ""))
+    shutil.rmtree(root, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- 2f. fan-out: a member's failure is its own
+def fanout_controls():
+    """Review 2026-10-02: a member whose process could not start left its row without an end and
+    the step reading the rows died for every member; a retry replaced the first attempt's result,
+    so its call and its evidence directory left the receipt."""
+    sys.path.insert(0, str(HERE / "steps"))
+    fo = importlib.import_module("fanout")
+    rows, _ = fo.run_all([{"key": "ok", "argv": ["true"]},
+                          {"key": "gone", "argv": ["/nonexistent/agentstack-no-such-exe"]}])
+    by = {r["key"]: r for r in rows}
+    check("fanout: a member that cannot start is a row with an end, a code and the reason",
+          by["gone"].get("start_failed") and by["gone"]["returncode"] == 127 and "ended_at" in by["gone"]
+          and "FileNotFoundError" in by["gone"]["stderr"], by["gone"])
+    check("fanout: … and the member beside it is unaffected",
+          by["ok"]["returncode"] == 0 and "ended_at" in by["ok"], by["ok"])
+    rows, _ = fo.run_all([{"key": "e", "argv": ["sh", "-c", "echo $AGENTSTACK_ATTEMPT"], "env": {"AGENTSTACK_ATTEMPT": "2"}}])
+    check("fanout: a job's env reaches its process", rows[0]["stdout"].strip() == "2", rows[0])
+
+    # a retry, end to end through tasks.py: a fake chain fails on attempt 1 and produces on 2
+    root = Path(tempfile.mkdtemp(prefix="agentstack-retry-"))
+    (root / "config" / "generated").mkdir(parents=True)
+    rt = json.loads(json.dumps(__import__("settings").DEFAULT_RUNTIME))
+    rt["paths"]["workspace_root"] = str(root / "ws")
+    (root / "config" / "generated" / "runtime.json").write_text(json.dumps(rt))
+    chain = root / "chain.py"
+    chain.write_text("""import json, os, sys
+m = json.load(open(sys.argv[1]))
+ws = os.environ["WSDIR"]; a = os.environ.get("AGENTSTACK_ATTEMPT", "1")
+ok = a == "2"
+if ok:
+    open(f"{ws}/out.txt", "w").write("second time")
+print(json.dumps({"status": "COMPLETED" if ok else "FAILED", "produced": ok, "model_calls": 1,
+                  "run_id": f"r-{m['label']}" + ("-a2" if a == "2" else ""), "attempt_seen": a}))
+""")
+    (root / "ws" / "r1").mkdir(parents=True)
+    plan = root / "plan.json"
+    plan.write_text(json.dumps({"members": [{"label": "m", "retries": 1,
+                                             "steps": [{"kind": "script", "argv": ["true"], "expected": "out.txt"}]}]}))
+    env = {**os.environ, "AGENTSTACK_ROOT": str(root), "CONDUCTOR_SELF_RUN_ID": "r1", "POC_PY": sys.executable,
+           "AGENTSTACK_CHAIN_ENTRY": str(chain), "WSDIR": str(root / "ws" / "r1")}
+    r = subprocess.run([sys.executable, str(HERE / "steps" / "tasks.py"), str(root / "receipt.json"), "ctx", "p",
+                        "--plan", str(plan)], env=env, capture_output=True, text=True, timeout=60)
+    try:
+        last = json.loads(r.stdout.strip().splitlines()[-1])
+        rec = json.loads((root / "receipt.json").read_text())["members"]["m"]
+    except Exception as e:                                       # noqa: BLE001
+        last, rec = {"error": f"{e}: {r.stderr[-300:]}"}, {}
+    check("tasks: a retried member produces, and the receipt counts both attempts",
+          rec.get("produced") and rec.get("attempts") == 2 and rec.get("attempt_outcomes") == ["failed", "produced"], rec or last)
+    check("tasks: every attempt's own result stays in the receipt, the retry named apart",
+          [a.get("run_id") for a in rec.get("attempt_results") or []] == ["r-m", "r-m-a2"]
+          and rec.get("result", {}).get("attempt_seen") == "2", rec.get("attempt_results"))
+    check("tasks: the step reports the calls that were made, not the members that exist",
+          last.get("model_calls") == 2 and last.get("produced") == 1, last)
     shutil.rmtree(root, ignore_errors=True)
 
 
 # ---------------------------------------------------------------- 3. restart after the end event
 def run_controls():
+    """The run's state is read by `view` and restored by `read`, by name (runstate.recover)."""
     sys.path.insert(0, str(HERE))
     rw = importlib.import_module("run_workflow")
-    rw.RUNS = Path(tempfile.mkdtemp(prefix="agentstack-runs-"))
+    rs = importlib.import_module("runstate")
+    rs.RUNS = Path(tempfile.mkdtemp(prefix="agentstack-runs-"))
     dead = subprocess.Popen(["true"]); dead.wait()
 
     def make(ui, events, pid):
-        d = rw.RUNS / ui / "tmp" / "conductor"; d.mkdir(parents=True)
+        d = rs.RUNS / ui / "tmp" / "conductor"; d.mkdir(parents=True)
         (d / f"conductor-p281-x-20260923-000000-{ui[-8:]}.events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
         meta = {"ui_id": ui, "workflow": "auto", "profile": "p", "inputs": {}, "started_at": time.time(),
                 "state": "running", "launcher_pid": pid, "instance": rw.instance_id()}
@@ -304,20 +416,190 @@ def run_controls():
     failed = {"type": "workflow_failed", "timestamp": 2.0, "data": {"output": {"decision": "DENIED"}, "is_explicit": True,
               "terminated_by": "denied", "termination_reason": "DENIED: policy"}}
     for ui, ev, dec in [("rc-pass-0000aaaa", done, "PASS"), ("rc-deny-0000bbbb", failed, "DENIED")]:
-        v = rw.view(make(ui, [start, ev], dead.pid))
-        saved = json.loads(rw.meta_path(ui).read_text())
-        check(f"run: end event + launcher gone → finished ({dec})", v["state"] == "finished" and v["ended"]
+        meta = make(ui, [start, ev], dead.pid)
+        v = rw.view(dict(meta))
+        untouched = json.loads(rw.meta_path(ui).read_text())
+        check(f"run: end event + launcher gone → the view shows finished ({dec})", v["state"] == "finished" and v["ended"]
               and (v["output"] or {}).get("decision") == dec and not v["error"], v)
-        check(f"run: … and the restored state is persisted ({dec})", saved["state"] == "finished"
-              and saved.get("recovered_from_event_log") and saved.get("ended_at") == 2.0, saved)
-    v = rw.view(make("rc-live-0000cccc", [start, done], os.getpid()))
+        check(f"run: … and a view writes nothing ({dec})", untouched["state"] == "running"
+              and "recovered_from_event_log" not in untouched, untouched)
+        v = rw.read(ui)
+        saved = json.loads(rw.meta_path(ui).read_text())
+        check(f"run: read() restores the state and persists it ({dec})", v["state"] == "finished"
+              and saved["state"] == "finished" and saved.get("recovered_from_event_log")
+              and saved.get("ended_at") == 2.0 and v.get("recovered_from_event_log"), saved)
+    v = rw.read("rc-live-0000cccc") if make("rc-live-0000cccc", [start, done], os.getpid()) else None
     check("run: end event, launcher alive → shown finished, meta left to the launcher",
           v["state"] == "finished" and json.loads(rw.meta_path("rc-live-0000cccc").read_text())["state"] == "running", v)
-    v = rw.view(make("rc-intr-0000dddd", [start], dead.pid))
-    check("run: no end event + launcher gone → interrupted", v["state"] == "interrupted", v)
-    v = rw.view(make("rc-runn-0000eeee", [start], os.getpid()))
-    check("run: no end event, launcher alive → running", v["state"] == "running", v)
-    shutil.rmtree(rw.RUNS)
+    make("rc-intr-0000dddd", [start], dead.pid)
+    check("run: no end event + launcher gone → interrupted, and said why",
+          rw.read("rc-intr-0000dddd")["state"] == "interrupted" and "launcher is gone" in rw.read("rc-intr-0000dddd")["error"]
+          and json.loads(rw.meta_path("rc-intr-0000dddd").read_text())["state"] == "interrupted")
+    make("rc-runn-0000eeee", [start], os.getpid())
+    check("run: no end event, launcher alive → running", rw.read("rc-runn-0000eeee")["state"] == "running")
+    check("run: a run that is not there is None, not a traceback", rw.read("rc-none-0000ffff") is None)
+    shutil.rmtree(rs.RUNS)
+
+
+# ---------------------------------------------------------------- 4. the event log is read by what a step said
+def event_controls():
+    """A routing step and a recording step are recognised by their output, not their name
+    (review 2026-10-02: the screen read `route` and `record*`, so a name was an API)."""
+    sys.path.insert(0, str(HERE))
+    ev = importlib.import_module("runevents")
+    root = Path(tempfile.mkdtemp(prefix="agentstack-events-"))
+    log = root / "conductor-p281-x-20260923-000000-deadbeef.events.jsonl"
+
+    def sc(name, out):
+        return {"type": "script_completed", "timestamp": 1.5, "data": {"agent_name": name, "stdout": json.dumps(out)}}
+    routing = {"decision": "ROUTE", "provider": "claude", "reason": "within limits", "evaluated": "[]",
+               "model_route": "direct", "profile": "p"}
+    recorded = {"mlflow_run_id": "abc", "experiment_id": "7", "record_error": ""}
+    events = [{"type": "agent_started", "timestamp": 1.0, "data": {"agent_name": "choose_provider"}},
+              sc("choose_provider", routing),
+              sc("route", {"status": "OK", "decision": "PASS"}),      # a step *named* route that is not the router
+              sc("persist_result", recorded),
+              {"type": "workflow_completed", "timestamp": 2.0, "data": {"output": {"decision": "PASS"}}}]
+    log.write_text("".join(json.dumps(e) + "\n" for e in events))
+    r = ev.read(log)
+    check("events: the router's answer is read under any step name",
+          (r["route"] or {}).get("provider") == "claude" and r["route"]["decision"] == "ROUTE", r["route"])
+    check("events: a step named route that did not route is not read as the router",
+          (r["route"] or {}).get("decision") != "PASS", r["route"])
+    check("events: the recorder's answer is read under any step name",
+          (r["mlflow"] or {}).get("run_id") == "abc" and r["mlflow"]["experiment_id"] == "7", r["mlflow"])
+    check("events: the run id comes from the log's own name", r["conductor_run"] == "deadbeef", r["conductor_run"])
+    check("events: the end, the output and the steps", r["ended"] and r["completed_ok"]
+          and (r["output"] or {}).get("decision") == "PASS" and [s["step"] for s in r["steps"]] == ["choose_provider"], r)
+    check("events: no log is an empty reading, not an error", ev.read(None) == ev.empty())
+    check("events: ended() sees the end past the byte it was given", ev.ended(log) and not ev.ended(log, log.stat().st_size))
+    shutil.rmtree(root, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- 5. the execution record
+def execution_controls():
+    """One shape for a call's result, owned in one place, and the document lists the same keys."""
+    sys.path.insert(0, str(HERE))
+    ex = importlib.import_module("execution")
+    rec = ex.record(status="COMPLETED", provider="claude", run_id="r-m-claude")
+    check("execution: a record carries every field, defaults filled, and its contract version",
+          set(ex.FIELDS) <= set(rec) and rec["attempts"] == 1 and rec["measurements"] == {} and rec["contract"] == ex.CONTRACT, rec)
+    check("execution: what a step adds beyond the shape is kept",
+          ex.record(provider="x", run_id="y", dispatched={"role": "r"})["dispatched"] == {"role": "r"})
+    check("execution: a call is a run id and a provider; a refusal that never ran is not one",
+          ex.is_execution(rec) and not ex.is_execution(ex.record(status="DENIED", provider="claude")))
+    check("execution: problems are named", ex.problems({"status": "FAILED", "attempts": "2"}) ==
+          ["run_id missing", "provider missing", "attempts is not int"], ex.problems({"status": "FAILED", "attempts": "2"}))
+    doc = (WORK / "docs" / "packages.md").read_text()
+    block = doc.split("## The output of a model step")[1].split("```yaml")[1].split("```")[0]
+    keys = set(re.findall(r"^\s{6}([a-z_]+):", block, re.M)) - {"type", "properties"}
+    check("execution: docs/packages.md lists exactly the shape's keys", keys == set(ex.FIELDS), sorted(keys ^ set(ex.FIELDS)))
+    root = Path(tempfile.mkdtemp(prefix="agentstack-exec-"))
+    ex.write(root / "e1", rec)
+    check("execution: the platform's copy round-trips from the evidence directory", ex.read(root / "e1") == rec)
+    check("execution: no copy is None, not an error", ex.read(root / "nothing") is None)
+    # a fan-out member: two attempts of a call, and a chain of two model steps + a script
+    member = {"result": {"run_id": "r-m-claude-a2", "provider": "claude", "status": "COMPLETED"},
+              "attempt_results": [{"run_id": "r-m-claude", "provider": "claude", "status": "FAILED"},
+                                  {"run_id": "r-m-claude-a2", "provider": "claude", "status": "COMPLETED"}]}
+    got = ex.of_member("m", member)
+    check("execution: every attempt of a member is an execution of its own",
+          [g["run_id"] for g in got] == ["r-m-claude", "r-m-claude-a2"] and all(g["member"] == "m" for g in got), got)
+    chain = {"result": {"status": "COMPLETED", "steps": [
+        {"kind": "script", "step": "m-1"},
+        {"kind": "model", "step": "m-2", "run_id": "r-m-2", "provider": "codex"},
+        {"kind": "model", "step": "m-3", "run_id": "r-m-3", "provider": "claude"}]}}
+    got = ex.of_member("m", chain)
+    check("execution: a chain is its model steps, each one tagged",
+          [(g["run_id"], g["member"]) for g in got] == [("r-m-2", "m:m-2"), ("r-m-3", "m:m-3")], got)
+    check("execution: a member that never named a call is no execution", ex.of_member("m", {"result": {"status": "FAILED"}}) == [])
+    shutil.rmtree(root, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- 6. one door to the router, one door to a call
+def door_controls():
+    """Six callers asked the router in three moves each; now they ask admission.py. Three
+    places chose between agent_task.py and the broker; now agent_task.py chooses, once."""
+    sys.path.insert(0, str(HERE))
+    srcs = {n: (WORK / n).read_text() for n in ("stack/steps/route.py", "stack/steps/admit_models.py", "stack/capabilities.py",
+                                                "stack/ops_health.py", "ops/server.py", "scripts/verify.sh")}
+    check("door: nobody but admission.py runs the collector and the router themselves",
+          [n for n, s in srcs.items() if "/collect_obs.py" in s or "/router.py" in s] == [],
+          [n for n, s in srcs.items() if "/collect_obs.py" in s or "/router.py" in s])
+    check("door: … and every one of them asks admission", all("admission" in s for s in srcs.values()))
+    ad = importlib.import_module("admission")
+    try:
+        ad.evaluate("zz-no-such-profile")
+        missing = False
+    except LookupError:
+        missing = True
+    check("door: a profile that does not exist is a LookupError, never a default", missing)
+    pol = {"candidates": ["grok"], "login": {"grok": "grok"}, "model_route": {"grok": "direct"},
+           "thresholds": {}, "max_age_s": 600, "reuse_s": 0}
+    root = Path(tempfile.mkdtemp(prefix="agentstack-door-"))
+    # a settings root of its own, with no login under it: the collector (a subprocess) reads the
+    # logins root from the generated runtime, so what it finds is nothing — and says so
+    (root / "config" / "generated").mkdir(parents=True); (root / "route").mkdir(); (root / "obs").mkdir()
+    rt = json.loads(json.dumps(__import__("settings").DEFAULT_RUNTIME))
+    rt["paths"].update({"logins_root": str(root / "route"), "observations": str(root / "obs")})
+    (root / "config" / "generated" / "runtime.json").write_text(json.dumps(rt))
+    env = dict(os.environ)
+    os.environ["AGENTSTACK_ROOT"] = str(root)
+    try:
+        d = ad.evaluate(policy=pol, evidence_dir=str(root / "ev"))
+    except Exception as e:                                       # noqa: BLE001
+        d = {"error": f"{type(e).__name__}: {e}"}
+    finally:
+        os.environ.clear(); os.environ.update(env)
+    check("door: the three moves end to end — policy written, observed, judged, decision kept",
+          d.get("decision") in ("ROUTE", "HOLD") and (root / "ev" / "policy.json").exists()
+          and (root / "ev" / "decision.json").exists() and d.get("policy") == pol, d)
+    check("door: what could not be read is reported as unknown, not decided",
+          all(e["provider"] == "grok" for e in ad.unknown(d)) and ad.eligible(d) == [] if d.get("decision") == "HOLD" else True, d)
+    for n in ("stack/steps/tasks.py", "stack/steps/task_chain.py"):
+        check(f"door: {n.split('/')[-1]} starts agent_task.py and never chooses the broker",
+              "broker_dispatch" not in (WORK / n).read_text() and "agent_task.py" in (WORK / n).read_text())
+    at = (WORK / "stack/steps/agent_task.py").read_text()
+    check("door: agent_task.py is where a declared egress profile goes to the broker",
+          "broker_dispatch.py" in at and "role_egress.profile_of(principal)" in at)
+    shutil.rmtree(root, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- 7. a second instance beside the first
+def instance_controls():
+    """What the second cold start found (OPERATIONS §69): images named for the instance,
+    docker/.env in step with instance.env, networks counted before the build."""
+    comp = (WORK / "docker" / "compose.poc.yaml").read_text()
+    imgs = re.findall(r"^\s+image: (\S+)", comp, re.M)
+    ours = [i for i in imgs if "agentstack" in i]
+    check("instance: every image of this stack is named for the instance",
+          ours and all(i.startswith("${STACK:-agentstack}/") for i in ours), ours)
+    check("instance: the candidate image a release builds is too",
+          'CAND_IMAGE="$STACK/governed-runtime:cand-' in (WORK / "scripts" / "release.sh").read_text())
+    root = Path(tempfile.mkdtemp(prefix="agentstack-inst-"))
+    (root / "config").mkdir(); (root / "docker").mkdir()
+    (root / "config" / "instance.env").write_text("# the second one\nSTACK=agst2\nHUB_PORT=8880\nPRELOOP_PROJECT=preloop-two\n")
+    (root / "docker" / ".env").write_text("POC_HOST_DIR=/home/you/agent-stack-two\nSTACK=agentstack\n")
+    subprocess.run(["bash", str(WORK / "scripts" / "instance_env.sh"), str(root)], check=True, timeout=30)
+    got = dict(l.split("=", 1) for l in (root / "docker" / ".env").read_text().splitlines() if "=" in l)
+    check("instance: docker/.env takes every key instance.env names, and keeps the rest",
+          got == {"POC_HOST_DIR": "/home/you/agent-stack-two", "STACK": "agst2", "HUB_PORT": "8880", "PRELOOP_PROJECT": "preloop-two"}, got)
+    subprocess.run(["bash", str(WORK / "scripts" / "instance_env.sh"), str(root)], check=True, timeout=30)
+    check("instance: … and a second run changes nothing",
+          (root / "docker" / ".env").read_text().count("STACK=") == 1 and dict(l.split("=", 1) for l in (root / "docker" / ".env").read_text().splitlines() if "=" in l) == got)
+    (root / "config" / "instance.env").unlink()
+    subprocess.run(["bash", str(WORK / "scripts" / "instance_env.sh"), str(root)], check=True, timeout=30)
+    check("instance: no instance.env, nothing written", dict(l.split("=", 1) for l in (root / "docker" / ".env").read_text().splitlines() if "=" in l) == got)
+    up = (WORK / "scripts" / "up.sh").read_text(); rs = (WORK / "scripts" / "restore.sh").read_text()
+    check("instance: up.sh and restore.sh write it through the one script",
+          'scripts/instance_env.sh" "$HERE"' in up and 'scripts/instance_env.sh" "$WORKSPACEU"' in rs)
+    ins = (WORK / "scripts" / "install.sh").read_text()
+    check("instance: the host check counts network headroom before a build can run out",
+          "network headroom" in ins and "NEED_NETS=15" in ins and "default-address-pools" in ins)
+    check("instance: 15 is what the composition actually has, plus Preloop's one",
+          len(re.findall(r"^  [a-z][a-z-]*:\s*$", comp.split("\nnetworks:\n", 1)[1].split("\n\n")[0], re.M)) + 1 == 15,
+          comp.split("\nnetworks:\n", 1)[1].split("\n\n")[0][:200])
+    shutil.rmtree(root, ignore_errors=True)
 
 
 policy_controls()
@@ -325,7 +607,13 @@ codex_controls()
 kept_controls()
 grok_posture_controls()
 state_controls()
+bind_controls()
+fanout_controls()
 run_controls()
+event_controls()
+execution_controls()
+door_controls()
+instance_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

@@ -1,6 +1,6 @@
 """One unattended cycle — the implementation the CLI, the scheduler and the panel all call.
 
-usage: cycle.py <workflow> [profile] [--allow-unrecorded] [--retain-days N] [--retain-keep M]
+usage: cycle.py <workflow> [profile] [key=value ...] [--allow-unrecorded] [--retain-days N] [--retain-keep M]
 
 `scripts/cycle.sh` is a thin wrapper around this, and the ops API calls it too. There is one
 implementation because the rules are the interesting part and two copies of them would drift:
@@ -48,7 +48,7 @@ def lock_held():
 
 
 def run(workflow, profile="research-default", allow_unrecorded=False,
-        retain_days=None, retain_keep=None, by="cli"):
+        retain_days=None, retain_keep=None, by="cli", inputs=None):
     os.makedirs(OPS_DIR, exist_ok=True)
     try:
         os.mkdir(LOCK)
@@ -63,6 +63,10 @@ def run(workflow, profile="research-default", allow_unrecorded=False,
 
         ui = "cyc-" + time.strftime("%Y%m%d-%H%M%S", time.gmtime())
         argv = [PY, "/work/stack/run_workflow.py", "start", ui, workflow, profile]
+        # the workflow's inputs, as the panel and the CLI pass them; the runner validates them.
+        # Until this line a scheduled cycle could pass none, and trading read `day=` inside a
+        # step instead (PACKAGE-MATRIX §4).
+        argv += [f"{k}={v}" for k, v in sorted((inputs or {}).items())]
         if allow_unrecorded:
             argv.append("--allow-unrecorded")
         t0 = time.time()
@@ -120,13 +124,15 @@ def parse_args(argv):
     assumed a step that never ran."""
     def opt(name):
         return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
-    bare = [x for i, x in enumerate(argv)
-            if not x.startswith("--") and (i == 0 or argv[i - 1] not in OPTS)]
+    words = [x for i, x in enumerate(argv)
+             if not x.startswith("--") and (i == 0 or argv[i - 1] not in OPTS)]
+    inputs = dict(w.split("=", 1) for w in words if "=" in w)      # key=value → a workflow input
+    bare = [w for w in words if "=" not in w]
     return {"workflow": bare[0] if bare else "trading-b",
             "profile": bare[1] if len(bare) > 1 else "research-default",
             "allow_unrecorded": "--allow-unrecorded" in argv,
             "retain_days": opt("--retain-days"), "retain_keep": opt("--retain-keep"),
-            "by": opt("--by") or "cli"}
+            "by": opt("--by") or "cli", "inputs": inputs}
 
 
 if __name__ == "__main__":

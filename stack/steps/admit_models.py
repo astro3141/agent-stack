@@ -27,13 +27,11 @@ What a repeat of this step does (OPERATIONS.md §17): "yes" — it re-observes a
 REPEATABLE = "yes"
 import json
 import os
-import subprocess
 import sys
 
 sys.path.insert(0, "/work/stack")
 import settings
 
-HERE = "/work/stack"
 run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 prof_name = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else "research-default"
 wanted = [p.strip() for p in (sys.argv[2] if len(sys.argv) > 2 else "").split(",") if p.strip()]
@@ -56,25 +54,14 @@ if not wanted:
         reason="no providers named: admit_models.py <profile> <provider,provider,…>",
         evidence_dir=d)
 
-pol = dict(prof["routing"])
 # the profile's own thresholds, windows and logins — only *who* is asked about changes. A provider
 # the profile has no route or login for is asked about as the profile would have to run it.
-pol["candidates"] = wanted
-policy_path = f"{d}/policy.json"
-json.dump(pol, open(policy_path, "w"), indent=1)
-
-routes = pol.get("model_route") or {}
-subprocess.run([sys.executable, f"{HERE}/collect_obs.py", f"{d}/obs"], check=False,
-               capture_output=True,
-               env={**os.environ, "AGENTSTACK_MODEL_ROUTES": json.dumps(routes),
-                    "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {})})
-r = subprocess.run([sys.executable, f"{HERE}/router.py", policy_path, f"{d}/obs"],
-                   capture_output=True, text=True)
+import admission
 try:
-    decision = json.loads(r.stdout)
-except ValueError:
+    decision = admission.evaluate(prof_name, candidates=wanted, evidence_dir=d)
+except RuntimeError as e:
     out(all_eligible=False, eligible=[], missing=wanted, evaluated="[]",
-        reason=f"the router did not answer ({(r.stderr or r.stdout)[-160:]})", evidence_dir=d)
+        reason=str(e), evidence_dir=d)
 
 ev = decision.get("evaluated") or []
 verdict = {e["provider"]: e for e in ev if isinstance(e, dict) and e.get("provider")}

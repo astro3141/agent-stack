@@ -48,9 +48,9 @@ class Sandbox:
     def load(self):
         import subprocess as real_subprocess
         cleanup = importlib.reload(importlib.import_module("cleanup"))
-        run_workflow = importlib.import_module("run_workflow")
+        runstate = importlib.import_module("runstate")
         cleanup.WS, cleanup.EVID, cleanup.RUNS = self.ws, self.evid, self.runs
-        run_workflow.RUNS = self.runs          # view() reads the event log through this
+        runstate.RUNS = self.runs              # view() reads the event log through this
         stub = str(self.reader)
         # a namespace of its own: patching the subprocess module would leak into every later case
         cleanup.subprocess = type("S", (), {"run": staticmethod(

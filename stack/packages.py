@@ -428,7 +428,12 @@ def state_of():
     """
     root = state_root()
     pk = installed()
-    declared = {n for n, r in pk.items() if (r.get("requires") or {}).get("state")}
+    # `state: true` — here, under the root. `state: "<where>"` — with the work, somewhere else
+    # (devflow: the task's GitHub issue, because a person must read it where the work is and
+    # it must outlive this machine). The stack keeps neither kind's content; it says where each is.
+    declared = {n for n, r in pk.items() if (r.get("requires") or {}).get("state") is True}
+    remote = {n: str(v) for n, r in pk.items()
+              if isinstance((v := (r.get("requires") or {}).get("state")), str) and v}
     rows = {}
     if os.path.isdir(root):
         for entry in sorted(os.listdir(root)):
@@ -451,6 +456,11 @@ def state_of():
             rows[entry] = {"path": d, "state": state, "why": why, "kb": size // 1024}
     for n in sorted(declared - set(rows)):
         rows[n] = {"path": os.path.join(root, n), "state": "declared, empty", "why": "nothing written yet", "kb": 0}
+    for n, where in sorted(remote.items()):
+        if n in rows:                       # both: a local directory and a remote — say so
+            rows[n]["why"] += f"; also keeps state with the work: {where}"
+        else:
+            rows[n] = {"path": "", "state": "remote", "why": f"keeps its state with the work, not here: {where} — not in this stack's backup", "kb": 0}
     return {"root": root, "packages": rows}
 
 
