@@ -3617,6 +3617,16 @@ source (§29), and Claude and Grok are read with the login that executes — but
 `verify.sh` was written as though the observer produced every provider's normalized file, and so
 could never run. The report was right that nothing ran; the reason was the check.
 
+What Grok's window is, read from CodexBar's source at the pinned tag (`v0.63.0`, and unchanged at
+its head, 0.70): one `primary` window built from the account's **billing period** — `windowMinutes`
+is the period's length, computed from its start and end, so a SuperGrok weekly credit pool
+classifies as `weekly` here and a monthly plan would too — and **no window** when the billing
+answer carries no percent (CodexBar's own changelog, 0.55.0: "report period-only CLI-proxy
+responses as unknown usage instead of 0% when Grok Build has hit its free limit"). So "required
+weekly window not reported" with a timestamp is CodexBar seeing the account and the account
+giving no usage figure; the next reading's `reported_windows` says which of the two it was, and
+the Grok reading on that host — plan, period, percent — is the measurement still owed.
+
 A quota observation from CodexBar has always carried the vendor's labels (`primary`/`secondary`)
 re-classified by length into `session`/`weekly`, and nothing else. A classification that fails
 silently is the one thing a fail-closed router cannot explain, so the raw list travels with it now.

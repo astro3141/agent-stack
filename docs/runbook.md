@@ -117,10 +117,16 @@ docker exec agentstack-agent sh -c 'GROK_HOME=/route/grok HOME=/route/grok/home 
 ```
 
 `reported_windows` is every window the vendor gave, as given (label, percent, minutes, reset); a
-window with no `windowMinutes` cannot be classified and appears only there. Whether the answer is
-a changed plan, a changed CodexBar, or a changed vendor response, that line says which — and what to
-change (the profile's required windows, or the collector's classification) is decided from it, not
-from the HOLD.
+window with no `windowMinutes` cannot be classified and appears only there. What Grok's one window
+*is*, read from the pinned CodexBar (0.63.0, `GrokStatusProbe.toUsageSnapshot`): the account's
+**billing period** — a weekly credit pool on SuperGrok (the first install measured `weekly 1 %`),
+a month on other plans — with `windowMinutes` computed from the period's start and end, and **no
+window at all** when the billing answer carries no percent (a period-only answer: a free tier at
+its limit, a billing RPC the CLI surface lacks). So an empty `reported_windows` with a timestamp
+means CodexBar saw the account and the account reported no usage figure; `window_minutes: null`
+means a period with no start. Whether the answer is a changed plan, a changed CodexBar, or a
+changed vendor response, that line says which — and what to change (the profile's required
+windows, or the collector's classification) is decided from it, not from the HOLD.
 
 ## A fresh install: logged in, and one provider still unusable
 

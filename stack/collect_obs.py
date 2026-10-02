@@ -248,7 +248,12 @@ if ROUTES.get("grok") == "direct":
                        "identity_basis": "same-credential", "model_route": "direct", "windows": wins,
                        # what the vendor said, as said — the line to read when a window is "not reported"
                        "reported_windows": reported, "extra_windows": u.get("extraRateWindows") or [],
-                       **({} if item else {"error": (p.stderr or "")[-200:]})})
+                       # no item: CodexBar's stderr. An item with no window: its own error, when it
+                       # gives one — CodexBar builds Grok's one window from the billing period and
+                       # omits it when the period carries no percent (GrokStatusProbe, 0.63.0).
+                       **({"error": (p.stderr or "")[-200:]} if not item else
+                          {"error": str((item.get("error") or {}).get("message") or item["error"])[:200]}
+                          if (not wins and item.get("error")) else {})})
     except Exception as e:
         write("grok", {"provider": "grok", "source": "codexbar", "observed_at": None,
                        "observed_account": None, "executing_account": None,
