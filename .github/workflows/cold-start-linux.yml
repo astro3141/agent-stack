@@ -65,7 +65,7 @@ jobs:
               ('"did": "created"', "the declared principals were created"),
               ("ok    runtime may not decide approvals", "the runtime cannot decide approvals"),
               ("ok    runtime may not rewrite them", "the runtime cannot rewrite its rights"),
-              ("ok    fsmcp tools exposed via Preloop", "tools are served through Preloop"),
+              ("ok    fsmcp tools work through Preloop", "tools are served through Preloop"),
           ]
           missing = [why for needle, why in required if needle not in log]
 
