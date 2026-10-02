@@ -3832,3 +3832,45 @@ sha256:448030c0…` — running containers held an image sha that a rebuild had 
 Two more things learned by doing the procedure once: `update` records a rollback point itself,
 so the "Before" `record --tag` is a *named* point, not a second one; and the drift report's
 "newer" is a reading list, not a to-do — five of eight were held on what the reading said.
+
+## 66. Six issues in one pass, measured on cold-start-linux run 26 (2026-10-02)
+
+After update day 1 the remaining stack work (DECISIONS-2026-10-02.md, issues #12 #13 #15 #16
+#20) went into one branch, one commit per issue, one CI run. e7fc354: cold start green, verify
+stack **19/19**, trial_controls **470/470**, review_controls **58/58**, novel 32/32.
+
+**#15 declared, not assumed.** A profile that runs grok with `tools.native_tools: true` is
+refused by `cfg.py` with the reason (Grok's posture is per login, §64 addendum 4). The collector's
+reuse window is the profile's `quota.reuse_s` (default 120, below `max_age_s`, generated into the
+routing policy, passed by every caller). A provider nobody has read says "sign in on the panel;
+the quota observer is not it" — the old line sent the second install's reader to the observer.
+
+**#20 release.sh.** `record` names a container whose image a rebuild pruned and the way out
+(`up.sh --recreate`); `update` says whether a backup exists and how old, records it in
+`release.kv`, and does not refuse.
+
+**#13 a child run and a wait, measured.** `stack/cases/child-run.yaml` (a built-in: hello-lane as
+a `type: workflow` step, a 1 s `type: wait`, a step that reports both run ids) ran at the stack
+level:
+
+```
+child-run: the child step saw run id '5ed2fd86' - the parent is '5ed2fd86' (same_run: yes, waited 1.001 s)
+```
+
+A Conductor sub-workflow is the same run with a nested graph — same id, workspace, evidence
+namespace, record. It composes graphs; it is not a run of its own. devflow's `drive.py`, which
+starts child runs through `run_workflow.py start`, was right; what the stack owes is the record
+link (`--suite`/`--case` carried from a step). docs/packages.md says so now, from the measurement
+rather than from the engine's documentation, which was the point. `cycle.py` carries `key=value`
+inputs to the run (the matrix's §4 stack defect).
+
+**#12 the contract's second half.** CONTRACT.md: the platform implements what is common and makes
+the place for what is specific, with the table of places. `step.bind_file/bind_text/bound` is the
+binding four packages had each written; novel's triage uses it and its 32 controls pass unchanged.
+
+**#16 composition.** `toolsvc` (the #278 marker tool server; nothing called it) is gone from the
+composition, the policy and the Dockerfile; the quota observer is the compose profile `observer`
+(`up.sh --observer`, kept once its volume exists). The cold start now brings up fifteen agentstack
+containers instead of seventeen, and the policy scans one tool server. An instance brought up
+before this keeps `agentstack-toolsvc` registered in its Preloop account until an apply prunes
+it; no tool of it is in the policy, so nothing reaches it.

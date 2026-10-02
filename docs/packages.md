@@ -344,21 +344,22 @@ platform refuses in itself.
 
 ## Child runs, and waiting on the world
 
-A workflow that needs to run another, or to wait for something outside it to settle, does not
-need the stack for either — Conductor has both, at the revision this stack pins:
+Measured (issue #13, `stack/cases/child-run.yaml`, cold-start-linux run 26): a parent that starts
+hello-lane with a `type: workflow` step, then waits. **The child's step saw the parent's run id**
+— `5ed2fd86` on both sides — so a Conductor sub-workflow is *the same run* with a nested graph:
+one `CONDUCTOR_SELF_RUN_ID`, one workspace under it, one evidence namespace (`route-<run>`,
+`admit-<run>`), one record. That settles what each is for:
 
-- **`type: workflow`** runs a sub-workflow as a step, with `input_mapping`, and inside a
-  `for_each` group it fans out one child run per item (events `subworkflow_started` /
-  `subworkflow_completed`).
-- **`type: wait`** pauses for a parsed duration; polling is `wait` plus a route that loops back,
-  with no Python written.
-
-Two packages had built their own (`drive.py` shelling out to `run_workflow.py start/show`, a
-shell loop over `cycle.sh`), on the belief that the stack had no primitive; the child runs they
-start that way are not linked to their parent in the record. Prefer the engine's steps. What the
-stack still owes here is one measurement — that a child started by `type: workflow` under
-`run_workflow.py` appears in the record beside its parent — recorded in
-docs/record/DECISIONS-2026-10-02.md until it is taken.
+- **`type: workflow`** composes graphs. Use it to reuse a workflow's steps inside yours; the
+  child writes into your workspace and its model calls land in your record. Do not use it for a
+  run that needs a workspace, a record or an evidence directory of its own — a second `route`
+  step in the child would write over the parent's.
+- **`type: wait`** pauses (`duration: 1s`, measured `waited_seconds` 1.001); polling is `wait`
+  plus a route that loops back. No Python.
+- **A run of its own** is started through the stack's door, `run_workflow.py start`, as devflow's
+  `drive.py` does — which was right, not a workaround. What the stack still owes there is the
+  link: a child started from a step should carry its parent's `--suite`/`--case` so the record
+  reads them together (issue #13, remaining).
 
 ## Asking for a retry
 
