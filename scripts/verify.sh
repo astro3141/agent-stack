@@ -229,7 +229,7 @@ done
 # the way a run's first step does, and run the controls on that — when the router finds all three
 # providers eligible, since the control cases take that as their starting point.
 RC_OBS="/tmp/verify-obs-$$"
-rc_state="$(docker exec "$STACK-agent" sh -c "rm -rf $RC_OBS && mkdir -p $RC_OBS && /opt/venv/bin/python - $RC_OBS" <<'PYRC' 2>/dev/null | nocr
+rc_state="$(docker exec -i "$STACK-agent" sh -c "rm -rf $RC_OBS && mkdir -p $RC_OBS && /opt/venv/bin/python - $RC_OBS" <<'PYRC' 2>/dev/null | nocr
 import json, os, subprocess, sys
 sys.path.insert(0, "/work/stack")
 import settings
