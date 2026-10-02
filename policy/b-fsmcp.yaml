@@ -1,9 +1,21 @@
 # #281 option B: file tools served over MCP (agentstack-fsmcp), decided by Preloop rules.
-# Reads are allowed. Writes are allowed inside the workspace except:
+# Reads are allowed, by name. Writes are allowed inside the workspace except:
 #   - anything under a .claude/ directory: the per-run project settings that remove Claude's
 #     native Write/Bash live there, so an agent must not be able to rewrite them;
 #   - any file named forbidden.txt: the rule-based deny control for this PoC.
 # Rules are evaluated by Preloop, not by the agent or the adapter.
+#
+# Every tool a run may call is listed here, by name. The names below are the full tool set of
+# the pinned server (@modelcontextprotocol/server-filesystem@2026.8.31, docker/fsmcp.Dockerfile),
+# read from its package, so updating that pin means re-reading the list.
+#
+# `unknown_tools` stays `allow`, and not by choice: Preloop 0.15.0 refuses any other value —
+# `preloop policy apply` fails with "unknown_tools='deny' (only 'allow' is currently supported)"
+# — and its loader says why: default settings are not implemented, so a restrictive one would be
+# silently ignored, and it refuses rather than fail open quietly. 0.16.0 is the same (both read
+# from the published package, OPERATIONS §63; the cold-start runner measured the refusal on
+# 2026-10-02). So a tool this file does not name is NOT denied by this policy; what denies is a
+# principal's own tool rules (packages/<name>/principals.yaml), which deny what they do not allow.
 version: '1.0'
 metadata:
   name: agentstack-b-fsmcp
@@ -52,7 +64,38 @@ tools:
   - expression: "args.source.contains('/.claude') || args.destination.contains('/.claude') || args.destination.endsWith('forbidden.txt')"
     action: deny
     description: no moves into or out of agent settings, none onto the control file
+# reads: no conditions, the workspace is theirs to read
+- name: read_file
+  source: agentstack-fsmcp
+  enabled: true
+- name: read_text_file
+  source: agentstack-fsmcp
+  enabled: true
+- name: read_media_file
+  source: agentstack-fsmcp
+  enabled: true
+- name: read_multiple_files
+  source: agentstack-fsmcp
+  enabled: true
+- name: list_directory
+  source: agentstack-fsmcp
+  enabled: true
+- name: list_directory_with_sizes
+  source: agentstack-fsmcp
+  enabled: true
+- name: directory_tree
+  source: agentstack-fsmcp
+  enabled: true
+- name: search_files
+  source: agentstack-fsmcp
+  enabled: true
+- name: get_file_info
+  source: agentstack-fsmcp
+  enabled: true
+- name: list_allowed_directories
+  source: agentstack-fsmcp
+  enabled: true
 defaults:
-  unknown_tools: allow
+  unknown_tools: allow      # the only value Preloop 0.15.0 / 0.16.0 accept — see the header
   require_approval_for_new_tools: false
   inherit_from_parent: true

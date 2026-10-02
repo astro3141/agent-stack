@@ -13,7 +13,8 @@ DEFAULT_RUNTIME = {
     "preloop": {"api_url": "http://api:8000", "mcp_url": "http://console/mcp/v1"},
     "mlflow": {"url": "http://mlflow:5000"},
     "egress": {"proxy": "http://egress:8888", "no_proxy": ["console", "api", "gateway", "mlflow", "localhost", "127.0.0.1"]},
-    "paths": {"workspace_root": "/ws", "evidence_root": "/work/evidence/p281", "observations": "/obs", "logins_root": "/route"},
+    "paths": {"workspace_root": "/ws", "evidence_root": "/work/evidence/p281", "observations": "/obs", "logins_root": "/route",
+              "state_root": "/work/state"},
 }
 
 

@@ -28,7 +28,7 @@ directory, and the operations that let the result survive a restart, an update o
 | `ops/`, `hub/` | the operator panel and the small static host beside it |
 | `evidence/` | what runs actually produced — checks, UI runs, soak samples, operations records |
 | `docs/` | how to install, run, read and extend it; `docs/record/` is the measurement record |
-| `legacy/` | the #278 probe tree — `workflows/`, `gate/`, `fixture/` — kept because the findings quote it, run by nothing |
+| `legacy/` | the #278 probe tree — `workflows/`, `gate/` — kept because the findings quote it, run by nothing (its `fixture/` stayed in CADP's `poc/278-composition/`) |
 
 ## Start here
 
@@ -41,6 +41,7 @@ directory, and the operations that let the result survive a restart, an update o
 | **[docs/reading-a-run.md](docs/reading-a-run.md)** | where everything a run leaves lands, and what reads it |
 | **[docs/packages.md](docs/packages.md)** | writing a workflow package: the contract its steps keep |
 | **[docs/runbook.md](docs/runbook.md)** | **the operator's document**: what the job is, and what to do when something is wrong |
+| **[docs/update-day.md](docs/update-day.md)** | keeping it current: the weekly drift report, the monthly update, and the rollback point |
 
 ## The documents that matter
 
@@ -58,6 +59,10 @@ directory, and the operations that let the result survive a restart, an update o
   state it started from. For operating the stack as it is now, use [docs/runbook.md](docs/runbook.md).
 - **[TRIAL-A-novel.md](docs/record/TRIAL-A-novel.md)**, **[TRIAL-B-trading.md](docs/record/TRIAL-B-trading.md)** —
   whether workflows of a given shape actually run here, and what broke when they did.
+- **[CADP-GAP.md](docs/record/CADP-GAP.md)** — this stack measured against the CADP v0.5 plane designs
+  (authority, execution, workflow): which plane it is, and where it does not touch the design at all.
+- **[PACKAGE-MATRIX.md](docs/record/PACKAGE-MATRIX.md)** — six packages against the capabilities in
+  CONTRACT.md: what each uses, what each built for itself, and which of those the platform should own.
 
 Everything under `docs/record/` is a record: it is not maintained to stay true of the current code,
 it is kept true of the day it was written.
@@ -109,7 +114,9 @@ docker exec agentstack-agent /opt/venv/bin/python /work/stack/ops_health.py
 ```
 
 `scripts/up.sh --check` answers about twenty questions about isolation, services, logins and quota
-observation, and prints which capabilities the running composition has.
+observation, and prints which capabilities the running composition has. `scripts/verify.sh` runs
+that, the controls and a run, at the level the machine allows: `static` for a checkout with no
+Docker, `stack` for an instance nobody is signed in to, `full` once the providers are.
 
 ## How this repository came to be
 

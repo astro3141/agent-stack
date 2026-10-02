@@ -200,7 +200,7 @@ class H(BaseHTTPRequestHandler):
             broker = jexec([PY, "-c",
                             "import urllib.request;"
                             "print(urllib.request.urlopen("
-                            "'http://cadp278-broker:8791/health',timeout=5).read().decode())"])
+                            "'http://broker:8791/health',timeout=5).read().decode())"])
             rc2, hs, _ = dexec(["cat", "/work/evidence/ops/host-state.json"])
             try:
                 host_state = json.loads(hs) if rc2 == 0 else None

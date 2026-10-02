@@ -46,8 +46,13 @@ agents:
     description: Reference fixture into the agents' workspace
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/packages/research-r/steps/r_stage.py", "in"]
+    output:
+      ok: {type: boolean}
+      reason: {type: string}
     routes:
       - to: propose
+        when: "{{ stage_in.output.ok }}"
+      - to: stage_failed
 
   # ---- model step 1: propose (routed) ----
   - name: propose
@@ -125,8 +130,13 @@ agents:
     description: Candidate and both verifications into the agents' workspace, for the reviewer
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/packages/research-r/steps/r_stage.py", "review"]
+    output:
+      ok: {type: boolean}
+      reason: {type: string}
     routes:
       - to: review
+        when: "{{ stage_review.output.ok }}"
+      - to: stage_failed
 
   # ---- model step 2: review (same routed provider) ----
   - name: review
@@ -182,7 +192,7 @@ agents:
     description: Record the routed research run in MLflow (a record failure never changes the outcome)
     command: "${POC_PY:-/opt/venv/bin/python}"
     args: ["/work/stack/steps/record.py"]
-    stdin: "{{ {'execute': propose.output, 'check': {'decision': gate.output.decision, 'reason': gate.output.reason, 'file_sha256': normalize.output.candidate_sha256}, 'route': route.output} | tojson }}"
+    stdin: "{{ {'execute': propose.output, 'executions': ([review.output] if review is defined else []), 'check': {'decision': gate.output.decision, 'reason': gate.output.reason, 'file_sha256': normalize.output.candidate_sha256}, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
       experiment_id: {type: string}
@@ -233,6 +243,13 @@ agents:
     type: terminate
     status: failed
     reason: "Router HOLD: {{ route.output.reason }}"
+
+  # A staging step that could not find what it moves says so in its output and the run stops
+  # here, named — not inside the model step that would have read an empty workspace.
+  - name: stage_failed
+    type: terminate
+    status: failed
+    reason: "staging refused: {% if stage_review is defined %}{{ stage_review.output.reason }}{% else %}{{ stage_in.output.reason }}{% endif %}"
 
   - name: propose_failed
     type: terminate

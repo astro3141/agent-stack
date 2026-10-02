@@ -58,7 +58,7 @@ ENV HOME=/home/agent \
 # Claude Code (agent runtime). Installs to $HOME/.local/bin.
 # Pinned to the version in use (OPERATIONS.md §3). Unpinned, every rebuild drifts: a candidate
 # build on 2026-09-23 pulled Claude 2.1.280, Conductor 0.1.39 and Preloop CLI 0.16.0.
-ARG CLAUDE_CODE_VERSION=2.1.278
+ARG CLAUDE_CODE_VERSION=2.1.287
 RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}
 
 # uv + Conductor with the extras this PoC needs.
@@ -113,7 +113,7 @@ RUN arch="${TARGETARCH:-$(uname -m)}"; \
 ENV PATH=/opt/node/bin:/opt/npm-global/bin:/opt/codexbar:$PATH     NPM_CONFIG_PREFIX=/opt/npm-global
 RUN npm install -g --no-fund --no-audit       acpx@0.18.0       @agentclientprotocol/claude-agent-acp@0.79.0       @agentclientprotocol/codex-acp@1.12.0       @openai/codex@0.155.1       @xai-official/grok@1.0.40     && chmod -R a+rX /opt/npm-global
 # CodexBar CLI (quota observation). Static musl build: the glibc build needs GLIBC_2.38, bookworm has 2.36. No Windows build exists.
-ARG CODEXBAR_VERSION=0.63.0
+ARG CODEXBAR_VERSION=0.70.0
 RUN arch="${TARGETARCH:-$(uname -m)}"; \
     case "$arch" in \
       amd64|x86_64) cb_arch=x86_64;; \

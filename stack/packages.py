@@ -8,6 +8,9 @@ usage:
   packages.py needs [<name>] [--json]
                                    what each package needs in the environment, and whether it is
                                    there — names and presence, never values
+  packages.py stack [<name>] [--json]
+                                   the stack revision each package needs at least, and whether
+                                   this checkout has it
 
 A workflow used to be three things at once: a file under `stack/workflows/`, steps and prompts
 scattered through `stack/`, and its name written into a list inside `run_workflow.py` and another
@@ -44,6 +47,11 @@ ALLOW = os.environ.get(
     "/work/config/generated/egress/allow" if os.path.isfile("/work/config/generated/egress/allow")
     else "/work/docker/egress/allow")
 NAME = re.compile(r"[a-z][a-z0-9-]{1,39}")
+# The keys of `requires:` something in this stack reads. A key outside this set is a comment —
+# and two packages carried one for weeks (`principals`, `host_paths`: docs/record/PACKAGE-MATRIX.md),
+# each believing the stack checked something it never looked at. `list` now says so by name.
+KNOWN_REQUIRES = {"capabilities", "env", "egress", "python", "stack", "state"}
+COMMIT = re.compile(r"[0-9a-f]{7,40}")
 
 
 def _yaml(path):
@@ -108,6 +116,8 @@ def _read(directory):
                entries=resolved, version=str(m.get("version") or ""),
                description=str(m.get("description") or ""),
                requires=(m.get("requires") or {}), login=(m.get("login") or {}),
+               unknown_requires=sorted(str(k) for k in (m.get("requires") or {})
+                                       if str(k) not in KNOWN_REQUIRES),
                principals_file=(os.path.join(directory, "principals.yaml")
                                 if os.path.isfile(os.path.join(directory, "principals.yaml")) else ""))
     return out
@@ -349,6 +359,101 @@ def needs_python(name=None):
     return out
 
 
+def stack_of(name=None):
+    """The stack revision each package says it needs at least, and whether this checkout has it.
+
+    A package calls the stack's steps by absolute path and argv order, so a package written against
+    a newer stack fails on an older one in whatever way the missing feature fails — a brokered step
+    refused as `invalid expected`, a long call killed at fifteen minutes — and the only record of
+    the floor was a line of prose in the package's runbook. The manifest may now say it:
+
+        requires:
+          stack:
+            min: 2985815          # a commit of this repository
+
+    "ok" means the running checkout contains that commit; "too_old" means it does not, and the
+    runner refuses the run with that answer. "unverifiable" is neither: no git, a shallow clone
+    that does not reach the floor, a checkout git will not read — reported, not refused, because
+    it says nothing about the stack's age. Nothing here guesses.
+    """
+    import subprocess
+    root = os.environ.get("AGENTSTACK_ROOT", "/work")
+    out = {}
+    for pkg, p in sorted(installed().items()):
+        if not p["usable"] or (name and pkg != name):
+            continue
+        spec = (p.get("requires") or {}).get("stack")
+        if not spec:
+            continue
+        floor = str(spec.get("min") if isinstance(spec, dict) else spec).strip()
+        if not COMMIT.fullmatch(floor):
+            out[pkg] = {"min": floor, "state": "invalid",
+                        "why": "requires.stack.min is a commit of this repository, 7 to 40 hex characters"}
+            continue
+        try:
+            r = subprocess.run(["git", "-c", f"safe.directory={root}", "-C", root,
+                                "merge-base", "--is-ancestor", floor, "HEAD"],
+                               capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            out[pkg] = {"min": floor, "state": "unverifiable", "why": f"git: {type(e).__name__}"}
+            continue
+        if r.returncode == 0:
+            state, why = "ok", ""
+        elif r.returncode == 1:
+            state, why = "too_old", f"this checkout does not contain {floor}"
+        else:
+            state, why = "unverifiable", ((r.stderr.strip().splitlines() or ["git failed"])[-1])[:200]
+        out[pkg] = {"min": floor, "state": state, "why": why}
+    return out
+
+
+def state_root():
+    """Where package state that outlives a run lives (environment paths.state_root)."""
+    try:
+        sys.path.insert(0, "/work/stack")
+        import settings
+        return settings.runtime()["paths"].get("state_root") or "/work/state"
+    except Exception:
+        return "/work/state"
+
+
+def state_of():
+    """<state_root>/<package>/ — on disk, and whether the package declared it.
+
+    Four packages kept state outside any run in four places (PACKAGE-MATRIX X9: a GitHub comment
+    and .devflow-cache, handoff/ used as a database, a /research mount) because the stack named
+    nowhere. Now it names one directory per package, under one root, and a package says it uses
+    it with `requires: {state: true}`. This reports; it deletes nothing — a directory nobody
+    declared is a question for the operator (docs/packages.md, "State that outlives a run").
+    """
+    root = state_root()
+    pk = installed()
+    declared = {n for n, r in pk.items() if (r.get("requires") or {}).get("state")}
+    rows = {}
+    if os.path.isdir(root):
+        for entry in sorted(os.listdir(root)):
+            d = os.path.join(root, entry)
+            if not os.path.isdir(d):
+                continue
+            size = 0
+            for dp, _, fs in os.walk(d):
+                for f in fs:
+                    try:
+                        size += os.path.getsize(os.path.join(dp, f))
+                    except OSError:
+                        pass
+            if entry in declared:
+                state, why = "declared", "the package declares requires.state"
+            elif entry in pk:
+                state, why = "UNDECLARED", "the package is installed and does not declare requires.state"
+            else:
+                state, why = "NO PACKAGE", "no installed package of this name — an operator's question"
+            rows[entry] = {"path": d, "state": state, "why": why, "kb": size // 1024}
+    for n in sorted(declared - set(rows)):
+        rows[n] = {"path": os.path.join(root, n), "state": "declared, empty", "why": "nothing written yet", "kb": 0}
+    return {"root": root, "packages": rows}
+
+
 def login_of(name):
     """The official login a package declares, or {} — the same shape a provider's login has.
 
@@ -410,11 +515,22 @@ def _print(rows):
     if not rows:
         print(f"no packages under {ROOT}")
         return
+    floors = {}
+    try:
+        floors = stack_of()
+    except Exception:
+        pass
     for name, p in rows.items():
         if p["usable"]:
             wfs = ", ".join(sorted(p.get("entries") or {}))
             print(f"{name:<16} {p.get('version') or '-':<8} {wfs}"
                   + ("  + principals" if p["principals_file"] else ""))
+            for k in p.get("unknown_requires") or []:
+                print(f"  note: requires.{k} is read by nothing in this stack (manifest.yaml)")
+            f = floors.get(name)
+            if f and f["state"] != "ok":
+                print(f"  {'REFUSED' if f['state'] == 'too_old' else 'note'}: requires.stack.min "
+                      f"{f['min']} — {f['state']}: {f['why']}")
         else:
             print(f"{name:<20} {'-':<8} UNUSABLE: {p['why']}")
 
@@ -451,6 +567,27 @@ if __name__ == "__main__":
                 print(f"{pkg:<12} {e['host']:<32} {'open' if e['open'] else 'NOT OPEN'}")
         for h in (got.get("open_and_undeclared") if isinstance(got, dict) else None) or []:
             print(f"{'(nobody)':<12} {h:<32} open — no installed package declares it")
+        sys.exit(0)
+    if a[:1] == ["stack"]:
+        rest = [x for x in a[1:] if not x.startswith("--")]
+        got = stack_of(rest[0] if rest else None)
+        if "--json" in a:
+            print(json.dumps(got, ensure_ascii=False))
+        elif not got:
+            print("no installed package declares a stack floor (requires.stack.min)")
+        else:
+            for pkg, f in got.items():
+                print(f"{pkg:<12} {f['min']:<12} {f['state']:<13} {f['why']}")
+        sys.exit(0)
+    if a[:1] == ["state"]:
+        got = state_of()
+        if "--json" in a:
+            print(json.dumps(got, ensure_ascii=False))
+        elif not got["packages"]:
+            print(f"nothing under {got['root']}, and no installed package declares requires.state")
+        else:
+            for pkg, r in got["packages"].items():
+                print(f"{pkg:<12} {r['state']:<16} {r['kb']:>8} KB  {r['why']}")
         sys.exit(0)
     if a[:1] == ["logins"]:
         # one answer for the panel: what each package needs, and the login it declares

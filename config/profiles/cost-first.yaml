@@ -8,7 +8,10 @@ providers:
 
 quota:
   max_age_s: 1800
-  require_windows: [weekly]
+  require_windows:                # per provider — the same statement as research-default (OPERATIONS §64)
+    codex: [weekly]
+    grok: []
+    claude: [weekly]
   max_used_percent: {session: 80, weekly: 90}
 
 tools:

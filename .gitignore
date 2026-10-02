@@ -85,3 +85,6 @@ docker/egress/profiles/*.allow
 !docker/egress/profiles/closed.allow
 !docker/egress/profiles/probe.allow
 config/generated/egress/
+
+# package state that outlives a run (docs/packages.md, "State that outlives a run")
+state/

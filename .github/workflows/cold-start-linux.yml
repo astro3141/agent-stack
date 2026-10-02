@@ -8,8 +8,15 @@ name: cold start on linux
 # A runner has no provider logins, and never will: those are a person's accounts at Anthropic,
 # OpenAI and xAI. So the login and quota checks are expected to fail, and only those.
 
+# When it runs. A push to main proves that commit on a clean host; the weekly run catches what
+# changes underneath a commit that did not: Preloop's installer, the images this pulls, the
+# runner image. Both are the same job as the manual run.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 21 * * 0"   # Monday 06:17 KST
 
 permissions:
   contents: read
@@ -45,7 +52,7 @@ jobs:
           # What a machine without provider logins may fail, and nothing else.
           allowed = {"claude /route login", "codex /route login", "grok /route login",
                      "observer codex login", "every provider's state is knowable",
-                     "observation fresh (< 10 min)"}
+                     "observation fresh (< 10 min)", "the router can choose a provider"}
           failed = [re.sub(r"\s{2,}.*$", "", l.strip()[6:]).strip()
                     for l in log.splitlines() if l.startswith("  FAIL")]
           unexpected = [f for f in failed if f not in allowed]
@@ -58,7 +65,7 @@ jobs:
               ('"did": "created"', "the declared principals were created"),
               ("ok    runtime may not decide approvals", "the runtime cannot decide approvals"),
               ("ok    runtime may not rewrite them", "the runtime cannot rewrite its rights"),
-              ("ok    fsmcp tools exposed via Preloop", "tools are served through Preloop"),
+              ("ok    fsmcp tools work through Preloop", "tools are served through Preloop"),
           ]
           missing = [why for needle, why in required if needle not in log]
 
@@ -71,12 +78,19 @@ jobs:
           print("\nthe stack came up on a host that had none of it; only the provider logins failed")
           PY
 
-      - name: keep the log
+      # The stack is up and nobody is signed in: exactly the `stack` level of scripts/verify.sh —
+      # the checks, the three control suites, package locks and controls, one hello-lane run.
+      - name: verify at the stack level
+        run: set -o pipefail; bash scripts/verify.sh --level stack 2>&1 | tee /tmp/verify.log
+
+      - name: keep the logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cold-start-log
-          path: /tmp/cold-start.log
+          path: |
+            /tmp/cold-start.log
+            /tmp/verify.log
 
       - name: take it down the way an operator would
         if: always()

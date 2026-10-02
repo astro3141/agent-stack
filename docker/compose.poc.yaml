@@ -288,6 +288,8 @@ services:
   admin:
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-admin
+    depends_on:
+      agent: {condition: service_started}   # it shares agent-home: filled by the main agent first
     init: true
     restart: unless-stopped
     networks:
@@ -332,6 +334,8 @@ services:
       dockerfile: docker/ops.Dockerfile
     image: agentstack/ops:local
     container_name: ${STACK:-agentstack}-ops
+    depends_on:
+      agent: {condition: service_started}   # it shares agent-home: filled by the main agent first
     init: true
     restart: unless-stopped
     # The screen is optional in a reduced composition; runs still start from the CLI.
@@ -445,7 +449,14 @@ services:
       egress-profile-closed:
         aliases: [egress]
 
+  # An egress profile an instance provisions (docker/egress/profiles/<name>.allow, OPERATIONS §60)
+  # exists as containers only when its list does: scripts/up.sh turns each provisioned profile into
+  # the compose profile `egress-<name>`. closed and probe ship tracked and are always on. Without
+  # this, a fresh clone — which has no research.allow — failed at `up`: compose mounted a file
+  # that was not there (measured on the cold-start runner, 2026-10-02). A role mapped to a profile
+  # with no container is refused by name, which is the answer a missing list should get.
   egress-research-proxy:
+    profiles: ["egress-research"]
     image: agentstack/egress:local
     container_name: ${STACK:-agentstack}-egress-research
     init: true
@@ -459,6 +470,7 @@ services:
         aliases: [egress]
 
   egress-research-review-proxy:
+    profiles: ["egress-research-review"]
     image: agentstack/egress:local
     container_name: ${STACK:-agentstack}-egress-research-review
     init: true
@@ -475,9 +487,16 @@ services:
   # agent — H1's whole point is that the *file* identity does not change. What changes is the
   # network it is born on, and what it is NOT given: no principals.env, no market/package env.
   # The Preloop principal is the trusted adapter's to present, never this environment's (§51).
+  # Every profile agent shares the main agent's home volume (the toolchain lives there, §3). A
+  # fresh named volume is filled from the image by the first container created on it, and compose
+  # creates containers in parallel: four fills at once collided on a symlink ("file exists",
+  # measured on the cold-start runner 2026-10-02, after eight runs that happened not to). The
+  # profile agents therefore wait for the main agent, which fills the volume alone.
   agent-probe:
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-probe
+    depends_on:
+      agent: {condition: service_started}
     init: true
     restart: unless-stopped
     volumes:
@@ -502,6 +521,8 @@ services:
   agent-closed:
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-closed
+    depends_on:
+      agent: {condition: service_started}
     init: true
     restart: unless-stopped
     volumes:
@@ -524,8 +545,11 @@ services:
         aliases: [runner-closed]
 
   agent-research:
+    profiles: ["egress-research"]
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-research
+    depends_on:
+      agent: {condition: service_started}
     init: true
     restart: unless-stopped
     volumes:
@@ -548,8 +572,11 @@ services:
         aliases: [runner-research]
 
   agent-research-review:
+    profiles: ["egress-research-review"]
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-research-review
+    depends_on:
+      agent: {condition: service_started}
     init: true
     restart: unless-stopped
     volumes:

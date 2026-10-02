@@ -3,7 +3,9 @@
 #
 #   scripts/packages.sh list              what is declared, what is installed, what the lock says
 #   scripts/packages.sh install [name]    fetch what is declared and not local, and lock it
-#   scripts/packages.sh verify            is what is on disk what the lock says
+#   scripts/packages.sh verify            is what is on disk what the lock says — then each
+#                                         package's own controls.py, in the agent container
+#   scripts/packages.sh controls [name]   only the controls
 #
 # Declared in config/packages.yaml, locked in config/packages.lock. A package that lives in this
 # repository is `from: local` and needs neither: this repo's history is its history. One that lives
@@ -56,6 +58,25 @@ lock_file_for() {   # name — which lock this package's pin belongs in
 }
 STACK="${STACK:-agentstack}"
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
+
+# A package's controls live with the package (docs/packages.md, "Controls"): packages/<name>/controls.py,
+# run in the agent container where the stack's settings and PYTHONPATH are. A package without one is
+# noted, not failed — the platform's suite (stack/trial_controls.py) never imports a package to pin
+# that package's rules, so a package with no controls.py has nothing pinning them at all.
+run_controls() {   # [name] — 0 when every controls.py passed
+  local rc=0 any=0
+  declared | while read -r name from ref; do
+    [ -n "$1" ] && [ "$1" != "$name" ] && continue
+    if [ ! -f "$PKGDIR/$name/controls.py" ]; then
+      echo "  none     $name — no controls.py (nothing pins this package's own rules)"
+      continue
+    fi
+    echo "== $name: controls"
+    docker exec "$STACK-agent" /opt/venv/bin/python "/work/packages/$name/controls.py" \
+      || { echo "  FAILED   $name — controls.py reported failures" >&2; exit 1; }
+  done || rc=1
+  return "$rc"
+}
 
 locked_commit() {   # name
   cat "$LOCK" "$LOCAL_LOCK" 2>/dev/null | grep -E "^$1 " | awk '{print $2}' | head -1
@@ -123,7 +144,11 @@ case "$CMD" in
         echo "  DRIFT    $name — at ${head:0:8}, locked ${locked:0:8}" >&2; exit 1; }
     done || fail=1
     [ "$fail" = 0 ] && echo "every fetched package is at the commit config/packages.lock names"
+    run_controls "$ONLY" || fail=1
     exit "$fail";;
+
+  controls)
+    run_controls "$ONLY"; exit $?;;
 
   install)
     declared | while read -r name from ref; do
@@ -150,5 +175,5 @@ case "$CMD" in
     echo "now: scripts/up.sh   (its principals are created and given credentials there)"
     exit 0;;
 
-  *) echo "usage: scripts/packages.sh [list|install|verify] [name]" >&2; exit 2;;
+  *) echo "usage: scripts/packages.sh [list|install|verify|controls] [name]" >&2; exit 2;;
 esac

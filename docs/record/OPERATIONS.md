@@ -3560,3 +3560,198 @@ should get to see that line too. Worth revisiting when more than one package nee
 
 **534/534 controls.**
 
+## 63. Preloop's policy cannot deny a tool it does not name (measured 2026-10-02)
+
+The fail-open default in `policy/b-fsmcp.yaml` — `unknown_tools: allow`, with the file-server's
+reads unlisted — was changed to `deny` with every tool named, as the CADP gap analysis
+(docs/record/CADP-GAP.md) recommended. The first cold start to carry it failed at `policy apply`,
+and `cfg.py status` held the reason:
+
+```
+policy stage: RuntimeError: Policy contains restrictive default settings that are not yet supported.
+These settings would be silently ignored, leading to permissive behavior.
+Unsupported settings: unknown_tools='deny' (only 'allow' is currently supported). Remove these
+settings or wait for implementation.
+```
+
+Read from the published package (`preloop==0.15.0`, `services/policy/loader.py`): default
+settings are not implemented; `deny` and `require_approval` exist in the schema, and the loader
+refuses them so that an operator is not left believing something is enforced. `preloop==0.16.0`
+carries the same check. So on this Preloop, **a tool the policy does not name is allowed**, and
+the only thing that denies is a principal's own tool rules.
+
+What changed as a result: the policy keeps every tool named (so the list is read, not assumed)
+and `unknown_tools: allow` with the reason beside it; `scripts/up.sh` now prints Preloop's reason
+when an apply fails instead of only "apply failed"; `scripts/verify.sh --level static` refuses a
+default Preloop would refuse. The gap stands as recorded — fail-closed classification is not
+expressible here — and the place to enforce it remains the principals' rules.
+
+## 64. The second install: Windows, Docker Desktop, Git Bash (measured 2026-10-02)
+
+The stack was brought up on a machine it had never run on — Windows 11, Docker Desktop on WSL2,
+Git Bash — from a clone of this branch, by a person running `scripts/verify.sh` at each level and
+reporting what failed. Three rounds; every finding was reproduced before it was changed. What was
+found, and what each turned out to be:
+
+| | observed | was | change |
+|---|---|---|---|
+| F1 | `admission: no — no generated profile 'research-default'` on an already-claimed Preloop | `cfg.py generate` ran only in the claim branch of `up.sh` | generated on every bring-up |
+| F2 | `exec: "C:/Program Files/Git/opt/venv/bin/python": no such file` | Git Bash rewrote `/opt/…` and `/work/…` arguments to `docker exec`; `up.sh` had the guard, `verify.sh` did not | `MSYS_NO_PATHCONV=1` in `verify.sh` |
+| F3 | six static checks failing with the one word `Python` | `python3` on that host is the Microsoft Store's app-execution alias, a stub that prints "Python" and exits 49 | `pick_py()`: the first of `python3`, `python`, `py -3` that runs a script; `PY=` overrides |
+| F3 | `UnicodeEncodeError: 'cp949' codec can't encode '\u2014'` in novel's controls | a cp949 console | `PYTHONUTF8=1` |
+| F4 | hello-lane's step "did not write where the helper points"; novel's repeat control counted a round | the host's native Python joined a POSIX `/tmp` path with a backslash; the same controls in the agent container: 32 ok | when the stack is up, step tests and package controls run in the agent container, with the runtime's interpreter |
+| F5 | `auto completed but the judgement is ''` while the run record said `decision: PASS` | `verify.sh` read the show file with the host Python by its POSIX path; `FileNotFoundError`, swallowed | the show line is piped on stdin |
+| F6 | `router_controls` always skipped, "not every provider has a normalized observation in /obs" | there is no such file: every run collects into its own evidence directory, and `/obs` holds only the observer's raw codex reading, read-only in the agent | `verify.sh` collects once, as a run's first step does, and runs the controls on that when all three are eligible |
+| F7 | novel-a `HOLD`: `grok: unknown: required weekly window not reported`; `claude: unknown: Claude OAuth usage endpoint is rate limited by Anthropic right now` | not a quota: the second is the vendor's usage endpoint refusing the reading (429, transient; `auto` had routed on claude minutes before); the first is a Grok reading with a timestamp and no window of weekly length, where the first install had measured `weekly 1 %` (FINDINGS-281, "Quota") | the observation now carries `reported_windows` — every window the vendor gave, as given — so the next HOLD says what was reported; the runbook ("Runs hold") says where to read it |
+| F8 | profile agents failing at start with symlink "file exists" on a cold start | four containers filling one new named volume at once | `depends_on` the main agent, so one fills it |
+
+What the rounds measured, on `81417d4`: static 10/10, stack 18/18, full 18/20 — the two being
+F5 (an auto run that passed, misread) and F7 (a held novel-a). F5 is fixed above. F7's Grok line is
+not: the collector now records what Grok reports, and the next reading on that host says whether
+the weekly window moved (a plan, CodexBar, or the vendor's response) or stopped being one — the
+profile's `require_windows` is the right place to answer that, and the answer is not known yet.
+
+Two readings of F6 differed, and the record should keep both: the report read "the observer
+collects only codex" as the cause. It is by design — the observer is codex's optional second
+source (§29), and Claude and Grok are read with the login that executes — but the check in
+`verify.sh` was written as though the observer produced every provider's normalized file, and so
+could never run. The report was right that nothing ran; the reason was the check.
+
+What Grok's window is, read from CodexBar's source at the pinned tag (`v0.63.0`, and unchanged at
+its head, 0.70): one `primary` window built from the account's **billing period** — `windowMinutes`
+is the period's length, computed from its start and end, so a SuperGrok weekly credit pool
+classifies as `weekly` here and a monthly plan would too — and **no window** when the billing
+answer carries no percent (CodexBar's own changelog, 0.55.0: "report period-only CLI-proxy
+responses as unknown usage instead of 0% when Grok Build has hit its free limit"). So "required
+weekly window not reported" with a timestamp is CodexBar seeing the account and the account
+giving no usage figure; the next reading's `reported_windows` says which of the two it was, and
+the Grok reading on that host — plan, period, percent — is the measurement still owed.
+
+A quota observation from CodexBar has always carried the vendor's labels (`primary`/`secondary`)
+re-classified by length into `session`/`weekly`, and nothing else. A classification that fails
+silently is the one thing a fail-closed router cannot explain, so the raw list travels with it now.
+
+Linux, the same commits: cold start green, verify stack 18/18 (`cold-start-linux` run 16).
+
+### §64 addendum: the Grok reading, and what the profile now says about it (2026-10-02)
+
+The next run on that host, with the collector carrying `reported_windows`:
+
+```
+{"provider": "grok", "source": "codexbar:grok-cli-proxy", "observed_at": "2026-10-02T06:57:36Z",
+ "observed_account": "email:1d504a6b18afad1f", "executing_account": "email:1d504a6b18afad1f",
+ "identity_basis": "same-credential", "model_route": "direct",
+ "windows": {}, "reported_windows": [], "extra_windows": []}
+```
+
+The account is seen, the reading is fresh, and the vendor gives no usage figure — the
+period-only answer CodexBar classifies as unknown rather than 0 %. `auto` passed on the same
+run (F5 confirmed fixed): full 19/20, the one miss being this HOLD.
+
+So `require_windows` takes a per-provider form, and `research-default` says `grok: []` with the
+measurement beside it. The router admits such a provider on identity and freshness and writes
+*why* into the decision — `within limits (no usage window reported; none required of this
+provider)` — so a record never shows a bare "within limits" for a provider that reported nothing.
+The list form still binds every candidate; `claude` and `codex` keep `[weekly]`, which both report.
+What this is not: a change to the router's rule that unknown is not eligible. A provider the
+profile requires a window of, and that reports none, is as unknown as before (control added, with
+the four cases).
+
+Owed from that host: the raw billing answer (runbook, "Runs hold"), which says whether this is
+the plan or the proxy. Until then the profile's line is the operator's statement, dated.
+
+### §64 addendum 2: the 429 was ours (measured 2026-10-02)
+
+With `grok: []` in place, novel-a completed on that host — architect=codex, author=claude,
+story=codex, history=claude, cold=grok, decision PASS — on a retry. The first attempt had held on
+`claude: unknown: Claude OAuth usage endpoint is rate limited by Anthropic right now`, and a live
+reading taken by hand minutes later showed the account at 6 % (5 h) / 43 % (weekly), Claude Max 5x.
+Not a quota. A rate limit on *asking*.
+
+Who asks, counted from the code rather than guessed: a run's first step (`route.py`, once per
+run — `roles.py` reads that decision, it does not collect again); the panel's accounts view
+(`/api/accounts`, on load, on every profile change, after a login, and from the dashboard) and
+its overview (`/api/overview` → `ops_health` → `unknowable()`); `up.sh --check` (twice:
+`unknowable()` and `capabilities.probe()`); `verify.sh` (the same two through `up.sh --check`,
+`ops_health`, and now its own collection for the router controls). Each is one live
+`codexbar usage --provider claude --source oauth` per login — and nothing kept any reading, so
+the profile's `max_age_s: 1800` bounded nothing: there was never a reading to be younger than it.
+The report's own count ("route + author + history, 2–3 per run") was not it; the panel was.
+
+What changed (`collect_obs.py`, `kept()`): the last good reading of each provider is kept beside
+its login (`/route/.quota/<provider>-<login>.json`); a kept reading younger than 120 s
+(`AGENTSTACK_OBS_REUSE_S`) is presented again instead of taken again, with `source: cache:…` and
+its own `observed_at`; a live reading that fails, or carries the vendor's error, is answered by the
+kept one with the failure beside it (`live_failed`). "Good" is an answer with no error — Grok's
+empty figure is a good reading of that. Nothing extends `max_age_s`: the router judges the kept
+reading's age as before, so a refusal that outlasts the profile's bound is `stale`, and a provider
+that never had a good reading is `unknown` as it always was. Five controls in `review_controls`
+drive it with a fake CodexBar: refusal with nothing kept, a good reading kept, refusal answered by
+it, the reuse window, the time it keeps.
+
+Full on that host, measured: 20/20 when the endpoint answered. With the keeper, the asking that
+tripped it is one live reading per 120 s per login, whatever the panel does.
+
+### §64 addendum 3: the router controls ran for the first time (measured 2026-10-02)
+
+With the keeper in place the second install's `verify.sh --level full` reached 20/21: auto and
+novel-a both PASS, and the one failure was `router_controls` — which had never run on any
+machine (addendum 1's F6) and now did, because all three providers were eligible. It died before
+its first case: `KeyError: 'weekly'` in `set_()`, walking a path into Grok's `windows`, which is
+`{}`. Two things were wrong with the cases, and neither was the router. A mutation assumed the
+live reading carried the window it was about to set; and the cases ran the router with the
+static `stack/routing-policy.json`, which still required a weekly window of every provider while
+the profile the stack routes with had stopped requiring one of Grok. Rerun by hand on a
+collection shaped like that install's (claude and codex with a weekly window, grok with none):
+with the profile's policy 26/26; with the static one 19/26, every miss "→ grok" held on
+`grok: unknown: required weekly window not reported` — the exact line the profile change was
+for. `router_controls.py` now takes the policy as its second argument, `verify.sh` passes the
+generated profile's, a case creates the path it sets, and `routing-policy.json` carries the same
+per-provider form as `research-default`.
+
+### §64 addendum 4: the Cold Reader's DENIED — a posture that lived in a hand-written file
+
+Full 21/21 on the second install, novel-a PASS — and in its receipt, `cold grok DENIED` after
+335 s, the review itself produced. Read from the call's `result.json`: `mcp_rule_denials: None`,
+one permission, `denial: approval_expired`, `acp_kind: edit`, `title: Write /ws/…/review_cold.json`,
+and the ACP-handed MCP server connected with `preloop__write_file` in its discovered tools. So
+Grok had the governed write and used its native one; the adapter held that for a person, as it
+does for every native tool a vendor cannot switch off; nobody was there; the window (~302 s)
+expired.
+
+Why the first install never saw this: FINDINGS-281, "Grok native tools removed (2026-09-22)" —
+the `[permission]` table (`deny` Bash/Edit/Write/WebFetch/WebSearch, `allow MCPTool(preloop__*)`)
+was written **by hand** into `/route/grok/config.toml`, measured (`NATIVE_UNAVAILABLE` when told
+to use the built-in write), and entered the matrix as "native write/shell: off (own deny rules)".
+Nothing in the tree wrote or checked that file. §31's arm64 pilot had already met the same wall —
+a Grok lane asking to run a shell command, held for a person — and recorded the approval clock,
+not the missing table. Claude's equivalent is a settings file the adapter writes into each run's
+workspace; Codex's is feature flags in its environment; Grok's was a file on one machine.
+
+Built: `stack/grok_posture.py` writes the measured table into every grok login the profiles name
+— on login (`login_helper.py`, the moment the status says connected) and on every bring-up
+(`up.sh`) — keeping the file's MCP entry, its other tables and any deny/allow entries of its own,
+with the previous file beside it; `up.sh --check` reports `grok native tools denied in its config`
+for a login that exists and `--` for none. Seven controls in `review_controls` cover a bare login,
+an existing file, a second run, and a file that does not parse (left alone, reported).
+
+Measured on the second install after `git pull` and a bring-up (`grok posture: written`;
+`up.sh --check`: `grok native tools denied in its config  yes`), `verify.sh --level full`:
+
+```
+full: 21/21 passed
+novel-a  decision PASS, reviews_failed none, cold_available yes
+         story    codex   COMPLETED  produced   41 s
+         history  claude  COMPLETED  produced   42 s
+         cold     grok    COMPLETED  produced   74 s     (was DENIED at 336 s)
+         review_wall_s 73.9                              (was 336.0)
+review_cold.json written through preloop__write_file
+```
+
+Three vendors, three principals, three governed writes; the fan-out that waited out an approval
+window now ends when the slowest reviewer does.
+
+Still a person's decision, deliberately: a native tool a vendor cannot switch off (Codex's
+`apply_patch`) is held for approval, and an unattended run that asks for one ends `DENIED` after
+the window. The stack does not shorten that window — approval is the answer the stack gives for
+a tool outside the posture, and a shorter window would turn "not approved" into "not asked".

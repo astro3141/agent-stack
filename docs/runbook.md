@@ -38,7 +38,13 @@ a button for it, that is the signal to write it down in `config/`, not in a scre
 ```bash
 scripts/up.sh --check                                    # about twenty questions, and the capabilities
 docker exec agentstack-agent /opt/venv/bin/python /work/stack/ops_health.py
+scripts/verify.sh                                        # both of the above, the controls, one run — at the level this machine allows
 ```
+
+`verify.sh` has three levels and picks the one the machine can do: `static` on a checkout with
+no Docker, `stack` on a running instance with nobody signed in (what the GitHub runner does),
+`full` when the providers are signed in — then it also makes one routed call and one role-split
+run, both recorded. Each level prints first what it cannot see.
 
 `up.sh --check` changes nothing. Read it in three parts: **isolation** (the agent has no route out
 except the allowlist proxy), **services and the boundary** (Preloop answers, and the runtime may
@@ -90,6 +96,92 @@ docker exec agentstack-agent sh -c 'CLAUDE_CONFIG_DIR=/route/claude HTTPS_PROXY=
 
 **Do:** sign in again from the panel's 계정 tab. That is a person's job — the stack will not do it
 and cannot. Then `up.sh --check` should show `0` again (OPERATIONS §24).
+
+**Two more "unknown" lines, measured on a second install (OPERATIONS §64), and what each is:**
+
+```
+grok:   unknown: required weekly window not reported
+claude: unknown: Claude OAuth usage endpoint is rate limited by Anthropic right now …
+```
+
+The second is the vendor's usage endpoint refusing the reading (HTTP 429), not the account's quota
+— measured at 6 % / 43 % while it said so. It was this stack asking too often: every asker (a run's
+first step, the panel's accounts view and dashboard, `up.sh --check`, `verify.sh`) took its own
+live reading, and none was kept. The collector now keeps the last good reading beside the login
+(`/route/.quota/<provider>-<login>.json`), presents it again for 120 s instead of asking
+(`AGENTSTACK_OBS_REUSE_S`), and when the vendor refuses, lets it stand in with the refusal beside it
+(`source: cache:…`, `live_failed`). The router judges the kept reading's age exactly as before, so
+a 429 that outlasts `max_age_s` is still `stale`, honestly. If you still see this line, the
+provider has had no good reading since the stack came up: wait a few minutes and re-collect
+(`scripts/up.sh --check`). The first means CodexBar answered for
+Grok, with a timestamp, but no window the router could call *weekly* — the profile requires one
+(`quota.require_windows`), and a provider that reports none is unknown, not free. What Grok did
+report is in the observation itself, in the run's own evidence or from a fresh reading:
+
+```bash
+docker exec agentstack-agent sh -c 'cat /work/evidence/p281/route-<run>/obs/grok.json'   # reported_windows
+docker exec agentstack-agent sh -c 'GROK_HOME=/route/grok HOME=/route/grok/home HTTPS_PROXY=http://egress:8888 \
+  codexbar usage --provider grok --json'
+```
+
+`reported_windows` is every window the vendor gave, as given (label, percent, minutes, reset); a
+window with no `windowMinutes` cannot be classified and appears only there. What Grok's one window
+*is*, read from the pinned CodexBar (0.63.0, `GrokStatusProbe.toUsageSnapshot`): the account's
+**billing period** — a weekly credit pool on SuperGrok (the first install measured `weekly 1 %`),
+a month on other plans — with `windowMinutes` computed from the period's start and end, and **no
+window at all** when the billing answer carries no percent (a period-only answer: a free tier at
+its limit, a billing RPC the CLI surface lacks). So an empty `reported_windows` with a timestamp
+means CodexBar saw the account and the account reported no usage figure; `window_minutes: null`
+means a period with no start. Whether the answer is a changed plan, a changed CodexBar, or a
+changed vendor response, that line says which — and what to change (the profile's required
+windows, or the collector's classification) is decided from it, not from the HOLD.
+
+Measured on that install: `reported_windows: []` with a timestamp and a matching account — the
+proxy answers for the account and gives no usage figure. The profile's `quota.require_windows`
+takes a per-provider form for exactly this (`research-default.yaml`: `grok: []`), and a provider
+admitted that way carries it in the decision: `within limits (no usage window reported; none
+required of this provider)`. That is an operator's statement that this account's vendor reports
+nothing, not the stack's guess that nothing means plenty — keep the list form, or that provider's
+`[weekly]`, wherever the vendor does report one. The raw answer behind the reading, when the
+plan is in question:
+
+```bash
+docker exec agentstack-agent sh -c 'tok=$(/opt/venv/bin/python -c "import json; a=json.load(open(\"/route/grok/auth.json\")); print(next(v[\"key\"] for v in a.values() if isinstance(v, dict) and v.get(\"key\")))"); \
+  curl -s -x http://egress:8888 -H "Authorization: Bearer $tok" -H "x-xai-token-auth: xai-grok-cli" -H "Accept: application/json" \
+  "https://cli-chat-proxy.grok.com/v1/billing?format=credits"'
+# config.creditUsagePercent, or onDemandCap/onDemandUsed, is what CodexBar turns into the window; neither → none
+```
+
+## A Grok lane ends DENIED after five minutes, on a Write
+
+**Look:** a member's receipt says `status: DENIED`, `attempt_outcomes: ['denied']`, about 300 s
+after it started; its `result.json` has `mcp_rule_denials: None` and one permission with
+`denial: approval_expired`, `acp_kind: edit`, `title: Write …`. The MCP server is connected and
+`preloop__write_file` is in its tool list.
+
+**What it means.** Grok produced its answer and saved it with its **native** `Write` instead of
+Preloop's `write_file`. The adapter holds a native write for a person (that is the rule for every
+vendor's native tool that cannot be switched off), nobody was there, and the approval window
+expired. Not quota, not a Preloop rule, not the MCP connection: the login's `config.toml` lacks
+the table that turns Grok's native tools off (FINDINGS-281, "Grok native tools removed"), which a
+`grok login` does not write. The first install had it by hand; a second did not (OPERATIONS §64).
+
+**Do:** nothing by hand. The table is written when a Grok login connects and on every
+`scripts/up.sh`, and `scripts/up.sh --check` reports it:
+
+```
+  ok    grok native tools denied in its config       yes
+```
+
+To see or write it now:
+
+```bash
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/grok_posture.py check
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/grok_posture.py ensure   # keeps config.toml.bak
+```
+
+An advisory role (novel-a's Cold Reader) does not fail the run; a required one holds it, and the
+hold's reason is this line.
 
 ## A fresh install: logged in, and one provider still unusable
 
@@ -356,6 +448,9 @@ Two things worth knowing before you need them:
   of it; that is what backup covers.
 
 Losing the backup key means losing the backup. Keep the key and the archive in different places.
+
+Updating on purpose — once a month, with the drift report, the controls and a rollback point — is
+its own page: [update-day.md](update-day.md).
 
 ---
 

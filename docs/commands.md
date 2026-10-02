@@ -23,6 +23,8 @@ docker exec agentstack-admin /opt/venv/bin/python /work/stack/<script>.py …   
 | `scripts/backup.sh [--out DIR] [--key FILE]` | one consistent, encrypted archive of everything that cannot be regenerated |
 | `scripts/restore.sh …` | bring a backup up as a *separate* instance, and verify it against the live one |
 | `scripts/release.sh record\|list\|update --to REV\|rollback --to TAG` | keep what is running, move to something else, go back |
+| `scripts/verify.sh [--level static\|stack\|full]` | verify this tree as far as this machine allows: a checkout, a running stack with nobody signed in, or an instance with logins — the level picks itself unless named |
+| `scripts/drift.sh [--json]` | what is pinned and what each registry has now; reports, changes nothing ([update-day.md](update-day.md)) |
 | `scripts/packages.sh list\|install\|verify [name]` | the workflow packages: what is declared, fetch what is not local, and check it is still the pinned commit |
 | `scripts/cleanup.sh` | remove what is safe to remove, and say what it did not touch |
 | `scripts/host-state.sh` | what the host looks like: containers, images, volumes, disk |
@@ -67,6 +69,7 @@ docker exec agentstack-admin /opt/venv/bin/python /work/stack/<script>.py …   
 | `elsewhere.py` | the switches elsewhere that would make this panel's claims untrue |
 | `router.py <policy.json> <obs-dir>` | one routing decision, from observations only |
 | `collect_obs.py <dir>` | collect the quota observations the router reads |
+| `grok_posture.py ensure\|check [<GROK_HOME>…]` | the `[permission]` table that turns Grok's native tools off, in its own config — written on login and on every bring-up, checked by `up.sh --check` |
 | `trial_controls.py` | every control, against synthetic inputs — the machinery, not the judgement |
 
 ## The panel

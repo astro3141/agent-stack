@@ -121,23 +121,37 @@ steps never need to.
 
 ## The contract a step keeps
 
-**1. Address the workspace through `settings`, never by guessing.**
+**1. Address the workspace through the stack's step helper, never by guessing.**
 
 ```python
-import settings
-RUN = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
-WS  = f"{settings.runtime()['paths']['workspace_root']}/{RUN}"
+import step                  # stack/steps/step.py — on the PYTHONPATH the stack sets for every step
+RUN = step.run_id()          # Conductor's id for this run
+WS  = step.workspace()       # <workspace_root>/<run id>, from the stack's settings; not created
 ```
 
 The run's workspace is `<workspace_root>/<conductor run id>`, and every other reader — the
 recorder, the evidence index, the panel — resolves it the same way. A step that invents its own
-path writes where nothing will look for it.
+path writes where nothing will look for it. Six packages had copied these lines before the helper
+existed, and one copy addressed the workspace through an environment variable nothing sets
+(docs/record/PACKAGE-MATRIX.md, X1): a copied contract drifts in the copy nobody reads.
+`import step` fails outside the stack, and that is the right answer — a step that carried on with
+a guessed root would run, on a fixture, exactly like one that did not. A step that needs to run by
+hand on a host puts `/work/stack/steps` on `sys.path` first, as the in-tree packages do.
 
 **2. The last line of stdout is JSON, and it is the step's output.**
 
+```python
+step.out(decision="PASS", reason="...")              # prints the line; the fields are the output
+step.main(lambda: work(), decision="", reason="")    # runs the step; an exception becomes that line
+```
+
 Conductor reads it and the workflow's `output:` block names its fields. Anything else you print is
 for a human; the last line is the contract. A step that cannot do its work prints JSON saying so
-rather than raising.
+rather than raising — `step.refuse(reason, **fields)` does exactly that and exits 0 — and a step
+that crashes should still answer: `step.main(fn, **shape)` turns an exception into the same line,
+with every declared key present (Conductor refuses a line that lacks one), `status: TOOL_FAILURE`
+and the reason. A machinery failure is then something the graph routes on, not a traceback the
+operator finds in a log.
 
 **3. Say what a repeat of this step does.** Every step declares it, and a control fails if one does
 not:
@@ -186,6 +200,116 @@ run_workflow.py start r1 trading-port research-default mode=live packet_from=acy
 The step resolves the name inside that directory and refuses anything that escapes it. Fixtures
 that travel with the package live in `fixtures/` instead; the hand-in directory is for data that
 arrives from outside a run.
+
+## The output of a model step
+
+`stack/steps/agent_task.py` (and the brokered door, `broker_dispatch.py`) answers with one shape,
+and every workflow that routes on it declares some of it in its `output:` block — three packages
+had each copied their own subset, one of them twice (docs/record/PACKAGE-MATRIX.md, X10b). This is
+the whole set; declare what you route on and copy the lines, do not retype them:
+
+```yaml
+    output:
+      status: {type: string}                 # COMPLETED | FAILED | DENIED | TIMED_OUT | ...
+      provider: {type: string}
+      principal: {type: string}              # the Preloop principal the call presented
+      model_route: {type: string}
+      run_id: {type: string}                 # <run>-<label>-<provider>: this call's evidence directory
+      workspace: {type: string}
+      produced_path: {type: string}          # the artifact the step was told to expect
+      produced: {type: boolean}              # it is there, and this call wrote it
+      produced_stale: {type: boolean}        # it is there, untouched by this call (left by an earlier one)
+      model_session_reported: {type: string}
+      model_adapter_reported: {type: string}
+      model_served: {type: string}           # "unknown" unless something on the path reported it
+      approvals_requested: {type: number}
+      mcp_rule_denials: {type: number}
+      retryable_elsewhere: {type: boolean}
+      evidence_dir: {type: string}
+      profile: {type: string}
+      attempts: {type: number}               # 2 when the one bounded login-refresh retry ran
+      failure: {type: string}                # why, when status is not COMPLETED
+      ledger_error: {type: string}
+      measurements:                          # a number the adapter did not report is left out, never 0
+        type: object
+        properties:
+          total_tokens: {type: number, required: false}
+          wall_ms: {type: number, required: false}
+```
+
+A YAML anchor (`output: &agent_out` on the first model step, `output: *agent_out` on the rest)
+keeps one copy per workflow; `packages/research-r/research-r.yaml` shows it.
+
+## What it needs of the stack
+
+`requires:` in the manifest is read, key by key, by `stack/packages.py`; the runner refuses a run
+whose package needs what the stack has not got. These are the keys something reads:
+
+| key | what it declares | who reads it |
+|---|---|---|
+| `capabilities` | the stack capabilities a run needs (`tool_rights`, `egress`, `record`, `admission`) | `run_workflow.py start` refuses without them |
+| `env` | environment variables, by name and purpose — never a value | `packages.py needs`, the panel |
+| `egress` | hosts the package's scripts reach | `packages.py egress` (an audit, not a control) |
+| `python` | modules the image must carry | `packages.py python`, `run_workflow.py start` |
+| `stack` | the oldest stack revision the package runs on: `stack: {min: <commit>}` | `packages.py stack`, `run_workflow.py start` |
+| `state` | `state: true` — the package keeps state outside any run, under its own directory (below) | `packages.py state` |
+
+A package calls the stack's steps by absolute path and argv order, so one written against a newer
+stack fails on an older one in whatever way the missing feature fails — a brokered step refused as
+`invalid expected`, a long call killed at fifteen minutes (both measured, in the devflow runbook).
+`requires.stack.min` names the floor; the runner refuses a run on a checkout that verifiably does
+not contain that commit, and `packages.py stack` reports a floor it cannot verify (a shallow clone,
+no git) without refusing anything, because that says nothing about the stack's age.
+
+**A key outside that table is a comment.** Two packages carried one for weeks — `principals`,
+`host_paths` — each believing the stack checked something it never looked at. `packages.py` now
+prints `note: requires.<key> is read by nothing in this stack` under the package, so the belief
+does not survive the first `list`.
+
+## State that outlives a run
+
+Most of what a package writes belongs to a run — the workspace, the evidence, the record — and
+goes with it (`cleanup.py`). Some does not: a ledger of what was already decided, a cache of a
+remote's answers, the last cycle's hand-over. Four packages kept such state in four places (a
+GitHub comment, `.devflow-cache`, `handoff/` used as a database, a `/research` mount), each with
+its own idea of who cleans it, because the stack named nowhere (docs/record/PACKAGE-MATRIX.md,
+X9). It names one place now:
+
+```
+<state_root>/<package>/        state_root is in config/environment.yaml (default /work/state)
+```
+
+- **The package owns it.** What is in there, its shape, and when it is pruned are the package's;
+  a step reaches it through the stack's settings (`step.runtime()["paths"]["state_root"]`), never
+  by a path of its own.
+- **It is declared.** `requires: {state: true}` in the manifest. `packages.py state` lists every
+  directory under the root with who declared it; one nobody declared is reported as a question,
+  not deleted — the stack removes runs, not a package's memory.
+- **It is not a hand-in.** Input still arrives through `handoff/` by name; state is what the
+  package writes for its own next run.
+- **It is not in git.** `state/` is ignored; a package that needs a fixture ships it in
+  `fixtures/`.
+
+That is the whole contract: a path, a declaration, a report. No helper, because a path and a
+rule are all four packages were missing.
+
+## Child runs, and waiting on the world
+
+A workflow that needs to run another, or to wait for something outside it to settle, does not
+need the stack for either — Conductor has both, at the revision this stack pins:
+
+- **`type: workflow`** runs a sub-workflow as a step, with `input_mapping`, and inside a
+  `for_each` group it fans out one child run per item (events `subworkflow_started` /
+  `subworkflow_completed`).
+- **`type: wait`** pauses for a parsed duration; polling is `wait` plus a route that loops back,
+  with no Python written.
+
+Two packages had built their own (`drive.py` shelling out to `run_workflow.py start/show`, a
+shell loop over `cycle.sh`), on the belief that the stack had no primitive; the child runs they
+start that way are not linked to their parent in the record. Prefer the engine's steps. What the
+stack still owes here is one measurement — that a child started by `type: workflow` under
+`run_workflow.py` appears in the record beside its parent — recorded in
+docs/record/DECISIONS-2026-10-02.md until it is taken.
 
 ## Asking for a retry
 
@@ -292,6 +416,23 @@ belonged to the uid-based design, and every `principals.py apply` names roles st
 **Installing a package is a decision to trust it**: that is what gives its principals rights. Read a
 package before installing it, as you would a dependency.
 
+## Controls
+
+A package's rules are pinned by the package: `packages/<name>/controls.py`, run in the agent
+container by `scripts/packages.sh verify` (or `controls [name]` alone), exit 1 on a failure. It
+drives the package's real steps with fake inputs and no model call — `packages/novel/controls.py`
+is the shape: a `load()` that points the step at a temporary workspace, a `check(name, got, want)`,
+one function per risk, a summary line.
+
+The platform's suite (`stack/trial_controls.py`) pins the platform and never imports a package to
+pin that package's rules. Until 2026-10 it did — novel's triage, evidence index and round semantics
+lived there, and the suite loaded trading's step as a fixture for the fan-out, so the platform's
+checks failed on a machine that had not installed a private package (docs/record/PACKAGE-MATRIX.md,
+X6). The rule now: a package this repository carries may serve as a fixture for a platform
+capability; one it does not carry is skipped when absent, never imported; a package's own
+judgements are its own controls. A package with no `controls.py` is listed by `verify` as having
+nothing that pins its rules — which is the truth, and the reason to write one.
+
 ## Before you call it done
 
 ```bash
@@ -304,3 +445,23 @@ docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py ta
 ```
 
 Then read it back the way everyone else will: [reading-a-run.md](reading-a-run.md).
+
+And check the things that six packages got wrong between them (docs/record/PACKAGE-MATRIX.md):
+
+- every step starts with `import step` and ends with `step.out(...)` — no copied workspace line,
+  no `print(json.dumps(...))` of its own;
+- every step declares `REPEATABLE`, including the ones a workflow calls only sometimes — the
+  stack's controls scan every `packages/*/steps/*.py` and fail on one that does not;
+- a model call goes through `agent_task.py`, never to the adapter directly: the direct call loses
+  the produced/stale stamp, the login-refresh retry and the principal. Where the call runs is the
+  role's business — a principal with an `egress_profile` is handed to the broker by that step, and
+  the workflow never chooses a door;
+- the package carries `controls.py`, and `scripts/packages.sh verify` runs it clean;
+- **every** model call reaches the record: the primary one as `execute`, the rest in `executions`
+  (a workflow that calls a reviewer and records only the author shows one call for a two-call run);
+- `evidence_file` is passed when the run judged anything, with `items`;
+- a manifest that requires `tool_rights` names a principal on every call that writes;
+- every environment variable a step reads is in `requires.env`, so the operator is told before a
+  run and not by a step several minutes in;
+- data comes in by name through `handoff/` or travels in `fixtures/`; no absolute host path in a step;
+- `requires.stack.min` names the oldest stack the package was run on.

@@ -1,13 +1,20 @@
 """#281 router controls: inject faults into normalized observations, check the decision.
 
-usage: router_controls.py <live-obs-dir>
+usage: router_controls.py <live-obs-dir> [policy.json]
 Starts from the live observations, applies one mutation per case, runs router.py on the result
 and compares with the expected decision. No model, no network — deterministic.
+
+The policy is the one the stack routes with — verify.sh passes the generated profile's — and
+stack/routing-policy.json only when none is given. The first time these cases ran on a live
+collection (the second install, OPERATIONS §64) the static policy required a weekly window of
+every provider while the profile had stopped requiring one of Grok, and a mutation that set a
+window Grok had not reported died on the missing key. A case now creates the path it sets.
 """
 import copy, json, os, subprocess, sys, tempfile
 from datetime import datetime, timedelta, timezone
 
 live = sys.argv[1]
+POLICY = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(__file__), "routing-policy.json")
 base = {p[:-5]: json.load(open(os.path.join(live, p))) for p in os.listdir(live) if p.endswith(".json")}
 now = datetime.now(timezone.utc)
 iso = lambda dt: dt.isoformat()
@@ -32,7 +39,7 @@ def case(name, mutate, expect_decision, expect_provider=""):
                 json.dump(v, open(os.path.join(d, f"{k}.json"), "w"))
         r = json.loads(subprocess.run(
             [sys.executable, os.path.join(os.path.dirname(__file__), "router.py"),
-             os.path.join(os.path.dirname(__file__), "routing-policy.json"), d],
+             POLICY, d],
             capture_output=True, text=True, env={**os.environ, "ROUTER_NOW": iso(now)}).stdout)
     ok = r["decision"] == expect_decision and r["provider"] == expect_provider
     why = {e["provider"]: e["why"] for e in r["evaluated"]}
@@ -44,6 +51,8 @@ def set_(path, value):
     def f(obs):
         o = obs
         for k in path[:-1]:
+            if not isinstance(o.get(k), dict):   # a window the live reading did not carry
+                o[k] = {}
             o = o[k]
         o[path[-1]] = value
     return f

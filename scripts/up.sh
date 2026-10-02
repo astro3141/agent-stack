@@ -50,6 +50,15 @@ case "$COMPOSITION" in
   runtime)   COMPOSE_PROFILES="";;
   *) echo "unknown composition: $COMPOSITION (full | no-record | runtime)" >&2; exit 2;;
 esac
+# Egress profiles this instance provisioned (docker/egress/profiles/<name>.allow, §60) bring their
+# proxy and runner up as the compose profile `egress-<name>`; closed and probe ship tracked and are
+# always on. A profile with no list has no container, and a role mapped to it is refused by name.
+for _f in "$HERE"/docker/egress/profiles/*.allow; do
+  [ -f "$_f" ] || continue
+  _n="$(basename "$_f" .allow)"
+  case "$_n" in closed|probe) continue;; esac
+  COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}egress-$_n"
+done
 export COMPOSE_PROFILES
 # One instance per name: STACK selects container/volume/network names and the published ports.
 # The defaults are the live instance; a restored copy runs under another name (scripts/restore.sh).
@@ -67,6 +76,17 @@ export STACK OPS_PORT HUB_PORT MLFLOW_PORT
 [ -n "${RESEARCH_HOST_DIR:-}" ] && export RESEARCH_HOST_DIR
 export PRELOOP_API_PORT PRELOOP_GATEWAY_PORT PRELOOP_CONSOLE_PORT
 FORCE=""; [ "$MODE" = "--recreate" ] && FORCE="--force-recreate"
+
+# Apply this stack's policy, and when Preloop refuses it, say what it said. The result line alone
+# ("apply failed") sent a reader to the admin container's state file; the cold-start runner failed
+# three times before the reason was read from there (a value Preloop 0.15.0 does not accept, §63).
+apply_policy() {   # <indent>
+  docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply | grep -o '"preloop-policy[^,]*' | sed "s/^/$1/" || true
+  docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py status 2>/dev/null \
+    | docker exec -i "$STACK-admin" /opt/venv/bin/python -c 'import json,sys
+for t in json.load(sys.stdin).get("targets", []):
+    if t.get("error"): print("why:", t["target"], "—", t["error"])' | sed "s/^/$1/" || true
+}
 
 if [ "$MODE" != "--check" ]; then
   # The containers run as uid 1000; this tree is a bind mount owned by whoever cloned it. On a
@@ -99,6 +119,14 @@ if [ "$MODE" != "--check" ]; then
     echo "   not in this composition:$drop"
     (cd "$HERE/docker" && COMPOSE_PROFILES="record,ui" docker compose -f compose.poc.yaml rm -sf $drop >/dev/null) || exit 1
   fi
+  # The generated settings (config/generated/: runtime.json, profiles/<name>.json) are derived from
+  # config/ and git-ignored, so a fresh clone has none — and they used to be generated only on the
+  # branch that claims a new Preloop. A clone brought up against an already-claimed instance had
+  # no profile, the router could not read research-default, and admission failed with
+  # FileNotFoundError (measured on a Windows host, 2026-10-02). Generated here, every time, like
+  # the egress lists above; the claim branch below generates again, harmlessly.
+  docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate >/dev/null 2>&1 \
+    || echo "  WARN  config/generated could not be written (cfg.py generate) — profiles may be missing" >&2
   echo "== Preloop (+ PoC network attachment)"
   docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
     -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml" \
@@ -151,7 +179,7 @@ if [ "$MODE" != "--check" ]; then
     # provider logins (agent); applying writes to Preloop (admin) — OPERATIONS.md §21.
     echo "== applying this stack's policy to the new instance"
     docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate >/dev/null 2>&1 || true
-    docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/  /' || true
+    apply_policy "  "
   fi
 fi
 
@@ -223,7 +251,7 @@ if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STAC
     # nothing on them; it cannot fix the one where the account has no servers at all, which is what
     # another machine hit — `GET /mcp-servers` answered `[]` while our record said the work was
     # done. `apply` now checks the account rather than the record, so it repairs both.
-    docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/   /' || true
+    apply_policy "   "
     docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py rescan | sed 's/^/   /' || true
     sleep 3
     # A server that was recreated has a new id, and Preloop's api keeps the old one in its own
@@ -243,6 +271,13 @@ if docker ps --format '{{.Names}}' | grep -qx "$STACK-apiguard"; then
   docker exec "$STACK-apiguard" nginx -t >/dev/null 2>&1 &&
     docker exec "$STACK-apiguard" nginx -s reload >/dev/null 2>&1 ||
     echo "  WARN  the guard did not accept its configuration — the rules in effect are the old ones" >&2
+fi
+
+# Grok's native tools are off by a table in its own config file — written by hand on the first
+# install and by nothing since, until a second install ran a Grok lane without it (OPERATIONS
+# §64). Written here on every bring-up for every grok login the profiles name; idempotent.
+if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
+  in_agent '/opt/venv/bin/python /work/stack/grok_posture.py ensure 2>/dev/null' | grep -v '"no login"' | sed 's/^/   grok posture: /' || true
 fi
 
 echo "== isolation"
@@ -278,6 +313,15 @@ echo "== logins (routing layer)"
 check "claude /route login"              true "$(in_agent 'CLAUDE_CONFIG_DIR=/route/claude claude auth status 2>/dev/null | python3 -c "import json,sys;print(str(json.load(sys.stdin).get(\"loggedIn\")).lower())"')"
 check "codex /route login"               yes "$(in_agent 'CODEX_HOME=/route/codex codex login status 2>&1 | grep -q "Logged in" && echo yes || echo no')"
 check "grok /route login"                yes "$(in_agent 'test -s /route/grok/auth.json && echo yes || echo no')"
+# The posture Grok's own config carries: deny Bash/Edit/Write/WebFetch/WebSearch, allow the Preloop
+# tools (stack/grok_posture.py). Without it a Grok lane writes with its native tool, waits for a
+# person, and ends DENIED. Reported for every grok login the profiles name; `--` when none exists.
+if in_agent 'test -s /route/grok/auth.json' >/dev/null 2>&1; then
+  check "grok native tools denied in its config" yes "$(in_agent '/opt/venv/bin/python /work/stack/grok_posture.py check --brief 2>/dev/null')"
+  in_agent '/opt/venv/bin/python /work/stack/grok_posture.py check 2>/dev/null' | grep -v '"ok"' | sed 's/^/        /' || true
+else
+  printf '  --    %-44s %s\n' "grok native tools denied in its config" "no grok login"
+fi
 # The observer's own login is a second source, not a requirement: codex is read with the login that
 # executes (OPERATIONS §29). Reported, not failed — a check that fails on something optional teaches
 # an operator to ignore checks.
