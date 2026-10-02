@@ -61,7 +61,23 @@ printf '{"preloop":{"api_url":"x","mcp_url":"x"},"mlflow":{"url":"x"},"egress":{
   "$TMP" "$TMP" "$TMP" "$TMP" > "$TMP/config/generated/runtime.json"
 export AGENTSTACK_ROOT="$TMP" PYTHONPATH="$HERE/stack:$HERE/stack/steps${PYTHONPATH:+:$PYTHONPATH}"
 
-if $PY -m compileall -q stack packages ops hub >/dev/null 2>&1; then ok "every Python file compiles"; else bad "a Python file does not compile" "$($PY -m compileall -q stack packages ops hub 2>&1 | head -3)"; fi
+# parsed, not byte-compiled: compileall writes __pycache__, which the containers own (uid 1000) on a
+# bind mount, and a host user who cannot write there read "Error compiling" for a file that was fine
+out="$($PY - <<'PYAST'
+import ast, glob, sys
+bad = []
+for f in sorted(set(glob.glob("stack/**/*.py", recursive=True) + glob.glob("packages/*/steps/*.py")
+                    + glob.glob("packages/*/controls.py") + glob.glob("ops/*.py") + glob.glob("hub/*.py"))):
+    if "/vendor/" in f or "/harness/" in f or "__pycache__" in f:
+        continue
+    try:
+        ast.parse(open(f, encoding="utf-8").read(), filename=f)
+    except SyntaxError as e:
+        bad.append(f"{f}:{e.lineno}: {e.msg}")
+print(len(bad)); print("\n".join(bad))
+PYAST
+)"
+if [ "$(echo "$out" | head -1)" = 0 ]; then ok "every Python file parses"; else bad "a Python file does not parse" "$(echo "$out" | tail -n +2 | head -3 | tr '\n' ';')"; fi
 
 out="$($PY - <<'PY'
 import glob, sys, yaml
@@ -160,11 +176,20 @@ logins_missing="$(echo "$failed" | grep -E "/route login" || true)"
 if [ -z "$unexpected" ]; then ok "up.sh --check: nothing failed but logins/quota ($(echo "$failed" | grep -c . ) such lines)"; else bad "up.sh --check failed outside logins/quota" "$(echo "$unexpected" | tr '\n' ';')"; fi
 grep -q 'runtime may not decide approvals' "$CHECKLOG" && ! grep -qE 'FAIL\s+runtime may not' "$CHECKLOG" && ok "the runtime cannot decide approvals or rewrite its rights" || bad "the approval boundary check did not pass"
 
-for suite in trial_controls router_controls review_controls; do
+for suite in trial_controls review_controls; do
   if in_agent "/work/stack/$suite.py" > "$TMP/$suite.log" 2>&1; then ok "$suite: $(grep -E 'controls passed|passed' "$TMP/$suite.log" | tail -1)"
-  else bad "$suite reported failures" "$(grep -E '^\s*FAIL' "$TMP/$suite.log" | head -5 | tr '\n' ';')"; fi
+  else bad "$suite reported failures" "$(grep -E '^\s*FAIL' "$TMP/$suite.log" | head -5 | tr '\n' ';')"; tail -6 "$TMP/$suite.log" | sed 's/^/        | /'; fi
   grep -E '^\s*skip' "$TMP/$suite.log" | sed 's/^/        /' | head -5 || true
 done
+# the router controls mutate the live observations (<observations>/<provider>.json), which exist
+# only once the quota observer has seen a signed-in provider: without one they are skipped, named
+OBS="$(in_agent -c 'import settings; print(settings.runtime()["paths"]["observations"])' 2>/dev/null || echo /obs)"
+if docker exec "$STACK-agent" sh -c "ls $OBS/*.json >/dev/null 2>&1"; then
+  if in_agent /work/stack/router_controls.py "$OBS" > "$TMP/router_controls.log" 2>&1; then ok "router_controls: $(tail -1 "$TMP/router_controls.log")"
+  else bad "router_controls reported failures" "$(grep -c '"ok": false' "$TMP/router_controls.log") case(s)"; tail -6 "$TMP/router_controls.log" | sed 's/^/        | /'; fi
+else
+  note "router_controls: no live observations in $OBS (no provider signed in) — skipped; the full level runs it"
+fi
 
 if bash scripts/packages.sh verify > "$TMP/pkg.log" 2>&1; then ok "packages.sh verify: locks and package controls"; else bad "packages.sh verify failed" "$(grep -E 'DRIFT|CHANGED|MISSING|FAILED' "$TMP/pkg.log" | head -5 | tr '\n' ';')"; fi
 grep -E '^\s*none' "$TMP/pkg.log" | sed 's/^/        /' || true

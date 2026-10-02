@@ -22,7 +22,11 @@ import sys
 import urllib.error
 import urllib.request
 
-BROKER = os.environ.get("AGENTSTACK_BROKER_URL", "http://cadp278-broker:8791")
+# The broker by its compose service name, which resolves on every network it shares with the
+# caller — never by container name, which carries the instance's name (STACK): the default used to
+# be `cadp278-broker`, one operator's instance, and every other instance's dispatch failed with
+# URLError (measured on the cold-start runner, whose instance is `agentstack`).
+BROKER = os.environ.get("AGENTSTACK_BROKER_URL", "http://broker:8791")
 
 provider, model_route, label, prompt_file, expected = sys.argv[1:6]
 prof_name = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else "research-default"

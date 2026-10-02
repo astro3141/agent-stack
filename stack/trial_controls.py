@@ -1134,7 +1134,7 @@ def controls_broker():
     import json as _j7, urllib.request as _u7, urllib.error as _e7
 
     def post(path, obj):
-        r = _u7.Request("http://cadp278-broker:8791" + path, data=_j7.dumps(obj).encode(),
+        r = _u7.Request("http://broker:8791" + path, data=_j7.dumps(obj).encode(),
                         headers={"content-type": "application/json"})
         try:
             with _u7.urlopen(r, timeout=15) as x:
@@ -1144,7 +1144,7 @@ def controls_broker():
 
     code, h = post("/health", {}) if False else (None, None)
     try:
-        with _u7.urlopen("http://cadp278-broker:8791/health", timeout=10) as x:
+        with _u7.urlopen("http://broker:8791/health", timeout=10) as x:
             h = _j7.loads(x.read())
         check("the broker is up and read its map from the declarations",
               ("novel-reviewer" in (h.get("map") or {}), h["map"].get("egress-probe")),
@@ -1155,7 +1155,7 @@ def controls_broker():
           post("/dispatch", {"role": "novel-author"})[0], 403)
     check("and the caller does not choose where a role runs",
           post("/dispatch", {"role": "novel-reviewer", "profile": "probe"})[0], 403)
-    r = _u7.Request("http://cadp278-broker:8791/mcp/v1", data=b"{}",
+    r = _u7.Request("http://broker:8791/mcp/v1", data=b"{}",
                     headers={"content-type": "application/json",
                              "Authorization": "Bearer zz-not-a-live-token"})
     try:
@@ -1172,7 +1172,7 @@ def controls_broker():
     check("this container has no route to a profile runner", reach, False)
     ops7 = open("/work/ops/server.py", encoding="utf-8").read()
     check("the overview asks the broker itself, not a copy of the configuration",
-          ("cadp278-broker:8791/health" in ops7 and '"broker": broker' in ops7), True)
+          ("broker:8791/health" in ops7 and '"broker": broker' in ops7), True)
     check("the broker says which profiles this instance provisions",
           set(h.get("profiles_provisioned") or []) >= {"probe", "closed"}
           if isinstance(h, dict) else False, True)
