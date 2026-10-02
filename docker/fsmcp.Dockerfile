@@ -5,7 +5,7 @@
 FROM node:22-slim
 RUN mkdir /ws && chown node:node /ws && npm install -g --no-fund --no-audit \
       @modelcontextprotocol/server-filesystem@2026.8.31 \
-      supergateway@4.0.0
+      supergateway@4.1.0
 USER node
 EXPOSE 8000
 CMD ["supergateway", "--stdio", "mcp-server-filesystem /ws", \
