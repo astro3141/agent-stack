@@ -58,6 +58,10 @@ directory, and the operations that let the result survive a restart, an update o
   state it started from. For operating the stack as it is now, use [docs/runbook.md](docs/runbook.md).
 - **[TRIAL-A-novel.md](docs/record/TRIAL-A-novel.md)**, **[TRIAL-B-trading.md](docs/record/TRIAL-B-trading.md)** —
   whether workflows of a given shape actually run here, and what broke when they did.
+- **[CADP-GAP.md](docs/record/CADP-GAP.md)** — this stack measured against the CADP v0.5 plane designs
+  (authority, execution, workflow): which plane it is, and where it does not touch the design at all.
+- **[PACKAGE-MATRIX.md](docs/record/PACKAGE-MATRIX.md)** — six packages against the capabilities in
+  CONTRACT.md: what each uses, what each built for itself, and which of those the platform should own.
 
 Everything under `docs/record/` is a record: it is not maintained to stay true of the current code,
 it is kept true of the day it was written.
