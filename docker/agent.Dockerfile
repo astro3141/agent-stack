@@ -63,7 +63,8 @@ RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}
 
 # uv + Conductor with the extras this PoC needs.
 RUN pip install --no-cache-dir --user uv
-ARG CONDUCTOR_COMMIT=87f7788e60c7cbb8895832b9edfb4e63f3924590
+# v0.1.41 (2026-09-29): run bundles, secrets bindings on script steps; OPERATIONS §72, #17
+ARG CONDUCTOR_COMMIT=11dcc41ed3df78f0806127cc901822fe8758294b
 RUN uv tool install "conductor-cli[telemetry,claude-agent-sdk] @ git+https://github.com/microsoft/conductor.git@${CONDUCTOR_COMMIT}"
 
 # Preloop CLI, so onboarding happens INSIDE the container and never touches the host.
