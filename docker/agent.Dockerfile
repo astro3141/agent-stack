@@ -111,7 +111,7 @@ RUN arch="${TARGETARCH:-$(uname -m)}"; \
       | tar -xz -C /opt \
     && ln -s "/opt/node-v${NODE_VERSION}-linux-${node_arch}" /opt/node
 ENV PATH=/opt/node/bin:/opt/npm-global/bin:/opt/codexbar:$PATH     NPM_CONFIG_PREFIX=/opt/npm-global
-RUN npm install -g --no-fund --no-audit       acpx@0.19.4       @agentclientprotocol/claude-agent-acp@0.85.1       @agentclientprotocol/codex-acp@2.1.1       @openai/codex@0.160.0       @xai-official/grok@1.0.40     && chmod -R a+rX /opt/npm-global
+RUN npm install -g --no-fund --no-audit       acpx@0.19.4       @agentclientprotocol/claude-agent-acp@0.85.1       @agentclientprotocol/codex-acp@2.1.1       @openai/codex@0.160.0       @xai-official/grok@1.0.46     && chmod -R a+rX /opt/npm-global
 # CodexBar CLI (quota observation). Static musl build: the glibc build needs GLIBC_2.38, bookworm has 2.36. No Windows build exists.
 ARG CODEXBAR_VERSION=0.70.0
 RUN arch="${TARGETARCH:-$(uname -m)}"; \
