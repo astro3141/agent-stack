@@ -232,9 +232,13 @@ if docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
         chmod 600 "$HERE/docker/principals.env" 2>/dev/null || true
         docker exec "$STACK-admin" rm -f /tmp/principals-new.env
       fi
-      echo "   new credentials — restarting the agent so it reads them"
-      (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --force-recreate agent >/dev/null 2>&1) \
-        || echo "  WARN  the agent did not restart; run scripts/up.sh again" >&2;;
+      # Both readers of principals.env: the agent for unmapped roles, and the broker, which alone
+      # holds the credentials of the roles that declare an egress profile (§54). Restarting only the
+      # agent left the broker with none on a cold start — every brokered review refused with "the
+      # broker holds no credential", measured on the first full verify of a fresh instance.
+      echo "   new credentials — restarting the agent and the broker so they read them"
+      (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --force-recreate agent broker >/dev/null 2>&1) \
+        || echo "  WARN  the agent or the broker did not restart; run scripts/up.sh again" >&2;;
   esac
 fi
 
