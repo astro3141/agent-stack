@@ -97,10 +97,12 @@ tools = {t["name"] for t in d["tools"]}
 fs = {"read_file","read_text_file","read_media_file","read_multiple_files","write_file","edit_file",
       "create_directory","list_directory","list_directory_with_sizes","directory_tree","move_file",
       "search_files","get_file_info","list_allowed_directories"}
-print("deny" if d["defaults"]["unknown_tools"] == "deny" else "ALLOW", sorted(fs - tools))
+# `allow` is the only value Preloop 0.15.0/0.16.0 accept (policy header, OPERATIONS §63): anything
+# else fails `policy apply` on the instance, so a change here is caught before a bring-up.
+print("allow" if d["defaults"]["unknown_tools"] == "allow" else "UNSUPPORTED", sorted(fs - tools))
 PY
 )"
-case "$out" in "deny []") ok "policy/b-fsmcp.yaml denies unlisted tools and names every filesystem tool";; *) bad "policy/b-fsmcp.yaml is not fail-closed or misses tools" "$out";; esac
+case "$out" in "allow []") ok "policy/b-fsmcp.yaml names every filesystem tool, with the one default Preloop accepts";; *) bad "policy/b-fsmcp.yaml misses a tool, or sets a default Preloop refuses" "$out";; esac
 
 out="$(AGENTSTACK_PACKAGES="$HERE/packages" AGENTSTACK_PACKAGES_YAML="$HERE/config/packages.yaml" AGENTSTACK_PACKAGES_LOCAL="$HERE/config/packages.local.yaml" AGENTSTACK_ROOT="$HERE" $PY stack/packages.py 2>&1)"
 if echo "$out" | grep -q "UNUSABLE\|REFUSED"; then bad "a declared package is unusable or needs a newer stack" "$(echo "$out" | grep 'UNUSABLE\|REFUSED')"; else ok "every declared package is usable: $(echo "$out" | grep -cvE '^\s' ) packages"; fi

@@ -3560,3 +3560,29 @@ should get to see that line too. Worth revisiting when more than one package nee
 
 **534/534 controls.**
 
+## 63. Preloop's policy cannot deny a tool it does not name (measured 2026-10-02)
+
+The fail-open default in `policy/b-fsmcp.yaml` — `unknown_tools: allow`, with the file-server's
+reads unlisted — was changed to `deny` with every tool named, as the CADP gap analysis
+(docs/record/CADP-GAP.md) recommended. The first cold start to carry it failed at `policy apply`,
+and `cfg.py status` held the reason:
+
+```
+policy stage: RuntimeError: Policy contains restrictive default settings that are not yet supported.
+These settings would be silently ignored, leading to permissive behavior.
+Unsupported settings: unknown_tools='deny' (only 'allow' is currently supported). Remove these
+settings or wait for implementation.
+```
+
+Read from the published package (`preloop==0.15.0`, `services/policy/loader.py`): default
+settings are not implemented; `deny` and `require_approval` exist in the schema, and the loader
+refuses them so that an operator is not left believing something is enforced. `preloop==0.16.0`
+carries the same check. So on this Preloop, **a tool the policy does not name is allowed**, and
+the only thing that denies is a principal's own tool rules.
+
+What changed as a result: the policy keeps every tool named (so the list is read, not assumed)
+and `unknown_tools: allow` with the reason beside it; `scripts/up.sh` now prints Preloop's reason
+when an apply fails instead of only "apply failed"; `scripts/verify.sh --level static` refuses a
+default Preloop would refuse. The gap stands as recorded — fail-closed classification is not
+expressible here — and the place to enforce it remains the principals' rules.
+

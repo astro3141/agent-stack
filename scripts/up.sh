@@ -77,6 +77,17 @@ export STACK OPS_PORT HUB_PORT MLFLOW_PORT
 export PRELOOP_API_PORT PRELOOP_GATEWAY_PORT PRELOOP_CONSOLE_PORT
 FORCE=""; [ "$MODE" = "--recreate" ] && FORCE="--force-recreate"
 
+# Apply this stack's policy, and when Preloop refuses it, say what it said. The result line alone
+# ("apply failed") sent a reader to the admin container's state file; the cold-start runner failed
+# three times before the reason was read from there (a value Preloop 0.15.0 does not accept, §63).
+apply_policy() {   # <indent>
+  docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply | grep -o '"preloop-policy[^,]*' | sed "s/^/$1/" || true
+  docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py status 2>/dev/null \
+    | docker exec -i "$STACK-admin" /opt/venv/bin/python -c 'import json,sys
+for t in json.load(sys.stdin).get("targets", []):
+    if t.get("error"): print("why:", t["target"], "—", t["error"])' | sed "s/^/$1/" || true
+}
+
 if [ "$MODE" != "--check" ]; then
   # The containers run as uid 1000; this tree is a bind mount owned by whoever cloned it. On a
   # Windows host that difference does not exist, and on Linux it stops the stack dead: measured on
@@ -160,7 +171,7 @@ if [ "$MODE" != "--check" ]; then
     # provider logins (agent); applying writes to Preloop (admin) — OPERATIONS.md §21.
     echo "== applying this stack's policy to the new instance"
     docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate >/dev/null 2>&1 || true
-    docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/  /' || true
+    apply_policy "  "
   fi
 fi
 
@@ -232,7 +243,7 @@ if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STAC
     # nothing on them; it cannot fix the one where the account has no servers at all, which is what
     # another machine hit — `GET /mcp-servers` answered `[]` while our record said the work was
     # done. `apply` now checks the account rather than the record, so it repairs both.
-    docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply       | grep -o '"preloop-policy[^,]*' | sed 's/^/   /' || true
+    apply_policy "   "
     docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py rescan | sed 's/^/   /' || true
     sleep 3
     # A server that was recreated has a new id, and Preloop's api keeps the old one in its own

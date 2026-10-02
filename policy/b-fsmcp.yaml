@@ -5,13 +5,17 @@
 #   - any file named forbidden.txt: the rule-based deny control for this PoC.
 # Rules are evaluated by Preloop, not by the agent or the adapter.
 #
-# Every tool a run may call is listed here, and a tool that is not listed is denied
-# (`unknown_tools: deny`). Until 2026-10 the default was `allow` and the reads were not listed:
-# a tool nobody had named — one a server update adds, say — would have been callable with no
-# rule on it. The names below are the full tool set of the pinned server
-# (@modelcontextprotocol/server-filesystem@2026.8.31, docker/fsmcp.Dockerfile), read from its
-# package, so updating that pin means re-reading the list. A run that is denied a tool it needs
-# now fails visibly with that tool's name, which is the point.
+# Every tool a run may call is listed here, by name. The names below are the full tool set of
+# the pinned server (@modelcontextprotocol/server-filesystem@2026.8.31, docker/fsmcp.Dockerfile),
+# read from its package, so updating that pin means re-reading the list.
+#
+# `unknown_tools` stays `allow`, and not by choice: Preloop 0.15.0 refuses any other value —
+# `preloop policy apply` fails with "unknown_tools='deny' (only 'allow' is currently supported)"
+# — and its loader says why: default settings are not implemented, so a restrictive one would be
+# silently ignored, and it refuses rather than fail open quietly. 0.16.0 is the same (both read
+# from the published package, OPERATIONS §63; the cold-start runner measured the refusal on
+# 2026-10-02). So a tool this file does not name is NOT denied by this policy; what denies is a
+# principal's own tool rules (packages/<name>/principals.yaml), which deny what they do not allow.
 version: '1.0'
 metadata:
   name: agentstack-b-fsmcp
@@ -92,6 +96,6 @@ tools:
   source: agentstack-fsmcp
   enabled: true
 defaults:
-  unknown_tools: deny
+  unknown_tools: allow      # the only value Preloop 0.15.0 / 0.16.0 accept — see the header
   require_approval_for_new_tools: false
   inherit_from_parent: true

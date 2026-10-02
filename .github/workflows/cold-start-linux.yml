@@ -52,7 +52,7 @@ jobs:
           # What a machine without provider logins may fail, and nothing else.
           allowed = {"claude /route login", "codex /route login", "grok /route login",
                      "observer codex login", "every provider's state is knowable",
-                     "observation fresh (< 10 min)"}
+                     "observation fresh (< 10 min)", "the router can choose a provider"}
           failed = [re.sub(r"\s{2,}.*$", "", l.strip()[6:]).strip()
                     for l in log.splitlines() if l.startswith("  FAIL")]
           unexpected = [f for f in failed if f not in allowed]
