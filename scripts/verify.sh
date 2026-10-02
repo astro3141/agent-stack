@@ -124,6 +124,17 @@ for c in packages/*/controls.py; do
   fi
 done
 
+# the lists compose mounts, generated on a tree shaped like a fresh clone: no allow.local, no
+# provisioned profile — the case the operator's own instance never exercises
+FRESH="$TMP/fresh"; mkdir -p "$FRESH"
+if git archive HEAD 2>/dev/null | tar -x -C "$FRESH" && cp scripts/egress_gen.sh "$FRESH/scripts/" \
+   && (cd "$FRESH" && bash scripts/egress_gen.sh >/dev/null 2>&1) \
+   && [ -f "$FRESH/config/generated/egress/allow" ] && [ -f "$FRESH/config/generated/egress/profiles/closed.allow" ]; then
+  ok "egress lists generate on a fresh clone (no allow.local, no provisioned profile)"
+else
+  bad "egress_gen.sh does not produce the lists compose mounts on a fresh clone"
+fi
+
 if [ -x scripts/drift.sh ]; then
   newer="$(bash scripts/drift.sh 2>/dev/null | awk 'NR>1 && $4=="newer"{print $1}' | tr '\n' ' ')"
   [ -n "$newer" ] && note "drift (report only): newer upstream — $newer" || note "drift: nothing newer, or no registry answered"
