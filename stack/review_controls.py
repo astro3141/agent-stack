@@ -108,6 +108,21 @@ def policy_controls():
     st = cfg.load_state(); st["preloop_active"].pop("scan", None); cfg.save_state(st); r, n = apply()
     check("policy: record without scan stage is not trusted", n == 1 and list(r.values()) == ["applied"], (r, n))
 
+    # declared, not assumed (issue #15): grok with native tools is refused, the reuse window is the
+    # profile's and must sit under max_age_s, and it reaches the generated routing policy
+    import yaml as _y
+    prof = _y.safe_load((root / "config" / "profiles" / "research-default.yaml").read_text())
+    envy = _y.safe_load((root / "config" / "environment.yaml").read_text())
+    e1 = cfg.validate_profile({**prof, "tools": {**prof["tools"], "native_tools": True}}, "research-default", envy)[0]
+    check("profile: grok with native_tools: true is refused, saying the posture is per login",
+          any("grok" in e and "per login" in e for e in e1), e1)
+    e2 = cfg.validate_profile({**prof, "quota": {**prof["quota"], "reuse_s": prof["quota"]["max_age_s"]}}, "research-default", envy)[0]
+    check("profile: reuse_s at or above max_age_s is refused", any("reuse_s" in e for e in e2), e2)
+    check("profile: reuse_s is validated as a number", any("reuse_s" in e for e in
+          cfg.validate_profile({**prof, "quota": {**prof["quota"], "reuse_s": "soon"}}, "research-default", envy)[0]))
+    gen = json.loads((root / "config" / "generated" / "profiles" / "research-default.json").read_text())
+    check("profile: reuse_s reaches the generated routing policy", gen["routing"].get("reuse_s") == prof["quota"].get("reuse_s", 120), gen["routing"])
+
     for ws, ok in [("/ws", True), ("/ws/alt", True), ("/ws/", True), ("/data", False), ("/ws/../data", False),
                    ("/ws/./alt", False), ("/wsx", False), ("/ws/alt/..", False), ("ws/alt", False)]:
         env = {"paths": {"workspace_root": ws}}

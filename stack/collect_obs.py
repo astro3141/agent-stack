@@ -55,6 +55,8 @@ login_dir = lambda provider: f"{LOGINS}/{LOGIN_NAMES.get(provider, provider)}"
 
 
 # ---- a reading that was taken, kept beside the login ---------------------------------------
+# The profile's quota.reuse_s, handed over by every caller beside the routes and the logins
+# (AGENTSTACK_OBS_REUSE_S); 120 only for a caller that predates the key.
 REUSE_S = int(os.environ.get("AGENTSTACK_OBS_REUSE_S", "120"))
 CACHE = f"{LOGINS}/.quota"
 

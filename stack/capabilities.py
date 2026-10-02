@@ -95,7 +95,8 @@ def probe(profile=DEFAULT_PROFILE):
             os.makedirs(f"{tmp}/obs", exist_ok=True)
             json.dump(pol, open(f"{tmp}/policy.json", "w"))
             env = {**os.environ, "AGENTSTACK_MODEL_ROUTES": json.dumps(pol.get("model_route") or {}),
-                   "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {})}
+                   "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {}),
+                   "AGENTSTACK_OBS_REUSE_S": str(pol.get("reuse_s", 120))}
             subprocess.run([sys.executable, "/work/stack/collect_obs.py", f"{tmp}/obs"],
                            capture_output=True, env=env, timeout=180)
             out = subprocess.run([sys.executable, "/work/stack/router.py",

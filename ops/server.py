@@ -83,9 +83,9 @@ def accounts(profile):
     obs_dir = f"/tmp/ops-obs-{secrets.token_hex(4)}"
     routes = json.dumps(routing["model_route"])
     logins = json.dumps(routing.get("login") or {})
-    ev = jexec(["sh", "-c", 'AGENTSTACK_MODEL_ROUTES="$1" AGENTSTACK_LOGINS="$5" "$2" /work/stack/collect_obs.py "$3" >/dev/null 2>&1; '
+    ev = jexec(["sh", "-c", 'AGENTSTACK_MODEL_ROUTES="$1" AGENTSTACK_LOGINS="$5" AGENTSTACK_OBS_REUSE_S="$6" "$2" /work/stack/collect_obs.py "$3" >/dev/null 2>&1; '
                 'printf %s "$4" > "$3/policy.json"; "$2" /work/stack/router.py "$3/policy.json" "$3"; rm -rf "$3"',
-                "sh", routes, PY, obs_dir, json.dumps(routing), logins], timeout=180)
+                "sh", routes, PY, obs_dir, json.dumps(routing), logins, str(routing.get("reuse_s", 120))], timeout=180)
     evaluated = {e["provider"]: e for e in (ev.get("evaluated") or [])}
     rows = []
     for name in routing["candidates"]:

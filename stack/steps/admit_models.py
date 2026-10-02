@@ -67,7 +67,8 @@ routes = pol.get("model_route") or {}
 subprocess.run([sys.executable, f"{HERE}/collect_obs.py", f"{d}/obs"], check=False,
                capture_output=True,
                env={**os.environ, "AGENTSTACK_MODEL_ROUTES": json.dumps(routes),
-                    "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {})})
+                    "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {}),
+                    "AGENTSTACK_OBS_REUSE_S": str(pol.get("reuse_s", 120))})
 r = subprocess.run([sys.executable, f"{HERE}/router.py", policy_path, f"{d}/obs"],
                    capture_output=True, text=True)
 try:

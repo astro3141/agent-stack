@@ -2059,7 +2059,8 @@ def controls_docs():
                                    "observed_at": _now.isoformat()}, _pol, _now)["why"]
     check("an observation nobody made is unknown, not a mismatch",
           absent.startswith("unknown:"), True)
-    check("and it says which login is missing", "quota observer" in absent, True)
+    check("and it sends the reader to the panel, not to the observer",
+          "sign in on the panel" in absent and "observer is not it" in absent, True)
     check("two accounts that really differ are still a mismatch",
           differ.startswith("account_mismatch:"), True)
     # A vendor that reports no usage figure (measured: Grok's CLI proxy, §64) is unknown unless

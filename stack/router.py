@@ -52,9 +52,13 @@ def evaluate(cand, obs, policy, now):
     # never existed. The two are separated so the bring-up's "every provider's state is knowable"
     # catches the second (measured on a fresh install: the observer had no login yet).
     if not oa:
+        # Every provider is read with the login that executes (OPERATIONS §29); the observer is
+        # codex's optional second source. So an account nobody has read is a provider with no
+        # readable login here — the panel's job — and the message used to send people to the
+        # observer instead (the second install's checks, §64).
         return {**r, "eligible": False,
-                "why": "unknown: nothing has observed this account yet "
-                       f"(executing={ea!r}) — the quota observer has no login for it"}
+                "why": "unknown: nothing has read this provider's login yet "
+                       f"(executing={ea!r}) — sign in on the panel; the quota observer is not it"}
     if not ea:
         return {**r, "eligible": False,
                 "why": f"unknown: no executing account for this provider (observed={oa!r})"}

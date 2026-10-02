@@ -15,6 +15,7 @@ providers:                        # order = preference
 
 quota:
   max_age_s: 1800                 # an observation older than this is "stale" → not eligible
+  reuse_s: 120                    # a kept reading younger than this is presented again, not taken again (OPERATIONS §64)
   require_windows:                # per provider — the same statement as research-default (OPERATIONS §64)
     claude: [weekly]
   max_used_percent:               # at or above → "exhausted"

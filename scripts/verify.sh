@@ -241,7 +241,8 @@ pol = prof["routing"]
 json.dump(pol, open(f"{d}/policy.json", "w"))
 subprocess.run([sys.executable, "/work/stack/collect_obs.py", d], capture_output=True, timeout=180,
                env={**os.environ, "AGENTSTACK_MODEL_ROUTES": json.dumps(pol.get("model_route") or {}),
-                    "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {})})
+                    "AGENTSTACK_LOGINS": json.dumps(pol.get("login") or {}),
+                    "AGENTSTACK_OBS_REUSE_S": str(pol.get("reuse_s", 120))})
 r = json.loads(subprocess.run([sys.executable, "/work/stack/router.py", f"{d}/policy.json", d],
                               capture_output=True, text=True, timeout=60).stdout)
 bad = [f"{e['provider']}={e['why']}" for e in r["evaluated"] if not e.get("eligible")]
