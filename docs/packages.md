@@ -82,7 +82,7 @@ packages/<name>/
 ```yaml
 name: my-lane                 # must equal the directory name
 version: 0.1.0
-description: one line, shown in the panel's 새 실행 tab
+description: one line, shown in the panel's 워크플로 tab
 workflows:                    # or `entry: workflow.yaml` for a single one
   my-lane: workflow.yaml
 requires:

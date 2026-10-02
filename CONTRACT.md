@@ -64,6 +64,11 @@ configuration file, where it can be repeated, reviewed and automated.
 | reading enough state to judge whether this is healthy | retention and cleanup (`scripts/cleanup.sh`, `--retain-*` on a cycle) |
 | | release, rollback, backup, restore (`scripts/release.sh`, `backup.sh`, `restore.sh`) |
 
+The rule was not what the panel did, until it was decided (#24, 2026-10-02): the panel had a
+start button, and starting a run is work a script or a scheduler can do. The panel's 워크플로 tab
+now lists what may be started and what each one takes, and shows the command; it starts nothing.
+Stopping a run that is going stays on the panel, because that is a judgement.
+
 The controls of the other solutions follow the same rule rather than their own product boundary:
 Preloop's approval decision is *in this panel*, because that is the thing that cannot go on
 without a human — while its policy editing, its consoles and MLflow's comparison views are linked

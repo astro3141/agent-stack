@@ -16,14 +16,14 @@ Routes
   GET  /api/accounts/<provider>/login?login=<name>
   POST /api/accounts/<provider>/code      body {"code": "...", "login": optional}
   POST /api/accounts/<provider>/cancel    body {"login": optional}
-  GET  /api/runs                          POST /api/runs  body {"workflow","profile","inputs":{}}
+  GET  /api/runs                          (starting a run is a command: scripts/cycle.sh, #24)
   GET  /api/runs/<ui-id>                  POST /api/runs/<ui-id>/stop   POST /api/runs/<ui-id>/resume
   GET  /api/approvals                     pending approval requests (read-only)
   GET  /api/packages                      what each installed package needs, and the login it declares
   GET  /api/packages/<name>/login         where that login stands: url, code, state
   POST /api/packages/<name>/login         start it     POST …/code {"code": "..."}     POST …/cancel
 """
-import json, os, re, secrets, subprocess, time
+import json, os, re, subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -318,28 +318,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "comment must be a string of at most 500 chars"})
             out = jlocal(["/work/stack/approvals.py", "decide", m.group(1), d, comment])
             return self._send(200 if out.get("ok") else 502, out)
-        if p == "/api/runs":
-            wf, prof, inputs = b.get("workflow"), b.get("profile") or "research-default", b.get("inputs") or {}
-            # what may be started is the runner's answer, not a second list kept here: a package
-            # installed under packages/ is startable from the panel the moment it is there
-            allowed = jexec([PY, "/work/stack/run_workflow.py", "workflows"])
-            if not isinstance(allowed, dict) or "error" in allowed:
-                return self._send(502, {"error": "could not read which workflows may be started"})
-            if wf not in allowed or not NAME.fullmatch(prof) or not isinstance(inputs, dict):
-                return self._send(400, {"error": "invalid workflow, profile or inputs"})
-            # The run is started detached, so what the stack cannot do has to be found out before
-            # that: a refusal after detaching would look like a run that never reported anything.
-            unrecorded = b.get("allow_unrecorded") is True
-            gate = jexec([PY, "/work/stack/capabilities.py", "--missing"]
-                         + (["--allow-unrecorded"] if unrecorded else []))
-            if gate.get("missing"):
-                return self._send(409, {"error": "the stack cannot run this now: "
-                                                 + ", ".join(gate["missing"]), **gate})
-            ui = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
-            pairs = [f"{k}={v}" for k, v in inputs.items() if isinstance(v, (str, int))]
-            rc, out, err = dexec([PY, "/work/stack/run_workflow.py", "start", ui, wf, prof] + pairs
-                                 + (["--allow-unrecorded"] if unrecorded else []), detach=True)
-            return self._send(202 if rc == 0 else 500, {"ui_id": ui} if rc == 0 else {"error": err[-300:]})
+        # POST /api/runs (start a workflow) is gone: starting is a command (scripts/cycle.sh), not a
+        # button — CONTRACT.md "What belongs on a screen", decided on #24 (2026-10-02). Stopping a
+        # run that is going stays: that is a person's judgement.
         return self._send(404, {"error": "no such route"})
 
 

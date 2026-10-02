@@ -4003,3 +4003,23 @@ not touch, and never will: the clone's directory, its Preloop install directory
 (`~/.preloop-<name>`, compose files only once the database volume is gone) and its images
 (`<name>/*:local`) — those are the operator's, removed by hand when the instance is not coming
 back.
+
+## 70. The panel starts nothing (#24, decided 2026-10-02)
+
+CONTRACT.md's "What belongs on a screen" put starting a run on the command side, and the panel
+had a start button with a precheck in front of it — §67's gate fix was work on a button the rule
+said should not be there. The operator decided for the rule: the start goes.
+
+What changed: the 워크플로 실행 tab is the 워크플로 tab — the workflows that may be started, what
+each one takes (its declared inputs, as text; what its package needs in the environment; its
+runbook; its own login), and the command, built from the selection:
+`scripts/cycle.sh <workflow> <profile> key=value …`. `POST /api/runs` is gone from the ops API;
+`GET /api/runs`, a run's view, and stop stay. Stopping a run that is going is a judgement and
+stays on the panel, as the rule says.
+
+Not decided, and left as they were: the panel's configuration *apply* button and its *resume*
+button, both of which the same table also puts on the command side. They are the next question
+on #24 or a new one.
+
+Controls: review_controls pins the absence (no start, no precheck, no POST on the page or in the
+API), the presence of the command, and the contract's sentence.

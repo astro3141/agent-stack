@@ -602,6 +602,23 @@ def instance_controls():
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 8. the panel starts nothing
+def panel_controls():
+    """#24, decided 2026-10-02: starting a run is a command. The panel lists workflows, what each
+    takes and the command; it offers no start. Stopping a run that is going stays a person's."""
+    hub = (WORK / "hub" / "index.html").read_text()
+    srv = (WORK / "ops" / "server.py").read_text()
+    check("panel: no start and no precheck on the page",
+          'id="start"' not in hub and 'id="precheck"' not in hub and 'api("/api/runs", {' not in hub)
+    check("panel: the page shows the command instead, and says it does not start",
+          'id="wf-command"' in hub and "scripts/cycle.sh ${name}" in hub and "이 화면은 시작하지 않습니다" in hub)
+    check("panel: the ops API has no start endpoint", 'run_workflow.py", "start"' not in srv
+          and "POST /api/runs  body" not in srv)
+    check("panel: stopping a run that is going is still the panel's", "/stop" in srv and "data-stop" in hub)
+    check("panel: the contract says so in its own words",
+          "shows the command" in (WORK / "CONTRACT.md").read_text())
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -614,6 +631,7 @@ event_controls()
 execution_controls()
 door_controls()
 instance_controls()
+panel_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)
