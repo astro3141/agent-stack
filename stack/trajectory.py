@@ -23,6 +23,7 @@ the result was any good.
 import glob, json, os, re, sys
 
 sys.path.insert(0, "/work/stack")
+import execution
 import settings
 
 RUNS = "/work/evidence/ui-runs"
@@ -54,15 +55,19 @@ def calls_of(view):
     if not run:
         return rows
     for d in sorted(glob.glob(f"{EVID}/{run}-*")):
-        res = _load(os.path.join(d, "result.json"))
-        if not isinstance(res, dict):
+        res = _load(os.path.join(d, "result.json"))         # the adapter's own, raw
+        rec = execution.read(d)                             # the platform's record of the call
+        if not isinstance(res, dict) and not rec:
             continue
+        res = res if isinstance(res, dict) else {}
+        rec = rec or {}
         q = ((res.get("turn") or {}).get("_meta") or {}).get("quota") or {}
         rows.append({
             "call": os.path.basename(d),
-            "provider": res.get("provider"),
-            "principal": res.get("mcp_principal") or "",
-            "status": res.get("status"),
+            "provider": rec.get("provider") or res.get("provider"),
+            "principal": rec.get("principal") or res.get("mcp_principal") or "",
+            "status": rec.get("status") or res.get("status"),
+            "attempts": rec.get("attempts"),
             # a permission request that Preloop's *rules* decided is not a person being asked;
             # only the ones routed to the approval channel are (agent_task.py counts them the
             # same way, and this must not overstate what a human was involved in)
@@ -72,8 +77,9 @@ def calls_of(view):
             "decided_by_rules": sum(1 for x in (res.get("permissions") or [])
                                     if x.get("routed") == "preloop_mcp_rules"),
             "rule_denials": len(res.get("mcp_denials") or []),
-            "tokens": (q.get("token_count") or {}).get("totalTokens"),
-            "wall_ms": res.get("wall_ms"),
+            "tokens": (rec.get("measurements") or {}).get("total_tokens")
+                      if rec else (q.get("token_count") or {}).get("totalTokens"),
+            "wall_ms": (rec.get("measurements") or {}).get("wall_ms") if rec else res.get("wall_ms"),
         })
     return rows
 

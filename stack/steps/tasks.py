@@ -43,6 +43,7 @@ import hashlib, json, os, sys
 
 sys.path.insert(0, "/work/stack")
 sys.path.insert(0, "/work/stack/steps")
+import execution
 import settings
 import fanout
 
@@ -87,20 +88,17 @@ if sys.argv[4:5] == ["--plan"]:
                      "steps_planned": len(m["steps"]),
                      "argv": [PY, os.environ.get("AGENTSTACK_CHAIN_ENTRY", "/work/stack/steps/task_chain.py"), mp]})
 else:
-    # A member whose role declares an egress profile runs through the broker, in that profile's
-    # container, on that profile's network (§54). Same argv contract either way, so the receipt,
-    # the retry loop and the recorder cannot tell the doors apart — which is the point.
-    import role_egress
+    # One door. A member whose role declares an egress profile runs through the broker, in that
+    # profile's container (§54) — and agent_task.py makes that swap itself, so this step, a chain
+    # and a workflow that calls the step directly all start the same program and never choose.
+    # This used to be chosen here as well, and in the chain: three copies of one rule.
     for spec in sys.argv[4:]:
         parts = spec.split(":")
         label, provider, login, route, prompt, expected = parts[:6]
         principal = parts[6] if len(parts) > 6 else ""
-        entry = ("/work/stack/steps/broker_dispatch.py"
-                 if principal and role_egress.profile_of(principal)
-                 else "/work/stack/steps/agent_task.py")
         jobs.append({"key": label, "label": label, "provider": provider, "expected": expected,
                      "produces": f"{WS}/{expected}",
-                     "argv": [PY, entry, provider, route, label,
+                     "argv": [PY, "/work/stack/steps/agent_task.py", provider, route, label,
                               prompt, expected, prof, login, principal]})
 
 def outcome_of(res, produced):
@@ -113,11 +111,14 @@ def outcome_of(res, produced):
 
 
 def read_row(r):
+    """The member's answer: a chain's (its steps inside) or a call's, in the one shape."""
     try:
         res = json.loads(r["stdout"].strip().splitlines()[-1])
     except Exception:
         res = {"status": "FAILED", "produced": False,
                "error": (r["stderr"] or r["stdout"])[-200:]}
+    if "steps" not in res:                     # a routed call, not a chain: the record's shape
+        res = execution.normalize(res)
     return res, bool(res.get("produced"))
 
 

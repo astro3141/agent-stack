@@ -3904,3 +3904,33 @@ of them; review_controls 64/64, static 10/10.
 
 What the review scored and this record does not: a score is a reviewer's summary; the rows above
 are what was measured.
+
+## 68. The connective tissue, read as code: five signs, verified, three of them cut (2026-10-02)
+
+A second outside reading — of the structure this time, not the behaviour — said the big
+boundary (platform / workflow) holds and the *connections* between execution, state and record
+had grown rules nobody owns. Its criterion was the right one: not how long a file is, but how
+many other places one has to know to change one thing. Each sign was checked on `main@f114ce9`
+before anything moved:
+
+| sign | verified | done |
+|---|---|---|
+| step names are an API: the screen read a step *named* `route` and steps whose names start with `record` | **yes** — `run_workflow.py` 487 and 496 | `stack/runevents.py` reads the event log and recognises the router and the recorder by what they *answered* (`decision`+`evaluated`+`provider`; `mlflow_run_id`), under any name. A step named `route` that did not route is not read as the router (control) |
+| the view writes: `view()` built the screen's answer and repaired `meta.json` on the way | **yes** — 513–525 | `stack/runstate.py` owns the run's state; `recover()` is the one explicit restoration and `run_workflow.read()` calls it by name; `view()` writes nothing (control: a view leaves meta untouched; read persists) |
+| the door is chosen in three places: `agent_task.py`, `tasks.py` and `task_chain.py` each decided broker-or-local | **yes** — agent_task 56, tasks 98, task_chain 44 | the fan-out and a chain start `agent_task.py` and never choose; the swap lives where the call is made, once |
+| results are re-packed by hand along `agent_task → receipt → record → trajectory`, so a field could vanish mid-way (which is how §67's lost attempt happened) | **yes** | `stack/execution.py`: one record (`FIELDS`, `contract: 1`), `record()`/`normalize()`/`problems()`, `of_member()` for what a receipt member made; `agent_task.py` writes it to stdout *and* `<evidence_dir>/execution.json`; the receipt keeps every attempt in it; the recorder counts executions through it (every attempt, every chain step); the trajectory reads the platform's copy first. A control holds docs/packages.md's `output:` list equal to `FIELDS` |
+| the router is asked in three moves by six callers (route step, admit_models, capabilities, ops_health, ops API, verify.sh), each with its own copy of the moves | **yes** — the reuse window had reached five of six | `stack/admission.py`: `evaluate(profile | policy, candidates, evidence_dir)`; the six ask it. A collector that fails is reported (`collect_error`) and the router says "unknown", never a crash in the step |
+| `run-agent.mjs` carries provider config, principal auth, approvals, ACP, ledger and result storage in one file | **yes** (497 lines, module-level `LOGIN`/`PRINCIPAL`) | not here: it runs only with a model call, which no stack-level check makes. #27, with the fixture to take before cutting |
+
+What did not move: `cfg.py` (long, and one thing), the package/platform boundary itself, and
+`run_workflow.py`'s commands — it still starts, stops, resumes and answers, 616 → 525 lines,
+with the reading and the state elsewhere. Nothing a package calls changed: `agent_task.py`'s
+argv and output keys, the receipt's keys, the record step's payload, `run_workflow.py`'s
+commands and the view's fields are the same, plus `contract` and `attempt_results`.
+
+Controls: review_controls **92/92** (28 new: the event reader under foreign names, the pure
+view and the explicit restore, the execution record and its document, the one door to the
+router end to end, the one door to a call); trial_controls' two pins that asserted the *old*
+three-way door now assert the single one, and its screen pin reads the event reader instead of
+`eval`-ing a line of `run_workflow.py`'s source. Static 10/10. The stack level is the CI run
+named in PR #21.

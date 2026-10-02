@@ -17,6 +17,7 @@ container; any other runs here. A workflow names this step and never has to choo
 REPEATABLE = "no"   # a model call: it costs, and the answer is not the same twice
 import json, os, subprocess, sys, time
 sys.path.insert(0, "/work/stack")
+import execution
 import settings
 
 provider, model_route, label, prompt_file, expected = sys.argv[1:6]
@@ -101,18 +102,19 @@ if principal and not os.environ.get("AGENTSTACK_ROLE"):
         except OSError:
             owner = None
         if owner != role_uid:
-            print(json.dumps({
-                "status": "FAILED", "provider": provider, "principal": principal,
-                "run_id": run_id, "workspace": ws, "produced": False, "produced_stale": False,
-                "evidence_dir": evid, "profile": prof_name, "attempts": 0,
-                "failure": f"{principal} declares egress of its own, so this step runs as that "
+            rec = execution.record(
+                status="FAILED", provider=provider, principal=principal,
+                run_id=run_id, workspace=ws, produced=False, produced_stale=False,
+                evidence_dir=evid, profile=prof_name, attempts=0,
+                failure=f"{principal} declares egress of its own, so this step runs as that "
                            f"role's uid — and the login {login!r} belongs to "
                            f"{'uid ' + str(owner) if owner is not None else 'nobody: it is not there'}. "
                            "These CLIs own their credential files: they set the mode, and they "
                            "rewrite it on every token refresh, so group access granted by hand "
                            "lasts until the next one. Connect a login named for this role and run "
-                           "the step on it, or drop the role's egress declaration (§50).",
-                "measurements": {}}))
+                           "the step on it, or drop the role's egress declaration (§50).")
+            execution.write(evid, rec)
+            print(json.dumps(rec))
             raise SystemExit(0)
     if role_uid and os.path.exists("/usr/local/bin/role-exec"):
         shared_with_roles(ws, evid)
@@ -179,7 +181,10 @@ after = stamp()
 # left over from an earlier attempt, untouched by this one: the reader is told, rather than the
 # file being deleted — an artifact someone may want to look at is not this step's to destroy
 stale = bool(after and after == before)
-print(json.dumps({
+# One shape, owned in one place (stack/execution.py): what is printed here is what the receipt
+# keeps, the recorder reads and the trajectory sums — and a copy goes beside the adapter's own
+# result.json, so the evidence directory carries the platform's record of this call too.
+rec = execution.record(**{
     "status": r.get("status", "FAILED"),
     "provider": provider,
     "principal": principal,
@@ -209,4 +214,6 @@ print(json.dumps({
     "ledger_error": r.get("ledger_error") or "",
     # missing measurements are omitted, never 0
     "measurements": {k: v for k, v in meas.items() if isinstance(v, (int, float)) and not isinstance(v, bool)},
-}))
+})
+execution.write(evid, rec)
+print(json.dumps(rec))

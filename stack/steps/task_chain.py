@@ -25,6 +25,7 @@ REPEATABLE = "no"   # it starts model calls, in order
 import json, os, subprocess, sys, time
 
 sys.path.insert(0, "/work/stack")
+import execution
 import settings
 
 PY = os.environ.get("POC_PY", "/opt/venv/bin/python")
@@ -40,12 +41,9 @@ for i, st in enumerate(member["steps"], 1):
     name = st.get("name") or f"{label}-{i}"
     started = time.time()
     if st["kind"] == "model":
-        # a mapped role's step goes through the broker — the same swap the fan-out makes (§54)
-        import role_egress
-        entry = ("/work/stack/steps/broker_dispatch.py"
-                 if st.get("principal") and role_egress.profile_of(st["principal"])
-                 else "/work/stack/steps/agent_task.py")
-        argv = [PY, entry, st["provider"], st.get("route", "direct"),
+        # one door: agent_task.py hands a role that declares an egress profile to the broker
+        # itself (§54), so this chain — like the fan-out — never has to know there are two
+        argv = [PY, "/work/stack/steps/agent_task.py", st["provider"], st.get("route", "direct"),
                 name, st["prompt"], st["expected"], prof, st.get("login", st["provider"]),
                 st.get("principal", "")]
     else:
@@ -59,6 +57,8 @@ for i, st in enumerate(member["steps"], 1):
     expected = st.get("expected") or ""
     produced = (bool(res.get("produced")) if st["kind"] == "model"
                 else (p.returncode == 0 and (not expected or os.path.exists(f"{WS}/{expected}"))))
+    if st["kind"] == "model":
+        res = execution.normalize(res)        # the call's record, whole, in the one shape
     res.update({"step": name, "kind": st["kind"], "produced": produced,
                 "seconds": round(time.time() - started, 2)})
     results.append(res)

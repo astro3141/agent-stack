@@ -171,13 +171,15 @@ def controls_roles():
 def controls_record_and_screen():
     print("screen — every recording step's MLflow result reaches the run screen")
     # (what novel-a.yaml sends to its record steps is novel's: packages/novel/controls.py)
-    src = open("/work/stack/run_workflow.py", encoding="utf-8").read()
-    conds = re.findall(r'elif t == "script_completed" and (.+?):\n', src)
-    cond = next((c for c in conds if "record" in c), "")
-    for step in ("record", "record_hold", "record_pass", "record_block", "record_cycle"):
-        check(f"the screen reads {step}", bool(eval(cond, {"d": {"agent_name": step}, "str": str})), True)
+    # by what the step answered, not by its name (stack/runevents.py): a recording step is one
+    # whose output carries mlflow_run_id, whatever the workflow calls it
+    import importlib as _il_ev
+    _ev = _il_ev.import_module("runevents")
+    for step in ("record", "record_hold", "record_pass", "record_block", "record_cycle", "persist_result"):
+        check(f"the screen reads {step}",
+              _ev.is_record({"mlflow_run_id": "x", "experiment_id": "1"}) and not _ev.is_routing({"mlflow_run_id": "x"}), True)
     check("an unrelated step is not read as a record",
-          bool(eval(cond, {"d": {"agent_name": "route"}, "str": str})), False)
+          _ev.is_record({"decision": "ROUTE", "provider": "claude", "evaluated": "[]"}), False)
 
 
 # ------------------------------------------------- the fan-out steps, with the real fanout module
@@ -1283,8 +1285,11 @@ def controls_multi_model_admission():
           in src.replace('"why"', "'why'"), True)
     check("and the step decides nothing: no HOLD, no exit code, no refusal of the run",
           ("HOLD" not in src and "SystemExit(1)" not in src), True)
+    # the narrowing is admission.py's (one door to the router, §68): this step names who, the
+    # door keeps the profile's thresholds, windows and logins
     check("the profile's own thresholds are kept; only who is asked about changes",
-          'pol["candidates"] = wanted' in src, True)
+          "candidates=wanted" in src
+          and 'pol["candidates"] = list(candidates)' in open("/work/stack/admission.py", encoding="utf-8").read(), True)
 
 
 def controls_h1_integration():
@@ -1299,10 +1304,14 @@ def controls_h1_integration():
     tk = open("/work/stack/steps/tasks.py", encoding="utf-8").read()
     ch = open("/work/stack/steps/task_chain.py", encoding="utf-8").read()
     bd = open("/work/stack/steps/broker_dispatch.py", encoding="utf-8").read()
-    check("the fan-out swaps the entrypoint on the mapping and changes nothing else",
-          ("role_egress.profile_of(principal)" in tk and "broker_dispatch.py" in tk), True)
-    check("a chain's model step swaps the same way",
-          ("role_egress.profile_of(st" in ch and "broker_dispatch.py" in ch), True)
+    at = open("/work/stack/steps/agent_task.py", encoding="utf-8").read()
+    # one door (§68): the swap is agent_task.py's, and the fan-out and a chain start it and never
+    # choose — three copies of the rule used to live in three files
+    check("the door is chosen once, in agent_task.py, on the role's declaration",
+          ("role_egress.profile_of(principal)" in at and "broker_dispatch.py" in at), True)
+    check("the fan-out and a chain start agent_task.py and do not choose",
+          ("broker_dispatch" not in tk and "broker_dispatch" not in ch
+           and "agent_task.py" in tk and "agent_task.py" in ch), True)
     check("the brokered step keeps agent_task's argv contract",
           ("sys.argv[1:6]" in bd and "sys.argv[8]" in bd), True)
     check("and carries no secret: the request is the prompt and the role's name",
@@ -2283,7 +2292,7 @@ def controls_resume():
                             "agent_name": "author"}}
         finished = {"type": "workflow_completed", "timestamp": 2,
                     "data": {"output": {"decision": "PASS"}}}
-        rw.RUNS = root
+        rw.runstate.RUNS = root
         meta = {"ui_id": "u1", "state": "finished", "launcher_pid": 1, "instance": "x"}
 
         log.write_text(_json.dumps(stopped) + chr(10))
@@ -2314,7 +2323,7 @@ def controls_resume():
         log = d / "conductor-p281-novel-a-20260101-000000-abcd1234.events.jsonl"
         first = '{"type": "workflow_failed", "data": {}}'
         log.write_text(first + chr(10))
-        rw.RUNS = root
+        rw.runstate.RUNS = root
         check("the stop that a resume starts from is not read as its end",
               rw.run_ended("u2", len(first) + 1), False)
         check("and what the resume itself writes is", rw.run_ended("u2", 0), True)

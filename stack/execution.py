@@ -1,0 +1,128 @@
+"""The execution record: what one routed model call reports, in one shape, everywhere it travels.
+
+A call's result goes a long way — `steps/agent_task.py` prints it, a fan-out (`steps/tasks.py`)
+keeps it in a receipt, a chain (`steps/task_chain.py`) keeps it as one of its steps, the recorder
+(`steps/record.py`) turns it into an MLflow run, and `trajectory.py` sums it up — and each of
+those used to pick the fields it wanted by hand. That is how a retry lost its first attempt's
+cost on the way (OPERATIONS §67): nothing on the path owned the shape. This does.
+
+    import execution
+    rec = execution.record(status="COMPLETED", provider="claude", run_id=..., ...)   # every field, defaults filled
+    execution.write(evidence_dir, rec)       # <evidence_dir>/execution.json — the platform's copy
+    execution.read(evidence_dir)             # it back, or None
+    execution.is_execution(d)                # a dict that names a call (run_id + provider)
+    execution.problems(d)                    # what a record is missing, [] when nothing
+    execution.of_member(label, member)       # every execution a fan-out member made: each attempt,
+                                             # and each model step of a chain
+
+`FIELDS` is the whole shape, and docs/packages.md lists the same keys for a workflow's `output:`
+block — the one place and the document say the same thing because the control compares them.
+A record carries `contract`, the version of this shape, so a reader can tell an old one apart.
+"""
+import copy, json, os
+
+CONTRACT = 1
+
+# every key a model step answers with, and what it holds when the call did not get that far
+FIELDS = {
+    "status": "FAILED",                  # COMPLETED | FAILED | DENIED | TIMED_OUT | …
+    "provider": "",
+    "principal": "",                     # the Preloop principal the call presented
+    "model_route": "",
+    "run_id": "",                        # <run>-<label>-<provider>[-a<n>]: this call's evidence directory
+    "workspace": "",
+    "produced_path": "",                 # the artifact the step was told to expect
+    "produced": False,                   # it is there, and this call wrote it
+    "produced_stale": False,             # it is there, untouched by this call (left by an earlier one)
+    "model_session_reported": "",
+    "model_adapter_reported": "",
+    "model_served": "unknown",           # "unknown" unless something on the path reported it
+    "approvals_requested": 0,
+    "mcp_rule_denials": 0,
+    "retryable_elsewhere": False,
+    "evidence_dir": "",
+    "profile": "",
+    "attempts": 1,                       # 2 when the one bounded login-refresh retry ran
+    "failure": "",                       # why, when status is not COMPLETED
+    "ledger_error": "",
+    "measurements": {},                  # a number the adapter did not report is left out, never 0
+}
+REQUIRED = ("run_id", "provider", "status")
+TYPES = {"produced": bool, "produced_stale": bool, "retryable_elsewhere": bool,
+         "approvals_requested": int, "mcp_rule_denials": int, "attempts": int, "measurements": dict}
+
+
+def record(**fields):
+    """A whole record: every key of FIELDS, the given values over the defaults, the contract
+    version. Keys outside FIELDS are kept — a brokered call adds `dispatched`, a chain step adds
+    `step` and `kind` — so nothing a step says is dropped on the way."""
+    out = copy.deepcopy(FIELDS)
+    out.update({k: v for k, v in fields.items() if v is not None})
+    out["contract"] = CONTRACT
+    return out
+
+
+def normalize(d):
+    """The same, from a dict a step printed (or an older reader kept)."""
+    return record(**(d if isinstance(d, dict) else {}))
+
+
+def is_execution(d):
+    """Whether this dict names a call that was made: a run id (its evidence) and a provider."""
+    return isinstance(d, dict) and bool(d.get("run_id")) and bool(d.get("provider"))
+
+
+def problems(d):
+    """What is wrong with a record, as a list of sentences; [] when nothing is."""
+    if not isinstance(d, dict):
+        return ["not an object"]
+    out = [f"{k} missing" for k in REQUIRED if not d.get(k)]
+    for k, t in TYPES.items():
+        if k in d and not isinstance(d[k], t) or (t is int and isinstance(d.get(k), bool)):
+            out.append(f"{k} is not {t.__name__}")
+    return out
+
+
+def write(evidence_dir, rec):
+    """The platform's own copy of the record, beside the adapter's raw result.json."""
+    if not evidence_dir:
+        return
+    try:
+        os.makedirs(evidence_dir, exist_ok=True)
+        with open(os.path.join(evidence_dir, "execution.json"), "w", encoding="utf-8") as f:
+            json.dump(rec, f, ensure_ascii=False, indent=1)
+    except OSError:
+        pass                                      # the step's stdout still carries it
+
+
+def read(evidence_dir):
+    try:
+        with open(os.path.join(evidence_dir, "execution.json"), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def attempts_of(member):
+    """Every attempt's result a fan-out member made, oldest first — the kept list, or the one."""
+    rows = member.get("attempt_results") if isinstance(member, dict) else None
+    if isinstance(rows, list) and rows:
+        return [r for r in rows if isinstance(r, dict)]
+    r = (member or {}).get("result") if isinstance(member, dict) else None
+    return [r] if isinstance(r, dict) else []
+
+
+def of_member(label, member):
+    """Every execution a fan-out member made, each tagged with the member it belonged to: the
+    model steps of a chain (one per step), or the call itself — for every attempt. Not an
+    execution: a chain whose steps were all scripts, or an attempt that never named a call."""
+    out = []
+    for r in attempts_of(member):
+        steps = [st for st in (r.get("steps") or [])
+                 if isinstance(st, dict) and st.get("kind") == "model" and is_execution(st)]
+        if steps:
+            out.extend({**normalize(st), "member": f"{label}:{st.get('step', '')}"} for st in steps)
+        elif is_execution(r):
+            out.append({**normalize(r), "member": label})
+    return out

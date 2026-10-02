@@ -202,10 +202,16 @@ arrives from outside a run.
 
 ## The output of a model step
 
-`stack/steps/agent_task.py` (and the brokered door, `broker_dispatch.py`) answers with one shape,
-and every workflow that routes on it declares some of it in its `output:` block — three packages
-had each copied their own subset, one of them twice (docs/record/PACKAGE-MATRIX.md, X10b). This is
-the whole set; declare what you route on and copy the lines, do not retype them:
+`stack/steps/agent_task.py` answers with one shape — the **execution record**, owned by
+`stack/execution.py` — and every workflow that routes on it declares some of it in its `output:`
+block; three packages had each copied their own subset, one of them twice
+(docs/record/PACKAGE-MATRIX.md, X10b). The same record is what a fan-out keeps in its receipt
+(every attempt of every member), what a chain keeps for each of its model steps, what the
+recorder turns into an MLflow run, and what `trajectory.py` sums; a copy is written beside the
+adapter's raw result as `<evidence_dir>/execution.json`, so the evidence directory carries the
+platform's record of the call whether or not any step passed it on. A record carries
+`contract: 1`, the version of this shape. This is the whole set (a control compares this list
+with `execution.FIELDS`); declare what you route on and copy the lines, do not retype them:
 
 ```yaml
     output:
@@ -238,6 +244,18 @@ the whole set; declare what you route on and copy the lines, do not retype them:
 
 A YAML anchor (`output: &agent_out` on the first model step, `output: *agent_out` on the rest)
 keeps one copy per workflow; `packages/research-r/research-r.yaml` shows it.
+
+**Where a call runs is not the workflow's to choose.** A role that declares an egress profile is
+handed to the broker by `agent_task.py` itself (§54); a fan-out and a chain start the same step
+and never choose a door, and neither does a workflow that calls it directly.
+
+**What the screen reads, it reads from what a step said, not from the step's name.** The panel
+shows a run's routing decision and its MLflow record. It recognises the routing step by its
+output (`decision` + `evaluated` + `provider`, which is what `stack/steps/route.py` answers) and
+the recording step by its output (`mlflow_run_id`, what `stack/steps/record.py` answers) —
+name them `route` and `record_pass` or `choose_provider` and `persist_result`; the screen is the
+same. Until this the screen read a step *named* `route` and steps whose names began with
+`record` (OPERATIONS §68).
 
 ## What it needs of the stack
 

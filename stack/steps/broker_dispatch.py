@@ -37,8 +37,8 @@ run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 try:
     prompt = open(prompt_file, encoding="utf-8").read()
 except OSError as e:
-    print(json.dumps({"status": "FAILED", "produced": False,
-                      "failure": f"prompt unreadable: {type(e).__name__}"}))
+    print(json.dumps({"status": "FAILED", "produced": False, "provider": provider,
+                      "principal": principal, "failure": f"prompt unreadable: {type(e).__name__}"}))
     raise SystemExit(0)
 
 # The execution profile owns the call's time limit, brokered or not: a local step reads
@@ -46,6 +46,7 @@ except OSError as e:
 # profile allowed an hour for — the runner killed it mid-work with nothing produced
 # (devflow's research step, measured at 25–33 minutes under long-task's 3600 s).
 sys.path.insert(0, "/work/stack")
+import execution  # noqa: E402
 import settings  # noqa: E402
 timeout_s = int(((settings.profile(prof_name) or {}).get("execution")
                  or {}).get("timeout_ms", 900000)) // 1000
@@ -66,19 +67,20 @@ except urllib.error.HTTPError as e:
         why = json.loads(e.read()).get("error", "")
     except Exception:
         why = f"HTTP {e.code}"
-    print(json.dumps({"status": "DENIED" if e.code == 403 else "FAILED", "produced": False,
-                      "principal": principal, "provider": provider,
-                      "failure": f"the broker refused this dispatch: {why}"},
-                     ensure_ascii=False))
+    print(json.dumps(execution.record(
+        status="DENIED" if e.code == 403 else "FAILED", produced=False,
+        principal=principal, provider=provider, profile=prof_name,
+        failure=f"the broker refused this dispatch: {why}"), ensure_ascii=False))
     raise SystemExit(0)
 except Exception as e:
-    print(json.dumps({"status": "FAILED", "produced": False, "principal": principal,
-                      "provider": provider,
-                      "failure": f"the broker did not answer: {type(e).__name__}"}))
+    print(json.dumps(execution.record(
+        status="FAILED", produced=False, principal=principal, provider=provider,
+        profile=prof_name, failure=f"the broker did not answer: {type(e).__name__}")))
     raise SystemExit(0)
 
-res = out.get("result") or {"status": "FAILED",
-                            "failure": out.get("error", "no result from the runner")}
+res = execution.normalize(out.get("result") or {"status": "FAILED", "provider": provider,
+                                                "principal": principal, "profile": prof_name,
+                                                "failure": out.get("error", "no result from the runner")})
 # where it ran is part of the record: the receipt should say this member was brokered, and where
 res["dispatched"] = out.get("dispatched") or {"role": principal}
 print(json.dumps(res, ensure_ascii=False))
