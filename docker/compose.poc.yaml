@@ -288,6 +288,8 @@ services:
   admin:
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-admin
+    depends_on:
+      agent: {condition: service_started}   # it shares agent-home: filled by the main agent first
     init: true
     restart: unless-stopped
     networks:
@@ -332,6 +334,8 @@ services:
       dockerfile: docker/ops.Dockerfile
     image: agentstack/ops:local
     container_name: ${STACK:-agentstack}-ops
+    depends_on:
+      agent: {condition: service_started}   # it shares agent-home: filled by the main agent first
     init: true
     restart: unless-stopped
     # The screen is optional in a reduced composition; runs still start from the CLI.
