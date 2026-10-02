@@ -337,6 +337,63 @@ def bind_controls():
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 2f. fan-out: a member's failure is its own
+def fanout_controls():
+    """Review 2026-10-02: a member whose process could not start left its row without an end and
+    the step reading the rows died for every member; a retry replaced the first attempt's result,
+    so its call and its evidence directory left the receipt."""
+    sys.path.insert(0, str(HERE / "steps"))
+    fo = importlib.import_module("fanout")
+    rows, _ = fo.run_all([{"key": "ok", "argv": ["true"]},
+                          {"key": "gone", "argv": ["/nonexistent/agentstack-no-such-exe"]}])
+    by = {r["key"]: r for r in rows}
+    check("fanout: a member that cannot start is a row with an end, a code and the reason",
+          by["gone"].get("start_failed") and by["gone"]["returncode"] == 127 and "ended_at" in by["gone"]
+          and "FileNotFoundError" in by["gone"]["stderr"], by["gone"])
+    check("fanout: … and the member beside it is unaffected",
+          by["ok"]["returncode"] == 0 and "ended_at" in by["ok"], by["ok"])
+    rows, _ = fo.run_all([{"key": "e", "argv": ["sh", "-c", "echo $AGENTSTACK_ATTEMPT"], "env": {"AGENTSTACK_ATTEMPT": "2"}}])
+    check("fanout: a job's env reaches its process", rows[0]["stdout"].strip() == "2", rows[0])
+
+    # a retry, end to end through tasks.py: a fake chain fails on attempt 1 and produces on 2
+    root = Path(tempfile.mkdtemp(prefix="agentstack-retry-"))
+    (root / "config" / "generated").mkdir(parents=True)
+    rt = json.loads(json.dumps(__import__("settings").DEFAULT_RUNTIME))
+    rt["paths"]["workspace_root"] = str(root / "ws")
+    (root / "config" / "generated" / "runtime.json").write_text(json.dumps(rt))
+    chain = root / "chain.py"
+    chain.write_text("""import json, os, sys
+m = json.load(open(sys.argv[1]))
+ws = os.environ["WSDIR"]; a = os.environ.get("AGENTSTACK_ATTEMPT", "1")
+ok = a == "2"
+if ok:
+    open(f"{ws}/out.txt", "w").write("second time")
+print(json.dumps({"status": "COMPLETED" if ok else "FAILED", "produced": ok, "model_calls": 1,
+                  "run_id": f"r-{m['label']}" + ("-a2" if a == "2" else ""), "attempt_seen": a}))
+""")
+    (root / "ws" / "r1").mkdir(parents=True)
+    plan = root / "plan.json"
+    plan.write_text(json.dumps({"members": [{"label": "m", "retries": 1,
+                                             "steps": [{"kind": "script", "argv": ["true"], "expected": "out.txt"}]}]}))
+    env = {**os.environ, "AGENTSTACK_ROOT": str(root), "CONDUCTOR_SELF_RUN_ID": "r1", "POC_PY": sys.executable,
+           "AGENTSTACK_CHAIN_ENTRY": str(chain), "WSDIR": str(root / "ws" / "r1")}
+    r = subprocess.run([sys.executable, str(HERE / "steps" / "tasks.py"), str(root / "receipt.json"), "ctx", "p",
+                        "--plan", str(plan)], env=env, capture_output=True, text=True, timeout=60)
+    try:
+        last = json.loads(r.stdout.strip().splitlines()[-1])
+        rec = json.loads((root / "receipt.json").read_text())["members"]["m"]
+    except Exception as e:                                       # noqa: BLE001
+        last, rec = {"error": f"{e}: {r.stderr[-300:]}"}, {}
+    check("tasks: a retried member produces, and the receipt counts both attempts",
+          rec.get("produced") and rec.get("attempts") == 2 and rec.get("attempt_outcomes") == ["failed", "produced"], rec or last)
+    check("tasks: every attempt's own result stays in the receipt, the retry named apart",
+          [a.get("run_id") for a in rec.get("attempt_results") or []] == ["r-m", "r-m-a2"]
+          and rec.get("result", {}).get("attempt_seen") == "2", rec.get("attempt_results"))
+    check("tasks: the step reports the calls that were made, not the members that exist",
+          last.get("model_calls") == 2 and last.get("produced") == 1, last)
+    shutil.rmtree(root, ignore_errors=True)
+
+
 # ---------------------------------------------------------------- 3. restart after the end event
 def run_controls():
     sys.path.insert(0, str(HERE))
@@ -379,6 +436,7 @@ kept_controls()
 grok_posture_controls()
 state_controls()
 bind_controls()
+fanout_controls()
 run_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

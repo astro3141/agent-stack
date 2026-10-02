@@ -141,7 +141,7 @@
     <h2>제공자 계정 — <span id="acct-profile"></span></h2>
     <div class="row muted" id="acct-decision">불러오는 중…</div>
     <table>
-      <thead><tr><th>제공자</th><th>연결</th><th>실행 계정 = 조회 계정</th><th>잔여량 (주간 / 5시간)</th><th>조회 시각</th><th>지금 사용</th><th></th></tr></thead>
+      <thead><tr><th>제공자</th><th>연결</th><th>실행 계정 = 조회 계정</th><th>사용량 (주간 / 5시간)</th><th>조회 시각</th><th>지금 사용</th><th></th></tr></thead>
       <tbody id="acct-rows"></tbody>
     </table>
     <div id="login-box" class="login-box hidden"></div>
@@ -314,14 +314,18 @@ $("#cfg-apply").onclick = async () => {
 // to be visible only on the tab that shows it: a lane waited its whole timeout while nobody was
 // told (reported from the second machine, OPERATIONS §33). The count goes on the tab, in the
 // document title, and in a line the dashboard always shows.
-function showWaiting(n) {
+function showWaiting(n, unknown) {
+  // "none" and "could not read" are different answers (review 2026-10-02): the second must
+  // never render as the green first.
   const badge = $("#appr-badge");
-  badge.textContent = n ? ` ${n}` : "";
-  badge.className = n ? "waiting" : "hidden";
-  document.title = (n ? `(${n}) ` : "") + "CADP 실행 허브";
+  badge.textContent = unknown ? " ?" : (n ? ` ${n}` : "");
+  badge.className = (n || unknown) ? "waiting" : "hidden";
+  document.title = (unknown ? "(?) " : n ? `(${n}) ` : "") + "CADP 실행 허브";
   const line = $("#dash-approvals");
   if (line) {
-    line.innerHTML = n
+    line.innerHTML = unknown
+      ? `<span class="bad">승인 상태를 읽지 못했습니다 — ${esc(unknown)}</span>`
+      : n
       ? `<span class="warn">실행 ${n}건이 사람의 판정을 기다립니다</span> — <a href="#" id="go-appr">계정·상태 탭에서 판정</a>`
       : `<span class="ok">기다리는 승인 없음</span>`;
     const go = $("#go-appr");
@@ -331,8 +335,12 @@ function showWaiting(n) {
 }
 
 async function loadApprovals() {
-  const a = await api("/api/approvals");
-  showWaiting(Array.isArray(a) ? a.length : 0);
+  let a;
+  try { a = await api("/api/approvals"); } catch (e) { a = {error: String(e)}; }
+  showWaiting(Array.isArray(a) ? a.length : 0, Array.isArray(a) ? "" : ((a && a.error) || "no answer"));
+  // the refresh rebuilds the table; what a person was typing into it is kept (review 2026-10-02)
+  const typed = {}; let focused = null;
+  document.querySelectorAll(".appr-c").forEach((i) => { if (i.value) typed[i.dataset.id] = i.value; if (i === document.activeElement) focused = i.dataset.id; });
   $("#appr").innerHTML = Array.isArray(a) && a.length
     ? `<table><tr><th>도구</th><th>대상</th><th>작업 폴더</th><th>요청</th><th>만료</th><th>판정</th></tr>` + a.map((r) =>
         `<tr><td>${esc(r.tool)}</td><td class="mono">${esc(r.target)}</td><td class="mono">${esc(r.cwd)}</td>` +
@@ -341,7 +349,8 @@ async function loadApprovals() {
         `<button class="act" data-appr="approve" data-id="${esc(r.id)}">승인</button>` +
         `<button class="sub" data-appr="decline" data-id="${esc(r.id)}">거부</button></td></tr>`).join("") +
       `</table><div class="row muted" id="appr-msg"></div>`
-    : (Array.isArray(a) ? "승인 대기 없음" : `<span class="bad">${esc(a.error)}</span>`);
+    : (Array.isArray(a) ? "승인 대기 없음" : `<span class="bad">승인 목록을 읽지 못했습니다 — ${esc((a && a.error) || "no answer")}</span>`);
+  document.querySelectorAll(".appr-c").forEach((i) => { if (typed[i.dataset.id]) i.value = typed[i.dataset.id]; if (focused === i.dataset.id) i.focus(); });
   document.querySelectorAll("[data-appr]").forEach((b) => b.onclick = () => decideApproval(b));
 }
 
@@ -548,10 +557,16 @@ $("#precheck").onclick = async () => {
   const pending = (c.targets||[]).filter((t) => t.state !== "applied");
   lines.push(c.valid ? `<span class="ok">✓ 설정 유효</span>` : `<span class="bad">✗ 설정 오류: ${esc((c.errors||[]).join(" · "))}</span>`);
   lines.push(pending.length ? `<span class="warn">! 미적용 설정: ${esc(pending.map((t) => t.target).join(", "))}</span>` : `<span class="ok">✓ 설정 모두 적용됨</span>`);
+  // A workflow whose package asks for no admission (hello-lane: no model call) may start while
+  // admission holds — the first thing a new install can run must not wait on a login (review
+  // 2026-10-02). One that does ask for it is held, as before.
+  const wf = WORKFLOWS[$("#wf").value] || {};
+  const needsAdmission = (wf.capabilities || []).includes("admission");
   lines.push(a.decision === "ROUTE" ? `<span class="ok">✓ 예상 제공자: ${esc(a.chosen)}</span> <span class="muted">(${esc(a.reason)})</span>`
-                                    : `<span class="bad">✗ 지금 실행하면 보류(HOLD): ${esc(a.reason || a.error)}</span>`);
+           : needsAdmission ? `<span class="bad">✗ 지금 실행하면 보류(HOLD): ${esc(a.reason || a.error)}</span>`
+           : `<span class="warn">! 제공자 보류(HOLD) — 이 워크플로는 모델 호출을 선언하지 않아 시작할 수 있습니다: ${esc(a.reason || a.error)}</span>`);
   out.innerHTML = lines.join("<br>");
-  $("#start").disabled = !(c.valid && a.decision === "ROUTE");
+  $("#start").disabled = !(c.valid && (a.decision === "ROUTE" || !needsAdmission));
 };
 $("#start").onclick = async () => {
   const inputs = {}; document.querySelectorAll("#wf-inputs input").forEach((i) => inputs[i.dataset.k] = i.value);

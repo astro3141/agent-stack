@@ -89,6 +89,12 @@ def described():
                     if p["usable"]}
     except Exception:
         needs, owner = {}, {}
+    def caps_of(name):
+        try:
+            import packages
+            return packages.requires_of(name)[0]
+        except Exception:
+            return []
     out = {}
     for name, rel in sorted(known().items()):
         row = {"path": rel, "description": "", "inputs": [],
@@ -100,7 +106,9 @@ def described():
                # the package's own operating document (§58): the panel links it, the stack only
                # says where it is
                "runbook": runbooks.get(owner.get(name), ""),
-               "package": owner.get(name, "")}
+               "package": owner.get(name, ""),
+               # what its package says it needs of the stack — the panel's start gate reads it
+               "capabilities": caps_of(name)}
         try:
             d = yaml.safe_load(open(f"/work/{rel}", encoding="utf-8")) or {}
             w = d.get("workflow") or {}

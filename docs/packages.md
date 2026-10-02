@@ -87,9 +87,8 @@ workflows:                    # or `entry: workflow.yaml` for a single one
   my-lane: workflow.yaml
 requires:
   capabilities: [tool_rights, egress, record, admission]   # the runner refuses a run without them
-runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
-requires:
   python: [pydantic]          # modules you import that the image must already carry
+runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
 ```
 
 **Bring your own code; declare only what you cannot.** A pure-Python dependency belongs *in* the

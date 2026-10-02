@@ -117,3 +117,10 @@ CADP effect client와 CADP-GAP의 큰 갭 1~4는 CADP가 v0.5를 authority로 �
 | [#18](https://github.com/astro3141/agent-stack/issues/18) | 보류 | 후보 7 HTTP remote 역학(원칙상 공통, 크기로 뒤); 스택 컨트롤의 trading fixture → 스택 소유 |
 | [#19](https://github.com/astro3141/agent-stack/issues/19) | 조건부 | CADP effect client와 갭 1~4: CADP policy delta 이후 |
 | [#20](https://github.com/astro3141/agent-stack/issues/20) | 운영자 + 문서 | update day 1 대조: backup.sh 건너뜀(사후 실행), update-day.md에 `--replace-toolchain` 누락 |
+| [#22](https://github.com/astro3141/agent-stack/issues/22) | 다음 | 실행 사실은 플랫폼이 모은다: receipt가 아니라 evidence에서 기록, step이 시작한 자식 run의 연결(#13의 남은 절반) |
+| [#23](https://github.com/astro3141/agent-stack/issues/23) | 다음 | step/요청/결과 계약 버전, docs/packages.md 예제를 static 검사가 실행 |
+| [#24](https://github.com/astro3141/agent-stack/issues/24) | 운영자 판단 | CONTRACT 화면 규칙 vs 패널(시작·적용 버튼): 규칙에 '처음 한 번'을 넣을지(추천) 버튼을 뺄지 |
+| [#25](https://github.com/astro3141/agent-stack/issues/25) | 다음 | 자기 런타임을 가져오는 패키지(trading)의 확장 계약 — 스택이 마련할 자리 (#18과 함께) |
+| [#26](https://github.com/astro3141/agent-stack/issues/26) | 다음 | 새 제작자의 첫 성공 측정: 문서 예제 그대로의 패키지가 로그인 없이 패널에서 시작되는지 |
+
+#22–#26은 PR #21 머지 전 외부 리뷰를 코드로 검증한 결과(OPERATIONS §67)에서 나온 설계 수준 항목이다. 확인된 결함 일곱은 같은 PR에서 고쳤다.

@@ -85,7 +85,7 @@ if sys.argv[4:5] == ["--plan"]:
                                                   for st in m["steps"] if st["kind"] == "model"})) or "none",
                      "expected": expected, "produces": f"{WS}/{expected}" if expected else "",
                      "steps_planned": len(m["steps"]),
-                     "argv": [PY, "/work/stack/steps/task_chain.py", mp]})
+                     "argv": [PY, os.environ.get("AGENTSTACK_CHAIN_ENTRY", "/work/stack/steps/task_chain.py"), mp]})
 else:
     # A member whose role declares an egress profile runs through the broker, in that profile's
     # container, on that profile's network (§54). Same argv contract either way, so the receipt,
@@ -129,6 +129,10 @@ rows, wall = fanout.run_all(jobs)
 by_label = {r["label"]: r for r in rows}
 job_of = {j["label"]: j for j in jobs}
 history = {label: [outcome_of(*read_row(r))] for label, r in by_label.items()}
+# every attempt's own result, kept — a retry used to replace the first attempt's row, so its
+# call, its tokens and its evidence directory vanished from the receipt and the record counted
+# one call where two were made (review 2026-10-02)
+results = {label: [read_row(r)[0]] for label, r in by_label.items()}
 while True:
     again = []
     for label, r in by_label.items():
@@ -137,7 +141,8 @@ while True:
         if used >= (job.get("retries") or 0):
             continue
         if history[label][-1] in (job.get("retry_when") or ["failed"]):
-            again.append(job)
+            # the attempt number travels to the call, which names its evidence directory by it
+            again.append({**job, "env": {"AGENTSTACK_ATTEMPT": str(len(history[label]) + 1)}})
     if not again:
         break
     more, w2 = fanout.run_all(again)
@@ -145,6 +150,7 @@ while True:
     for r in more:
         by_label[r["label"]] = r
         history[r["label"]].append(outcome_of(*read_row(r)))
+        results[r["label"]].append(read_row(r)[0])
 rows = list(by_label.values())
 
 members, failed = {}, []
@@ -167,7 +173,9 @@ for r in rows:
         "failed_step": res.get("failed_step", ""),
         "error": res.get("error", "")[:200] if not produced else "",
         # the routed call's own record, kept whole: the recorder reads it, this step does not
-        "result": res}
+        "result": res,
+        # and every earlier attempt's, whole too — what each one cost is in the record either way
+        "attempt_results": results.get(r["label"]) or [res]}
 
 os.makedirs(os.path.dirname(receipt_path), exist_ok=True)
 json.dump({"context": context, "wall_s": wall, "members": members},
@@ -179,7 +187,7 @@ print(json.dumps({
     "receipt": receipt_path,
     "tasks": len(members),
     "produced": sum(1 for m in members.values() if m["produced"]),
-    "model_calls": sum((m["result"] or {}).get("model_calls", 1) for m in members.values()),
+    "model_calls": sum((a or {}).get("model_calls", 1) for m in members.values() for a in m["attempt_results"]),
     "failed": ",".join(failed),
     "wall_s": wall,
     "busy_s": busy,

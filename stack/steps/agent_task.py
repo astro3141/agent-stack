@@ -28,7 +28,9 @@ RT, PROF = settings.runtime(), settings.profile(prof_name) or {}
 run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 ws = f"{RT['paths']['workspace_root']}/{run}"
 os.makedirs(ws, exist_ok=True)
-run_id = f"{run}-{label}-{provider}"
+# a retry (tasks.py) names itself: its evidence sits beside the first attempt's, not over it
+attempt = os.environ.get("AGENTSTACK_ATTEMPT", "")
+run_id = f"{run}-{label}-{provider}" + (f"-a{attempt}" if attempt and attempt != "1" else "")
 evid = f"{RT['paths']['evidence_root']}/{run_id}"
 os.makedirs(evid, exist_ok=True)
 

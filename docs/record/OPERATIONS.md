@@ -3874,3 +3874,33 @@ composition, the policy and the Dockerfile; the quota observer is the compose pr
 containers instead of seventeen, and the policy scans one tool server. An instance brought up
 before this keeps `agentstack-toolsvc` registered in its Preloop account until an apply prunes
 it; no tool of it is in the policy, so nothing reaches it.
+
+## 67. An outside review, verified before the merge (2026-10-02)
+
+Before PR #21 was merged an external review of the branch arrived: scores, a table of "confirmed
+defects", and recommendations. Each claim was checked against the code on the branch rather than
+taken on its word. What held, and what was done about it:
+
+| claim | verified | done |
+|---|---|---|
+| a fan-out member whose process cannot start leaves its row without an end; the step reading the rows dies for every member | **yes** — `run_all` with `/nonexistent/x` beside `true`: the failed row had `argv, key, started_at` and nothing else | `fanout.py` catches the start failure: the row gets `ended_at`, returncode 127, the reason in stderr, `start_failed` |
+| a retry replaces the first attempt's result; its call and its evidence directory leave the receipt and the record counts one call where two were made | **yes** — `by_label[label] = r` overwrote; `run_id` was the same, so the second attempt wrote into the first's evidence directory | every attempt's result is kept (`attempt_results`); the attempt number travels to the call (`AGENTSTACK_ATTEMPT`), which names its evidence `-a<n>`; `model_calls` counts attempts; trajectory counts fan-out retries |
+| the panel shows "no approvals waiting" when the approvals API could not be read | **yes** — `showWaiting(0)` on any non-list | "could not read" is its own state: a `?` badge, a red line with the reason |
+| the 15 s refresh rebuilds the approvals table and loses a reason being typed | **yes** | typed values and focus are kept across the rebuild |
+| the first example (hello-lane, no model call) cannot be started from the panel without a routed provider | **yes** — the start gate was `valid && ROUTE` for every workflow | the gate reads the workflow's `capabilities` (now in `/api/workflows`): HOLD blocks only a workflow that asks for `admission` |
+| the usage header says "remaining" over a column that shows used % | **yes** | header reads 사용량 |
+| the manifest example in docs/packages.md has `requires:` twice | **yes** (YAML keeps the second: `capabilities` vanished from the example) | merged |
+| CONTRACT's "what belongs on a screen" puts starting a run and applying configuration on the command side; the panel does both | **yes** | not a code fix: #24, the operator decides whether the rule or the panel changes |
+| execution facts should be collected by the platform, not listed by the step | design — agreed in principle (CONTRACT, common parts are the stack's) | #22 |
+| the step/request/result contract should carry a version and its documented examples should be tested | design — the duplicate `requires:` is the evidence | #23 |
+| a package that brings its own runtime (trading) has no extension contract | design — follows #18 and the trading author's answer | #25 |
+| a new author's first success should be measured, not assumed | design — the hello-lane gate is the evidence | #26 |
+
+Six controls were added for the two step defects (`review_controls.py`: a member that cannot
+start, the member beside it, env reaching the process; a retried member end to end through
+`tasks.py` with a fake chain that fails on attempt 1 and produces on attempt 2 — both attempts
+in the receipt, the retry named apart, two calls reported). The old `fanout.py` fails the first
+of them; review_controls 64/64, static 10/10.
+
+What the review scored and this record does not: a score is a reviewer's summary; the rows above
+are what was measured.

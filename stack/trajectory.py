@@ -125,7 +125,10 @@ def of_run(ui):
         "approvals_requested": sum(c["approvals_requested"] for c in calls),
         "decided_by_rules": sum(c["decided_by_rules"] for c in calls),
         "rule_denials": sum(c["rule_denials"] for c in calls),
-        "retries": sum(max(0, (c.get("attempts") or 1) - 1) for c in calls),
+        # the adapter's own retries (a login it called transient) and the fan-out's (a member run
+        # again, in its own evidence directory, named -a<n>)
+        "retries": sum(max(0, (c.get("attempts") or 1) - 1) for c in calls)
+                   + sum(1 for c in calls if re.search(r"-a\d+$", c["call"] or "")),
         "tokens": sum(c["tokens"] or 0 for c in calls) or None,
         "wall_ms": sum(c["wall_ms"] or 0 for c in calls) or None,
         "loop": loop,
