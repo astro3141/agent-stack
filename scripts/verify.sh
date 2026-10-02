@@ -19,7 +19,16 @@
 # Exit 0 when every check at the chosen level passed; 1 otherwise. Changes nothing but
 # evidence/ and the run it starts at `full`.
 set -uo pipefail
+# Git Bash rewrites an argument that looks like a POSIX path into a Windows one before docker sees
+# it, so `docker exec … /opt/venv/bin/python` arrived as "C:/Program Files/Git/opt/venv/bin/python"
+# (measured on a Windows host, 2026-10-02; up.sh already carries this line). The host python there
+# is a native Windows one: it reads no MSYS path and ends its lines with CRLF, so what this script
+# hands it is converted with cygpath, and what it prints is read without the CR.
+export MSYS_NO_PATHCONV=1
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
+hp() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }   # a path as the host python reads it
+PSEP=":"; command -v cygpath >/dev/null 2>&1 && PSEP=";"                                            # PYTHONPATH's separator there
+nocr() { tr -d '\r'; }
 cd "$HERE"
 LEVEL=""
 while [ $# -gt 0 ]; do
@@ -59,11 +68,11 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/config/generated" "$TMP/ws"
 printf '{"preloop":{"api_url":"x","mcp_url":"x"},"mlflow":{"url":"x"},"egress":{"proxy":"http://127.0.0.1:1","no_proxy":[]},"paths":{"workspace_root":"%s/ws","evidence_root":"%s/ev","observations":"%s/obs","logins_root":"%s/route"}}' \
   "$TMP" "$TMP" "$TMP" "$TMP" > "$TMP/config/generated/runtime.json"
-export AGENTSTACK_ROOT="$TMP" PYTHONPATH="$HERE/stack:$HERE/stack/steps${PYTHONPATH:+:$PYTHONPATH}"
+export AGENTSTACK_ROOT="$(hp "$TMP")" PYTHONPATH="$(hp "$HERE/stack")$PSEP$(hp "$HERE/stack/steps")${PYTHONPATH:+$PSEP$PYTHONPATH}"
 
 # parsed, not byte-compiled: compileall writes __pycache__, which the containers own (uid 1000) on a
 # bind mount, and a host user who cannot write there read "Error compiling" for a file that was fine
-out="$($PY - <<'PYAST'
+out="$($PY - <<'PYAST' | nocr
 import ast, glob, sys
 bad = []
 for f in sorted(set(glob.glob("stack/**/*.py", recursive=True) + glob.glob("packages/*/steps/*.py")
@@ -79,7 +88,7 @@ PYAST
 )"
 if [ "$(echo "$out" | head -1)" = 0 ]; then ok "every Python file parses"; else bad "a Python file does not parse" "$(echo "$out" | tail -n +2 | head -3 | tr '\n' ';')"; fi
 
-out="$($PY - <<'PY'
+out="$($PY - <<'PY' | nocr
 import glob, sys, yaml
 bad = []
 files = glob.glob("packages/*/*.yaml") + glob.glob("policy/*.yaml") + glob.glob("config/*.yaml") \
@@ -106,7 +115,7 @@ if [ -z "$errs" ]; then ok "$n YAML files parse, and every workflow route resolv
 missing="$(for f in stack/steps/*.py packages/*/steps/*.py; do case "$f" in */vendor/*|*/step.py|*/__init__.py) continue;; esac; grep -q '^REPEATABLE' "$f" || echo "$f"; done)"
 if [ -z "$missing" ]; then ok "every step declares what a repeat of it does (REPEATABLE)"; else bad "steps without REPEATABLE" "$(echo $missing)"; fi
 
-out="$($PY - <<'PY'
+out="$($PY - <<'PY' | nocr
 import yaml
 d = yaml.safe_load(open("policy/b-fsmcp.yaml", encoding="utf-8"))
 tools = {t["name"] for t in d["tools"]}
@@ -120,23 +129,23 @@ PY
 )"
 case "$out" in "allow []") ok "policy/b-fsmcp.yaml names every filesystem tool, with the one default Preloop accepts";; *) bad "policy/b-fsmcp.yaml misses a tool, or sets a default Preloop refuses" "$out";; esac
 
-out="$(AGENTSTACK_PACKAGES="$HERE/packages" AGENTSTACK_PACKAGES_YAML="$HERE/config/packages.yaml" AGENTSTACK_PACKAGES_LOCAL="$HERE/config/packages.local.yaml" AGENTSTACK_ROOT="$HERE" $PY stack/packages.py 2>&1)"
+out="$(AGENTSTACK_PACKAGES="$HERE/packages" AGENTSTACK_PACKAGES_YAML="$HERE/config/packages.yaml" AGENTSTACK_PACKAGES_LOCAL="$HERE/config/packages.local.yaml" AGENTSTACK_ROOT="$(hp "$HERE")" $PY stack/packages.py 2>&1 | nocr)"
 if echo "$out" | grep -q "UNUSABLE\|REFUSED"; then bad "a declared package is unusable or needs a newer stack" "$(echo "$out" | grep 'UNUSABLE\|REFUSED')"; else ok "every declared package is usable: $(echo "$out" | grep -cvE '^\s' ) packages"; fi
 echo "$out" | grep "note:" | sed 's/^/        /' || true
 
 CONDUCTOR_SELF_RUN_ID=verify-static $PY packages/hello-lane/steps/write.py "verify" >/dev/null 2>&1 \
   && [ -f "$TMP/ws/verify-static/hello.txt" ] && ok "a step addresses the workspace through the helper (hello-lane)" \
   || bad "hello-lane's step did not write where the helper points"
-r="$(CONDUCTOR_SELF_RUN_ID=verify-static $PY packages/research-r/steps/r_stage.py bogus 2>&1 | tail -1)"
+r="$(CONDUCTOR_SELF_RUN_ID=verify-static $PY packages/research-r/steps/r_stage.py bogus 2>&1 | tail -1 | nocr)"
 case "$r" in *'"ok": false'*) ok "a step refuses in its output rather than crashing (research-r)";; *) bad "research-r's step did not refuse as JSON" "$r";; esac
-r="$($PY -c 'import step; step.main(lambda: 1/0, decision="")' 2>&1 | tail -1)"
+r="$($PY -c 'import step; step.main(lambda: 1/0, decision="")' 2>&1 | tail -1 | nocr)"
 case "$r" in *TOOL_FAILURE*) ok "the helper turns a crash into the declared output";; *) bad "step.main did not report a crash" "$r";; esac
 
 for c in packages/*/controls.py; do
   [ -f "$c" ] || continue
   name="$(basename "$(dirname "$c")")"
   if grep -qE "^  $name:" config/packages.yaml && grep -A3 -E "^  $name:" config/packages.yaml | grep -q "from: local"; then
-    if CONDUCTOR_SELF_RUN_ID=verify-ctl $PY "$c" > "$TMP/ctl-$name.log" 2>&1; then ok "$name: $(tail -1 "$TMP/ctl-$name.log")"; else bad "$name: controls failed" "$(grep FAIL "$TMP/ctl-$name.log" | head -5)"; fi
+    if CONDUCTOR_SELF_RUN_ID=verify-ctl $PY "$c" 2>&1 | nocr > "$TMP/ctl-$name.log"; then ok "$name: $(tail -1 "$TMP/ctl-$name.log")"; else bad "$name: controls failed" "$(grep -E 'FAIL|Error' "$TMP/ctl-$name.log" | head -5 | tr '\n' ';')"; fi
   else
     note "$name: controls.py present; a fetched package's controls run at the stack level"
   fi
