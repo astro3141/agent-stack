@@ -370,6 +370,23 @@ belonged to the uid-based design, and every `principals.py apply` names roles st
 **Installing a package is a decision to trust it**: that is what gives its principals rights. Read a
 package before installing it, as you would a dependency.
 
+## Controls
+
+A package's rules are pinned by the package: `packages/<name>/controls.py`, run in the agent
+container by `scripts/packages.sh verify` (or `controls [name]` alone), exit 1 on a failure. It
+drives the package's real steps with fake inputs and no model call — `packages/novel/controls.py`
+is the shape: a `load()` that points the step at a temporary workspace, a `check(name, got, want)`,
+one function per risk, a summary line.
+
+The platform's suite (`stack/trial_controls.py`) pins the platform and never imports a package to
+pin that package's rules. Until 2026-10 it did — novel's triage, evidence index and round semantics
+lived there, and the suite loaded trading's step as a fixture for the fan-out, so the platform's
+checks failed on a machine that had not installed a private package (docs/record/PACKAGE-MATRIX.md,
+X6). The rule now: a package this repository carries may serve as a fixture for a platform
+capability; one it does not carry is skipped when absent, never imported; a package's own
+judgements are its own controls. A package with no `controls.py` is listed by `verify` as having
+nothing that pins its rules — which is the truth, and the reason to write one.
+
 ## Before you call it done
 
 ```bash
@@ -389,8 +406,11 @@ And check the things that six packages got wrong between them (docs/record/PACKA
   no `print(json.dumps(...))` of its own;
 - every step declares `REPEATABLE`, including the ones a workflow calls only sometimes — the
   stack's controls scan every `packages/*/steps/*.py` and fail on one that does not;
-- a model call goes through `agent_task.py` or `broker_dispatch.py`, never to the adapter directly:
-  the direct call loses the produced/stale stamp, the login-refresh retry and the principal;
+- a model call goes through `agent_task.py`, never to the adapter directly: the direct call loses
+  the produced/stale stamp, the login-refresh retry and the principal. Where the call runs is the
+  role's business — a principal with an `egress_profile` is handed to the broker by that step, and
+  the workflow never chooses a door;
+- the package carries `controls.py`, and `scripts/packages.sh verify` runs it clean;
 - **every** model call reaches the record: the primary one as `execute`, the rest in `executions`
   (a workflow that calls a reviewer and records only the author shows one call for a two-call run);
 - `evidence_file` is passed when the run judged anything, with `items`;

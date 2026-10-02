@@ -5,11 +5,9 @@ usage: trial_controls.py            (no model call, no network; fake inputs only
 Every control drives the real function from the real module with a synthetic workspace, so it
 fails if the fix is reverted. What each group pins:
 
-  triage    a review only counts for the draft it was written for, and only when this round's
-            reviews step reports it produced — an older verdict, an emptied file and a document
-            that is not a review all block instead of passing
   lanes     one lane's malformed proposal is that lane's INVALID, never the end of the cycle's
-            evaluation; NaN is not a weight
+            evaluation; NaN is not a weight  (trading as the fixture — skipped when it is not
+            installed; see "whose controls" below)
   roles     a role is bound only to a provider the router found eligible in this run
   record    a blocked run is recorded as a blocked execution, not as "the router started nothing"
   screen    every recording step's MLflow result reaches the run screen
@@ -22,15 +20,22 @@ fails if the fix is reverted. What each group pins:
             the health report counting what actually happened
   trajectory  what a run did, read from what was already recorded, with assertions that are true
             or false — never a judgement of whether the result was any good
-  evidence  a judgement points at the call that made it and the artifact it was about, and the
-            index travels with the record
-  repeat    every step says what a repeat of it does, and the three that would have been wrong
-            about it are guarded: freeze, triage's repair count, and the record
+  evidence  the index a judgement writes travels with the record
+  repeat    every step says what a repeat of it does, and the record of one run and one
+            judgement is written once
   step-rights  a role may run as its own principal, and that reaches the call
   panel     the web surface carries only what needs a person — a login and an approval — and the
             cycle's rules live in one place, whatever calls them
   reduced   a smaller composition may drop recording and the screen — never what the stack's
             guarantees rest on — and a run that loses a capability is refused, not silently run
+
+Whose controls (docs/packages.md, "Controls"): this suite pins the platform. A package's own
+judgements are pinned by that package's controls.py, run by `scripts/packages.sh verify` —
+novel's triage, evidence index and round semantics moved there in 2026-10. A package this
+repository carries may still serve as a *fixture* for a platform capability (novel for the
+fan-out); one it does not carry (trading) is skipped when absent rather than imported, so this
+suite passes on a machine that installed none of them. Replacing trading as a fixture with a
+stack-owned one is the remaining step (docs/record/PACKAGE-MATRIX.md, X6).
 """
 import importlib.util, json, os, re, shutil, sys, tempfile
 
@@ -56,6 +61,15 @@ def real_ws():
     return ws
 
 
+def absent(path, what):
+    """True, and says so, when a fixture from a package this repository does not carry is missing.
+    A control that needs it is skipped — not failed, and not quietly passed."""
+    if os.path.exists(path):
+        return False
+    print(f"  skip  {what:<58} {path} is not installed; its own controls live with it")
+    return True
+
+
 def load(path, name, ws):
     """Import a step module with its workspace pointed at a temporary directory."""
     os.environ["CONDUCTOR_SELF_RUN_ID"] = os.path.basename(ws)
@@ -67,73 +81,14 @@ def load(path, name, ws):
     return m
 
 
-# ---------------------------------------------------------------- triage
-def triage_case(label, *, receipt_draft="d02", produced=True, story=None, history=None,
-                tamper=False, no_receipt=False):
-    """Freeze d01, review it, repair, freeze d02 — then vary what this round produced."""
-    root = tempfile.mkdtemp(prefix="agentstack-triage-")
-    ws = os.path.join(root, "run")
-    os.makedirs(ws)
-    ns = load("/work/packages/novel/steps/novel_stage.py", "novel_stage_ctl", ws)
-
-    open(f"{ws}/draft.md", "w").write("first draft\n")
-    ns.cmd_freeze()                                       # d01
-    good = {"reviewer": "story", "usable": True, "verdict": "PASS",
-            "findings": [{"kind": "NONE", "severity": "MINOR", "what": "fine"}]}
-    for n in ("story", "history"):
-        json.dump({**good, "reviewer": n}, open(f"{ws}/review_{n}.json", "w"))
-    open(f"{ws}/draft.md", "w").write("repaired draft\n")
-    ns.cmd_freeze()                                       # d02 — a new round
-    meta = json.load(open(f"{ws}/draft_meta.json"))
-
-    members = {}
-    for n, doc in (("story", story), ("history", history)):
-        if doc is not None:
-            json.dump(doc, open(f"{ws}/review_{n}.json", "w"))
-        exists = os.path.isfile(f"{ws}/review_{n}.json")
-        members[n] = {"artifact": f"review_{n}.json",
-                      "status": "COMPLETED" if produced else "FAILED",
-                      "produced": produced and exists,
-                      "sha256": ns.sha_file(f"{ws}/review_{n}.json") if exists else ""}
-    if not no_receipt:
-        ctx = meta["draft_sha256"] if receipt_draft == "d02" else "an earlier draft's sha256"
-        json.dump({"context": ctx, "members": members},
-                  open(f"{ws}/reviews_round.json", "w"))
-    if tamper:
-        json.dump({**good, "verdict": "PASS", "findings": [{"kind": "NONE", "severity": "MINOR"}]},
-                  open(f"{ws}/review_story.json", "w"))
-
-    import io, contextlib
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        ns.cmd_triage("1")
-    shutil.rmtree(root, ignore_errors=True)
-    return json.loads(buf.getvalue().strip().splitlines()[-1])["decision"]
-
-
-def controls_triage():
-    print("triage — a review counts only for this round's draft")
-    ok = {"reviewer": "x", "usable": True, "verdict": "PASS",
-          "findings": [{"kind": "NONE", "severity": "MINOR", "what": "fine"}]}
-    blocking = {"reviewer": "x", "usable": True, "verdict": "REPAIR",
-                "findings": [{"kind": "FACT_ERROR", "severity": "BLOCKING", "what": "wrong"}]}
-    check("this round reviewed d02 and found nothing", triage_case("a", story=ok, history=ok), "PASS")
-    # the defect: d01's reviews were still on disk, so a failed reviewer passed on the old verdict
-    check("a required reviewer failed this round", triage_case("b", produced=False), "BLOCK")
-    check("required reviews are empty objects", triage_case("c", story={}, history={}), "BLOCK")
-    check("a required review has no findings", triage_case("d", story={"verdict": "PASS", "findings": []},
-                                                           history=ok), "BLOCK")
-    check("a finding carries no severity", triage_case("e", story={"verdict": "PASS", "findings": [{"kind": "NONE"}]},
-                                                       history=ok), "BLOCK")
-    check("the receipt names an earlier draft", triage_case("f", receipt_draft="d01", story=ok, history=ok), "BLOCK")
-    check("no receipt from this round at all", triage_case("g", no_receipt=True, story=ok, history=ok), "BLOCK")
-    check("the file changed after the reviews step", triage_case("h", story=ok, history=ok, tamper=True), "BLOCK")
-    check("a blocking finding still repairs", triage_case("i", story=blocking, history=ok), "REPAIR")
+# triage — novel's own judgement; pinned by packages/novel/controls.py since 2026-10
 
 
 # ---------------------------------------------------------------- lanes
 def controls_lanes():
     print("lanes — a malformed proposal is one lane's result")
+    if absent("/work/packages/trading/steps/trade_stage.py", "lanes (trading as the fixture)"):
+        return
     root = tempfile.mkdtemp(prefix="agentstack-lanes-")
     ws = os.path.join(root, "run")
     os.makedirs(ws)
@@ -214,14 +169,8 @@ def controls_roles():
 
 # ---------------------------------------------------------------- record + screen
 def controls_record_and_screen():
-    print("record / screen — a blocked run is recorded as one, and every record reaches the screen")
-    y = open("/work/packages/novel/novel-a.yaml", encoding="utf-8").read()
-    block = y.split("- name: record_block", 1)[1].split("- name: record_hold", 1)[0]
-    check("record_block sends an execute record", "'execute'" in block, True)
-    check("record_block sends the triage reason", "triage.output.reason" in block, True)
-    check("record_hold still sends none (a real HOLD)",
-          "'execute'" in y.split("- name: record_hold", 1)[1].split("routes:", 1)[0], False)
-
+    print("screen — every recording step's MLflow result reaches the run screen")
+    # (what novel-a.yaml sends to its record steps is novel's: packages/novel/controls.py)
     src = open("/work/stack/run_workflow.py", encoding="utf-8").read()
     conds = re.findall(r'elif t == "script_completed" and (.+?):\n', src)
     cond = next((c for c in conds if "record" in c), "")
@@ -342,6 +291,8 @@ def controls_reviews_step():
 
 def controls_lanes_step():
     print("lanes step — the real step, the real fanout, no model call")
+    if absent("/work/packages/trading/steps/trade_stage.py", "lanes step (trading as the fixture)"):
+        return
     root = tempfile.mkdtemp(prefix="agentstack-lanestep-")
     ws = real_ws()
     ts = load("/work/packages/trading/steps/trade_stage.py", "ts_step", ws)
@@ -488,22 +439,23 @@ def controls_boundary():
     body = body.split('"""', 2)[-1].lower()          # code only, not the module's explanation
     found = sorted({w for w in DOMAIN_WORDS if w in body})
     check("no domain vocabulary in the capability's code", found, [])
-    for name, path, want in (
-            ("what is required", "/work/packages/novel/steps/novel_stage.py", "required"),
-            ("what a valid proposal is", "/work/packages/trading/steps/trade_stage.py", "INVALID"),
-            ("the deterministic baseline", "/work/packages/trading/steps/trade_stage.py", "momentum20")):
-        check(f"the workflow still owns: {name}", want in open(path, encoding="utf-8").read(), True)
+    # (that each workflow still carries its own judgement is that workflow's control:
+    # packages/novel/controls.py pins "what is required" for novel)
+    if not absent("/work/packages/trading/steps/trade_stage.py", "boundary (trading owns its judgements)"):
+        for name, want in (("what a valid proposal is", "INVALID"),
+                           ("the deterministic baseline", "momentum20")):
+            check(f"the workflow still owns: {name}", want in open("/work/packages/trading/steps/trade_stage.py", encoding="utf-8").read(), True)
     check("nothing imports the removed fan-out wrappers",
           any(os.path.exists(p) for p in ("/work/stack/steps/novel_reviews.py",
                                           "/work/stack/steps/trade_lanes.py")), False)
-    y = open("/work/packages/novel/novel-a.yaml", encoding="utf-8").read()
-    check("the reviews step names the capability", "steps/tasks.py" in y, True)
-    check("the triage step is told what is required", '"story,history"' in y, True)
+    # (that novel-a.yaml names the fan-out and tells triage what is required: packages/novel/controls.py)
 
 
 # ---------------------------------------------------------------- members that are chains
 def controls_chains():
     print("chains — a lane may be a sequence of steps, and stays one lane's business")
+    if absent("/work/packages/trading/steps/trade_stage.py", "chains (trading as the fixture)"):
+        return
     root = tempfile.mkdtemp(prefix="agentstack-chain-")
     ws = real_ws()
     ts = load("/work/packages/trading/steps/trade_stage.py", "ts_chain", ws)
@@ -715,51 +667,10 @@ def controls_trajectory():
 
 # ---------------------------------------------------------------- evidence, joined to its claim
 def controls_evidence():
-    print("evidence — a judgement says what it rests on")
-    import io, contextlib, importlib.util as il
-    ws = real_ws()
-    ns = load("/work/packages/novel/steps/novel_stage.py", "ns_ev", ws)
-    open(f"{ws}/draft.md", "w").write("a draft to judge\n")
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        ns.cmd_freeze()
-    meta = json.load(open(f"{ws}/draft_meta.json", encoding="utf-8"))
-    blocking = {"reviewer": "story", "usable": True, "verdict": "REPAIR",
-                "findings": [{"kind": "CONTRACT_MISS", "severity": "BLOCKING",
-                              "what": "the contracted change never happens"}]}
-    ok = {"reviewer": "x", "usable": True, "verdict": "PASS",
-          "findings": [{"kind": "NONE", "severity": "MINOR", "what": "fine"}]}
-    members = {}
-    for n, doc, prov, call in (("story", blocking, "codex", "run-story"),
-                               ("history", ok, "claude", "run-history"),
-                               ("cold", ok, "grok", "run-cold")):
-        json.dump(doc, open(f"{ws}/review_{n}.json", "w"))
-        members[n] = {"artifact": f"review_{n}.json", "provider": prov, "produced": True,
-                      "status": "COMPLETED", "sha256": ns.sha_file(f"{ws}/review_{n}.json"),
-                      "result": {"run_id": call, "provider": prov, "principal": "novel-reviewer",
-                                 "evidence_dir": f"/work/evidence/p281/{call}"}}
-    json.dump({"context": meta["draft_sha256"], "members": members},
-              open(f"{ws}/reviews_round.json", "w"))
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        ns.cmd_triage("1")
-    res = json.loads(buf.getvalue().strip().splitlines()[-1])
-    idx = json.load(open(f"{ws}/evidence_index.json", encoding="utf-8"))
-    check("the index is written and reported", (os.path.isfile(f"{ws}/evidence_index.json"),
-                                                res["evidence_items"]), (True, len(idx["items"])))
-    check("it names the judgement it explains", idx["decision"], "REPAIR")
-    blocking_item = [i for i in idx["items"] if i.get("severity") == "BLOCKING"][0]
-    check("a finding points at the call that made it", blocking_item["execution_id"], "run-story")
-    check("and at the principal that call ran as", blocking_item["principal"], "novel-reviewer")
-    check("and at the review it came from",
-          blocking_item["review"]["sha256"], members["story"]["sha256"])
-    check("and at the artifact it is about",
-          (blocking_item["about"]["draft_id"], blocking_item["about"]["sha256"]),
-          (meta["draft_id"], meta["draft_sha256"]))
-    check("a reviewer that found nothing is still in the index",
-          [i["by"] for i in idx["items"]].count("cold"), 1)
-    shutil.rmtree(ws, ignore_errors=True)
-
+    print("evidence — the index a judgement writes travels with the record")
+    import importlib.util as il
+    # (what the index says — the call, the principal, the review, the artifact — is novel's:
+    # packages/novel/controls.py)
     # the recorder keeps it with the run rather than leaving it in a workspace
     spec = il.spec_from_file_location("record_ev", "/work/stack/steps/record.py")
     rec = il.module_from_spec(spec)
@@ -813,48 +724,8 @@ def controls_repeat():
           [k for k in ("agent_task.py", "execute.py", "tasks.py", "task_chain.py")
            if vals.get(k) != "no"], [])
 
-    ws = real_ws()
-    ns = load("/work/packages/novel/steps/novel_stage.py", "ns_rep", ws)
-    open(f"{ws}/draft.md", "w").write("one and only draft\n")
-
-    def freeze():
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            ns.cmd_freeze()
-        return json.loads(buf.getvalue().strip().splitlines()[-1])
-
-    # 2) freezing the same bytes is the same round — it used to mint a new draft each time
-    first = freeze()
-    again = freeze()
-    check("freezing the same draft twice is one round",
-          (first["draft_id"], again["draft_id"], again.get("repeated")), ("d01", "d01", True))
-    open(f"{ws}/draft.md", "w").write("a repaired draft\n")
-    check("a different draft is a new round", freeze()["draft_id"], "d02")
-
-    # 3) a repeated triage must not spend a repair round
-    blocking = {"reviewer": "x", "usable": True, "verdict": "REPAIR",
-                "findings": [{"kind": "FACT_ERROR", "severity": "BLOCKING", "what": "wrong"}]}
-    ok = {"reviewer": "x", "usable": True, "verdict": "PASS",
-          "findings": [{"kind": "NONE", "severity": "MINOR", "what": "f"}]}
-    meta = json.load(open(f"{ws}/draft_meta.json", encoding="utf-8"))
-    members = {}
-    for n, doc in (("story", blocking), ("history", ok), ("cold", ok)):
-        json.dump(doc, open(f"{ws}/review_{n}.json", "w"))
-        members[n] = {"artifact": f"review_{n}.json", "status": "COMPLETED", "produced": True,
-                      "sha256": ns.sha_file(f"{ws}/review_{n}.json")}
-    json.dump({"context": meta["draft_sha256"], "members": members},
-              open(f"{ws}/reviews_round.json", "w"))
-    seen = []
-    for _ in range(3):
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            ns.cmd_triage("2")
-        d = json.loads(buf.getvalue().strip().splitlines()[-1])
-        seen.append((d["decision"], d["repairs_done"]))
-    check("a repeated triage neither spends a round nor flips to BLOCK",
-          seen, [("REPAIR", 0)] * 3)
-    shutil.rmtree(ws, ignore_errors=True)
-
+    # 2) and 3) — freezing the same bytes is one round, a repeated triage spends no repair round —
+    # are novel's own rules, pinned by packages/novel/controls.py since 2026-10
     # 4) the record of one run and one judgement is written once
     spec = il.spec_from_file_location("record_rep", "/work/stack/steps/record.py")
     rec = il.module_from_spec(spec)
@@ -920,12 +791,7 @@ def controls_step_rights():
     check("the adapter fails closed without the credential",
           "is not set" in ad and "PRELOOP_MCP_" in ad, True)
 
-    y = open("/work/packages/novel/novel-a.yaml", encoding="utf-8").read()
-    check("the author and the reviewers are different principals",
-          ("author=claude:novel-author" in y and "story=codex:novel-reviewer" in y), True)
-    for role in ("architect", "author", "story", "history", "cold"):
-        check(f"{role}'s call carries its principal", f"{role}_principal" in y, True)
-
+    # (that novel-a.yaml binds its roles to distinct principals is novel's: packages/novel/controls.py)
     comp = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
     check("their credentials come from a file that is not versioned",
           "principals.env" in comp, True)
@@ -1903,9 +1769,9 @@ def controls_packages():
     # the ported trading workflow, as a package: its own files address the package, and the
     # platform steps it calls are named rather than assumed
     tp = here.get("trading") or {}
-    check("the ported trading workflow is carried by the trading package",
-          sorted((tp.get("entries") or {})), ["trading-b", "trading-port", "trading-shapes"])
     if tp.get("usable"):
+        check("the ported trading workflow is carried by the trading package",
+              {"trading-b", "trading-port", "trading-shapes"} <= set(tp.get("entries") or {}), True)
         import glob as _g
         own = [f for f in _g.glob("/work/packages/trading/**/*", recursive=True)
                if f.endswith((".py", ".yaml", ".md"))]
@@ -2006,10 +1872,10 @@ def controls_packages():
     check("market credentials are optional and never versioned",
           "path: market.env" in compose_src and "required: false" in compose_src
           and "market.env" in gi, True)
-    lp = open("/work/packages/trading/steps/live_packet.py", encoding="utf-8").read()
-    check("the fetch is a step of the workflow that wanted it, not of the platform",
-          _os.path.exists("/work/packages/trading/steps/live_packet.py")
-          and not _os.path.exists("/work/stack/steps/live_packet.py"), True)
+    check("the fetch is not a step of the platform",
+          _os.path.exists("/work/stack/steps/live_packet.py"), False)
+    lp = (open("/work/packages/trading/steps/live_packet.py", encoding="utf-8").read()
+          if not absent("/work/packages/trading/steps/live_packet.py", "live packet (trading)") else "")
     check("it freezes a file and stops, so the bridge still fetches nothing",
           "/work/handoff" in lp and "packet_bridge" not in lp.split('"""')[2], True)
     check("and the packet says what it is not",
@@ -2498,7 +2364,6 @@ if __name__ == "__main__":
     controls_panel()
     controls_composition()
     controls_recorder()
-    controls_triage()
     controls_reviews_step()
     controls_lanes_step()
     controls_lanes()
