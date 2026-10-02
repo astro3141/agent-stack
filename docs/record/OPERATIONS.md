@@ -3986,3 +3986,20 @@ the measurement the `\|\| true` had been hiding.
 
 Not the stack's: the live instance's claude login for quota reading had expired (`claude login`
 on the panel).
+
+**Measured on the instance that found it** (PR #28 merged as `2485a20`): `coldtwo` taken down
+with the new `down.sh --volumes`, the live instance (19 containers + Preloop's 8) left running.
+
+| | before | after |
+|---|---|---|
+| `coldtwo` containers, Preloop's included | 23 | 0 |
+| `coldtwo` networks | 11 | 0 |
+| `coldtwo` volumes | 6 | 0 |
+| networks on the host | 29 | 18 |
+
+`adminnet`, `toolnet` and `role-egress` went this time. `quota-home` was never among the six:
+`coldtwo` came up without the observer, so that volume was never made. What a take-down does
+not touch, and never will: the clone's directory, its Preloop install directory
+(`~/.preloop-<name>`, compose files only once the database volume is gone) and its images
+(`<name>/*:local`) — those are the operator's, removed by hand when the instance is not coming
+back.
