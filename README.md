@@ -28,7 +28,7 @@ directory, and the operations that let the result survive a restart, an update o
 | `ops/`, `hub/` | the operator panel and the small static host beside it |
 | `evidence/` | what runs actually produced — checks, UI runs, soak samples, operations records |
 | `docs/` | how to install, run, read and extend it; `docs/record/` is the measurement record |
-| `legacy/` | the #278 probe tree — `workflows/`, `gate/`, `fixture/` — kept because the findings quote it, run by nothing |
+| `legacy/` | the #278 probe tree — `workflows/`, `gate/` — kept because the findings quote it, run by nothing (its `fixture/` stayed in CADP's `poc/278-composition/`) |
 
 ## Start here
 
@@ -114,7 +114,9 @@ docker exec agentstack-agent /opt/venv/bin/python /work/stack/ops_health.py
 ```
 
 `scripts/up.sh --check` answers about twenty questions about isolation, services, logins and quota
-observation, and prints which capabilities the running composition has.
+observation, and prints which capabilities the running composition has. `scripts/verify.sh` runs
+that, the controls and a run, at the level the machine allows: `static` for a checkout with no
+Docker, `stack` for an instance nobody is signed in to, `full` once the providers are.
 
 ## How this repository came to be
 

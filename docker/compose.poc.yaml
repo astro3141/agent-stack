@@ -445,7 +445,14 @@ services:
       egress-profile-closed:
         aliases: [egress]
 
+  # An egress profile an instance provisions (docker/egress/profiles/<name>.allow, OPERATIONS §60)
+  # exists as containers only when its list does: scripts/up.sh turns each provisioned profile into
+  # the compose profile `egress-<name>`. closed and probe ship tracked and are always on. Without
+  # this, a fresh clone — which has no research.allow — failed at `up`: compose mounted a file
+  # that was not there (measured on the cold-start runner, 2026-10-02). A role mapped to a profile
+  # with no container is refused by name, which is the answer a missing list should get.
   egress-research-proxy:
+    profiles: ["egress-research"]
     image: agentstack/egress:local
     container_name: ${STACK:-agentstack}-egress-research
     init: true
@@ -459,6 +466,7 @@ services:
         aliases: [egress]
 
   egress-research-review-proxy:
+    profiles: ["egress-research-review"]
     image: agentstack/egress:local
     container_name: ${STACK:-agentstack}-egress-research-review
     init: true
@@ -524,6 +532,7 @@ services:
         aliases: [runner-closed]
 
   agent-research:
+    profiles: ["egress-research"]
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-research
     init: true
@@ -548,6 +557,7 @@ services:
         aliases: [runner-research]
 
   agent-research-review:
+    profiles: ["egress-research-review"]
     image: agentstack/governed-runtime:local
     container_name: ${STACK:-agentstack}-agent-research-review
     init: true

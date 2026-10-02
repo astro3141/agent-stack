@@ -67,7 +67,15 @@ fi
 
 echo "== stopping"
 # every profile, whatever composition was up: nothing may be left behind because it was optional
-(cd "$HERE/docker" && COMPOSE_PROFILES="record,ui" docker compose -f compose.poc.yaml down) || exit 1
+# every composition's services, and every provisioned egress profile's (the same list up.sh builds)
+_profiles="record,ui"
+for _f in "$HERE"/docker/egress/profiles/*.allow; do
+  [ -f "$_f" ] || continue
+  _n="$(basename "$_f" .allow)"
+  case "$_n" in closed|probe) continue;; esac
+  _profiles="$_profiles,egress-$_n"
+done
+(cd "$HERE/docker" && COMPOSE_PROFILES="$_profiles" docker compose -f compose.poc.yaml down --remove-orphans) || exit 1
 docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
   -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml" down || exit 1
 

@@ -50,6 +50,15 @@ case "$COMPOSITION" in
   runtime)   COMPOSE_PROFILES="";;
   *) echo "unknown composition: $COMPOSITION (full | no-record | runtime)" >&2; exit 2;;
 esac
+# Egress profiles this instance provisioned (docker/egress/profiles/<name>.allow, §60) bring their
+# proxy and runner up as the compose profile `egress-<name>`; closed and probe ship tracked and are
+# always on. A profile with no list has no container, and a role mapped to it is refused by name.
+for _f in "$HERE"/docker/egress/profiles/*.allow; do
+  [ -f "$_f" ] || continue
+  _n="$(basename "$_f" .allow)"
+  case "$_n" in closed|probe) continue;; esac
+  COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}egress-$_n"
+done
 export COMPOSE_PROFILES
 # One instance per name: STACK selects container/volume/network names and the published ports.
 # The defaults are the live instance; a restored copy runs under another name (scripts/restore.sh).
