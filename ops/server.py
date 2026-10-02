@@ -238,10 +238,10 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = urlparse(self.path).path; b = self._body()
-        # POST /api/config/generate and /api/config/apply are gone with the start and resume
-        # buttons (#24): generating and applying configuration is work scripts/up.sh does on every
-        # bring-up and `cfg.py generate` (agent) / `cfg.py apply` (admin, past the guard — §21) do by
-        # hand. The panel reads the state (GET /api/config/status) and changes nothing.
+        # The configuration generate and apply endpoints are gone with the start and resume
+        # buttons (#24): that is work scripts/up.sh does on every bring-up and `cfg.py generate`
+        # (agent) / `cfg.py apply` (admin, past the guard — §21) do by hand. The panel reads the
+        # state (the status endpoint above) and changes nothing.
         m = re.fullmatch(r"/api/accounts/([a-z]+)/(login|code|cancel)", p)
         if m:
             prov, act = m.groups()
