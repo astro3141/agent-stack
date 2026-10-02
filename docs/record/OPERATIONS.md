@@ -4071,3 +4071,32 @@ not do (write into `/route`, reach a vendor past the proxy, answer an approval).
 form is the one that exists; #18's HTTP remote mechanics stay deferred.
 
 Controls: review_controls **120/120** (13 new). The stack level is the CI run named in PR #29.
+
+## 72. What is left, read before it is done: #18's stack side and #17's reading (2026-10-02)
+
+**#18, the stack's side.** `trial_controls.py` used trading as a fixture: five groups imported
+`packages/trading/steps/trade_stage.py` (lanes, lanes step, chains, boundary, the hold message)
+and one read `live_packet.py`, every one skipped on a host without trading — which is every
+cold start — so the stack's own fan-out was pinned by controls that never ran there. Read
+group by group, what each pinned was one of two things: the **stack's** (the fan-out runs the
+members, names the failed one, keeps the receipt's context, runs a chain in order, stops the
+member whose step produced nothing) or **trading's** (what a valid proposal is, that a
+malformed one is INVALID, the momentum baseline, a planned lane that is MISSING, what its
+fetch step freezes). The stack's parts now run on a fixture of the stack's own — a document
+that means nothing, written by the stub — and run on every cold start; trading's parts are
+trading's controls to pin (agent-stack-trading#2). The one rule that named trading ("its
+prompts and steps are its own") is now a rule about every installed package. The HTTP remote
+mechanics (candidate 7) stay deferred by size.
+
+**#17, read this time.** The hold was "breaking, and unread". Read now:
+
+| component | read | consequence for `run-agent.mjs` |
+|---|---|---|
+| codex-acp 2.0.0 (09-28, #530), claude-agent-acp 0.82.0 (#1153) — "AIR tool call contract" | a `tool_call_update` omits top-level fields that did not change since the last report of the same call (ACP merge semantics); **`_meta` of each report stays complete**; **a permission request omits no field it had before**; AIR-specific keys moved under `_meta.jetbrains.air.*` and are not sent to other clients; exact git patches go **only to a client that declares `diffPatch`**, the ACP diff text stays for the rest | the adapter reads `rawInput`, `title`, `kind`, `locations`, `content` and `_meta` on the *permission request*, which stays whole; the "Access denied:" match reads a tool_call event's output, which an update carries when it changed; acpx declares no `diffPatch`. By the reading, nothing it depends on moves. Still a measurement, not a reading: §50's grok principal pair and N7 |
+| codex-acp 2.0.1 → 2.1.1 (09-29 … 10-01) | 2.0.1 pairs codex 0.159.x; 2.1.x: `request_user_input` as AIR custom answers, clearer "thread held by another client" error, attachments in imported history | pair codex-acp 2.1.1 with codex 0.159/0.160 |
+| Conductor | the changelog's newest entry is **0.1.41 (09-29)**; nothing after it | the pinned 87f7788 → 0.1.41 decision stands as written in #17 (secrets bindings, run bundles) |
+| grok 1.0.46 (09-30) | x.ai's changelog is blocked from this session's egress; third-party summaries: permission rules with relative paths now apply under symlinked working directories, faster skill loading, `grok inspect`/MCP doctor fixes | nothing about `[permission]` evaluation order; N7 measures it |
+
+What the reading changes: the ACP bundle is no longer held for being unread. What it does not
+change: the update is still the operator's full-level measurement (docs/update-day.md), on a
+branch, with the two grok cases first.
