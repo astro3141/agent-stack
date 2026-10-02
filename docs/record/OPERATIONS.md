@@ -3960,3 +3960,29 @@ Controls: review_controls **100/100** (8 new: every image named for the instance
 image, the env writer end to end — takes the keys, keeps the rest, idempotent, no-op without
 instance.env — the two callers, the headroom check, and 15 as the measured count). The stack
 level is the CI run named in PR #21; the full level is the measurement above.
+
+### Addendum 1 — full 22/22 on the merged main, and what a take-down left behind (2026-10-02)
+
+The merged main (`cdff002`, PR #21) was cloned fresh and installed from nothing as a third name
+(`coldtwo`) beside the live instance: **static 10/10, stack 19/19 (trial_controls 471/471,
+router_controls 26/26), full 22/22**. Two real model calls in the full level: `auto` — one
+routed call through Preloop wrote its file and judged PASS; `novel-a` — reviews under distinct
+principals at the same time, through the broker, recorded PASS. The broker received its four
+credentials; the images were built as `coldtwo/*` and the live instance's were untouched.
+
+What verify does not see, found by taking the instance down: `down.sh --volumes` left a quota
+container, two networks (`adminnet`, `toolnet`) and the `role-egress` volume. Each in the code:
+
+| left behind | why | done |
+|---|---|---|
+| the quota container | `down.sh` named the profiles `record,ui` and the egress ones; the observer became a profile in #16 and `down.sh` was not told | `record,ui,observer` |
+| `adminnet`, `toolnet` | Preloop's api / console / gateway sit on this instance's networks (`docker/preloop.agentstack.yaml`); `down.sh` took the stack down *first*, so the networks were "still in use" — printed on every cold start, behind the CI step's `\|\| true` | Preloop goes down first, with the attachment file named as at bring-up |
+| `role-egress` | declared in the composition, not in `down.sh`'s exact-name list | listed; the control now derives the list from the composition |
+
+The control that pinned `down.sh` had fixed the string `record,ui`, which is how the observer's
+absence passed it. It pins the observer, the order and the volume list now, and the cold-start
+run has a step that fails when anything named for the instance is left after the take-down —
+the measurement the `\|\| true` had been hiding.
+
+Not the stack's: the live instance's claude login for quota reading had expired (`claude login`
+on the panel).

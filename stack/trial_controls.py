@@ -940,8 +940,17 @@ def controls_composition():
     check("a composition that drops a service also stops it", "rm -sf $drop" in up, True)
     down = open("/work/scripts/down.sh", encoding="utf-8").read()
     check("down takes everything, whatever was up",
-          'COMPOSE_PROFILES="$_profiles"' in down and '_profiles="record,ui"' in down
+          'COMPOSE_PROFILES="$_profiles"' in down and '_profiles="record,ui,observer"' in down
           and "--remove-orphans" in down, True)
+    # the second instance found what every cold start had hidden behind `|| true` (§69 addendum):
+    # Preloop's containers hold this instance's networks, so they go first; the quota observer is
+    # a profile and must be named; the role credentials are a volume and must be listed
+    check("down takes Preloop off this instance's networks before it removes them",
+          down.index('-f "$HERE/docker/preloop.agentstack.yaml" down') < down.index('COMPOSE_PROFILES="$_profiles" docker compose'), True)
+    comp = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
+    comp_vols = set(re.findall(r'name: \$\{STACK:-agentstack\}-([a-z-]+)', comp.split("\nvolumes:\n", 1)[1].split("\nservices:\n")[0]))
+    check("down lists every volume the composition declares",
+          [v for v in sorted(comp_vols) if f'"$STACK-{v}"' not in down] if comp_vols else ["no volumes read"], [])
 
 
 def controls_approval_boundary():
