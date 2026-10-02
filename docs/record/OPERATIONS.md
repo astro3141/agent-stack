@@ -4100,3 +4100,38 @@ mechanics (candidate 7) stay deferred by size.
 What the reading changes: the ACP bundle is no longer held for being unread. What it does not
 change: the update is still the operator's full-level measurement (docs/update-day.md), on a
 branch, with the two grok cases first.
+
+## 73. Update day 2, the branch: what the cold start can say (2026-10-02)
+
+docs/update-day.md steps 1–2, on PR #31: five pins moved, one commit per component with its
+reading (§72) in the commit message.
+
+| pin | from → to |
+|---|---|
+| acpx | 0.18.0 → 0.19.4 |
+| codex-acp + codex (a pair: codex-acp declares codex ^0.159.1) | 1.12.0 → 2.1.1, 0.155.1 → 0.160.0 |
+| claude-agent-acp | 0.79.0 → 0.85.1 |
+| grok | 1.0.40 → 1.0.46 |
+| Conductor | 87f7788 → 11dcc41 (v0.1.41) |
+
+Measured, cold-start-linux run 47 (de2f8ee), a host that had none of it: the image builds with
+every new pin; `up.sh --check` fails nothing but the logins; **stack 21/21** — trial_controls
+**500/500** (29 more than run 44: the fan-out groups that used trading as a fixture run now, on
+the stack's own, §72), review_controls 120/120, the documented examples 10/10; hello-lane and
+child-run ran through Conductor 0.1.41 and the child step still saw the parent's run id
+(`same_run: yes`, so §66's reading of a sub-workflow holds on the new engine); and the new line
+**"the adapter loads with the pinned toolchain (acpx 0.19.4)"** — `run-agent.mjs` given no
+request answers FAILED in its own shape, so the two files it imports by path are where it
+expects them. Nothing of the instance was left after the take-down.
+
+What this level cannot say, and the operator's steps 3–5 will: whether a model call still
+completes under the new adapters (§50's grok principal pair first — write allowed, write
+refused — then §64's cold role, then N7 on the three providers), and whether grok 1.0.46 still
+reads the posture the way 1.0.40 did. On the instance:
+
+```
+scripts/release.sh update --to <merged rev> --replace-toolchain
+scripts/verify.sh --level full
+```
+
+and the numbers go here, under this section, as §65 did for day 1.

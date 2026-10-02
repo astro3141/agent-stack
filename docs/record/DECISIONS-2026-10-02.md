@@ -113,7 +113,7 @@ CADP effect client와 CADP-GAP의 큰 갭 1~4는 CADP가 v0.5를 authority로 �
 | [#14](https://github.com/astro3141/agent-stack/issues/14) | 다음 | 후보 6: 자리가 devflow·trading의 필요에 맞는지(제작자 질문 2개), backup.sh에 state 포함 |
 | [#15](https://github.com/astro3141/agent-stack/issues/15) | 다음 | 선언되지 않은 것 셋: grok posture vs native_tools(cfg 검증), keeper 120 s(quota.reuse_s), direct 경로의 observer 문구 |
 | [#16](https://github.com/astro3141/agent-stack/issues/16) | 다음 | 구성: toolsvc 제거, probe 둘·quota를 compose profile로, replay 요청 시 |
-| [#17](https://github.com/astro3141/agent-stack/issues/17) | 읽음(§72) — 측정은 운영자 full 레벨 | update day 2: ACP 어댑터 묶음(tool-call contract), Conductor 0.1.41, grok 1.0.46 |
+| [#17](https://github.com/astro3141/agent-stack/issues/17) | 읽음(§72), 핀 브랜치 준비·cold start 측정(§73) — full 레벨 측정은 운영자 | update day 2: ACP 어댑터 묶음(tool-call contract), Conductor 0.1.41, grok 1.0.46 |
 | [#18](https://github.com/astro3141/agent-stack/issues/18) | 스택 쪽 완료(§72); HTTP remote 역학은 보류 | 후보 7 HTTP remote 역학(원칙상 공통, 크기로 뒤); 스택 컨트롤의 trading fixture → 스택 소유 |
 | [#19](https://github.com/astro3141/agent-stack/issues/19) | 조건부 | CADP effect client와 갭 1~4: CADP policy delta 이후 |
 | [#20](https://github.com/astro3141/agent-stack/issues/20) | 운영자 + 문서 | update day 1 대조: backup.sh 건너뜀(사후 실행), update-day.md에 `--replace-toolchain` 누락 |
