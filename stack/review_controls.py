@@ -615,6 +615,9 @@ def panel_controls():
     check("panel: the ops API has no start endpoint", 'run_workflow.py", "start"' not in srv
           and "POST /api/runs  body" not in srv)
     check("panel: stopping a run that is going is still the panel's", "/stop" in srv and "data-stop" in hub)
+    check("panel: configuration is applied by command — no button, no endpoint, the state still shown",
+          "cfg-apply" not in hub and "/api/config/apply" not in srv and "/api/config/generate" not in srv
+          and "/api/config/status" in srv and "cfg.py apply" in hub)
     check("panel: resume went with start — no button, no endpoint, the command shown instead",
           "data-resume" not in hub and '/resume", p)' not in srv and "run_workflow.py resume" in hub)
     check("panel: the contract says so in its own words",

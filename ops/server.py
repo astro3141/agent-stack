@@ -9,7 +9,7 @@ who can reach it, not what it can do: whoever reaches it controls these actions.
 
 Routes
   GET  /api/health
-  GET  /api/config/status                 POST /api/config/generate   POST /api/config/apply
+  GET  /api/config/status                 (generate and apply are commands: cfg.py, scripts/up.sh — #24)
   GET  /api/profiles                      GET /api/workflows   what may be started
   GET  /api/accounts?profile=<name>       per provider: login state, quota, account match, eligibility
   POST /api/accounts/<provider>/login     body {"login": optional}     start the official login
@@ -238,13 +238,10 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = urlparse(self.path).path; b = self._body()
-        if p in ("/api/config/generate", "/api/config/apply"):
-            # The split follows the guard: generating writes files in this tree and reads the
-            # provider logins, which only the agent has; applying writes to Preloop, which only
-            # the admin side may do (OPERATIONS §21).
-            what = p.rsplit("/", 1)[1]
-            return self._send(200, jexec([PY, "/work/stack/cfg.py", what], timeout=300,
-                                         container=ADMIN if what == "apply" else None))
+        # POST /api/config/generate and /api/config/apply are gone with the start and resume
+        # buttons (#24): generating and applying configuration is work scripts/up.sh does on every
+        # bring-up and `cfg.py generate` (agent) / `cfg.py apply` (admin, past the guard — §21) do by
+        # hand. The panel reads the state (GET /api/config/status) and changes nothing.
         m = re.fullmatch(r"/api/accounts/([a-z]+)/(login|code|cancel)", p)
         if m:
             prov, act = m.groups()

@@ -1002,10 +1002,15 @@ def controls_approval_boundary():
     ops_server = open("/work/ops/server.py", encoding="utf-8").read()
     check("the panel runs the decision itself, not in the agent",
           'jlocal(["/work/stack/approvals.py", "decide"' in ops_server, True)
-    check("applying a policy runs on the admin side",
-          'container=ADMIN if what == "apply"' in ops_server, True)
+    # #24 (decided 2026-10-02): the panel neither generates nor applies configuration — the
+    # endpoints went with the start and resume buttons. The split (generate in the agent, apply
+    # on the admin side past the guard, §21) is pinned where it lives now: the bring-up.
+    check("the panel neither generates nor applies configuration",
+          "/api/config/apply" not in ops_server and "/api/config/generate" not in ops_server, True)
+    check("applying a policy runs on the admin side, at the bring-up",
+          bool(re.search(r'docker exec "\$STACK-admin"[^\n]*cfg\.py apply', up)), True)
     check("generating it does not — the provider logins are in the agent",
-          'what == "apply" else None' in ops_server, True)
+          'docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate' in up, True)
     admin_block = compose.split("  admin:")[1].split("  apiguard:")[0]
     check("the operator's container is on the admin network and no other",
           admin_block.split("networks:")[1].split("volumes:")[0].split(), ["-", "adminnet"])

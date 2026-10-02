@@ -67,7 +67,8 @@ configuration file, where it can be repeated, reviewed and automated.
 The rule was not what the panel did, until it was decided (#24, 2026-10-02): the panel had a
 start button, and starting a run is work a script or a scheduler can do. The panel's 워크플로 tab
 now lists what may be started and what each one takes, and shows the command; it starts nothing,
-and it resumes nothing — a run that can be continued says so, with the command. Stopping a run
+and it resumes nothing — a run that can be continued says so, with the command — and it applies
+no configuration: the 설정 상태 card shows what is applied and names the commands. Stopping a run
 that is going stays on the panel, because that is a judgement.
 
 The controls of the other solutions follow the same rule rather than their own product boundary:

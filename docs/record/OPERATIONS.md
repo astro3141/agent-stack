@@ -4019,8 +4019,15 @@ stays on the panel, as the rule says.
 
 Decided the same day, the same way: the *resume* button on the 실행 기록 tab and
 `POST /api/runs/<id>/resume` went too. A run that can be continued says so in its row, with the
-command (`run_workflow.py resume <id>`). The configuration *generate·apply* button (설정 상태
-card) stays as it was.
+command (`run_workflow.py resume <id>`). Then the configuration *generate·apply* button (설정
+상태 card) and `POST /api/config/{generate,apply}`: `scripts/up.sh` does that on every bring-up,
+`cfg.py generate` (agent) and `cfg.py apply` (admin, past the guard) do it by hand; the card
+shows the state and names the commands.
+
+What is left on the panel is a person's: the login flows (a code the vendor gives a human),
+approve/decline, stop, and looking at a run's graph. The operator's work — start, resume, apply,
+and everything in `scripts/` — is commands, where a scheduler can run it and a reader can see
+what was run.
 
 Controls: review_controls pins the absence (no start, no precheck, no POST on the page or in the
 API), the presence of the command, and the contract's sentence.

@@ -150,7 +150,7 @@
     <h2>설정 상태</h2>
     <div class="row muted" id="cfg-summary"></div>
     <table><thead><tr><th>대상</th><th>상태</th><th>적용 시각</th><th>오류</th></tr></thead><tbody id="cfg-rows"></tbody></table>
-    <div class="row"><button class="act" id="cfg-apply">생성·적용</button><span id="cfg-msg" class="muted"></span></div>
+    <div class="row muted">생성·적용은 명령으로 — <code>scripts/up.sh</code>가 매 bring-up마다, 손으로는 <code>cfg.py generate</code>(agent) · <code>cfg.py apply</code>(admin). 이 화면은 상태만 봅니다.</div>
   </div>
   <div class="card">
     <h2>승인 대기 (Preloop)</h2>
@@ -306,12 +306,6 @@ async function loadConfig() {
   $("#cfg-rows").innerHTML = (c.targets||[]).map((t) => { const [l, k] = CFG[t.state] || [t.state, "muted"];
     return `<tr><td class="mono">${esc(t.target)}</td><td class="${k}">${l}</td><td class="muted">${esc(t.applied_at||"—")}</td><td class="bad">${esc(t.error||"")}</td></tr>`; }).join("");
 }
-$("#cfg-apply").onclick = async () => {
-  $("#cfg-msg").textContent = "적용 중…";
-  const r = await api("/api/config/apply", {});
-  $("#cfg-msg").textContent = r.ok ? "완료" : ("실패: " + (r.error || JSON.stringify(r.results)));
-  loadConfig(); loadProfiles().then(loadAccounts);
-};
 
 // ---- approvals: the one thing here that cannot go on without a person
 // A run that is waiting on a person is the one thing here that stops until someone looks. It used
