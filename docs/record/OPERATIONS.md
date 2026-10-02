@@ -3659,3 +3659,35 @@ the four cases).
 
 Owed from that host: the raw billing answer (runbook, "Runs hold"), which says whether this is
 the plan or the proxy. Until then the profile's line is the operator's statement, dated.
+
+### §64 addendum 2: the 429 was ours (measured 2026-10-02)
+
+With `grok: []` in place, novel-a completed on that host — architect=codex, author=claude,
+story=codex, history=claude, cold=grok, decision PASS — on a retry. The first attempt had held on
+`claude: unknown: Claude OAuth usage endpoint is rate limited by Anthropic right now`, and a live
+reading taken by hand minutes later showed the account at 6 % (5 h) / 43 % (weekly), Claude Max 5x.
+Not a quota. A rate limit on *asking*.
+
+Who asks, counted from the code rather than guessed: a run's first step (`route.py`, once per
+run — `roles.py` reads that decision, it does not collect again); the panel's accounts view
+(`/api/accounts`, on load, on every profile change, after a login, and from the dashboard) and
+its overview (`/api/overview` → `ops_health` → `unknowable()`); `up.sh --check` (twice:
+`unknowable()` and `capabilities.probe()`); `verify.sh` (the same two through `up.sh --check`,
+`ops_health`, and now its own collection for the router controls). Each is one live
+`codexbar usage --provider claude --source oauth` per login — and nothing kept any reading, so
+the profile's `max_age_s: 1800` bounded nothing: there was never a reading to be younger than it.
+The report's own count ("route + author + history, 2–3 per run") was not it; the panel was.
+
+What changed (`collect_obs.py`, `kept()`): the last good reading of each provider is kept beside
+its login (`/route/.quota/<provider>-<login>.json`); a kept reading younger than 120 s
+(`AGENTSTACK_OBS_REUSE_S`) is presented again instead of taken again, with `source: cache:…` and
+its own `observed_at`; a live reading that fails, or carries the vendor's error, is answered by the
+kept one with the failure beside it (`live_failed`). "Good" is an answer with no error — Grok's
+empty figure is a good reading of that. Nothing extends `max_age_s`: the router judges the kept
+reading's age as before, so a refusal that outlasts the profile's bound is `stale`, and a provider
+that never had a good reading is `unknown` as it always was. Five controls in `review_controls`
+drive it with a fake CodexBar: refusal with nothing kept, a good reading kept, refusal answered by
+it, the reuse window, the time it keeps.
+
+Full on that host, measured: 20/20 when the endpoint answered. With the keeper, the asking that
+tripped it is one live reading per 120 s per login, whatever the panel does.

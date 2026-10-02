@@ -104,8 +104,16 @@ grok:   unknown: required weekly window not reported
 claude: unknown: Claude OAuth usage endpoint is rate limited by Anthropic right now …
 ```
 
-The second is the vendor's usage endpoint refusing the reading (HTTP 429), not the account's quota:
-wait a few minutes and re-collect (`scripts/up.sh --check`). The first means CodexBar answered for
+The second is the vendor's usage endpoint refusing the reading (HTTP 429), not the account's quota
+— measured at 6 % / 43 % while it said so. It was this stack asking too often: every asker (a run's
+first step, the panel's accounts view and dashboard, `up.sh --check`, `verify.sh`) took its own
+live reading, and none was kept. The collector now keeps the last good reading beside the login
+(`/route/.quota/<provider>-<login>.json`), presents it again for 120 s instead of asking
+(`AGENTSTACK_OBS_REUSE_S`), and when the vendor refuses, lets it stand in with the refusal beside it
+(`source: cache:…`, `live_failed`). The router judges the kept reading's age exactly as before, so
+a 429 that outlasts `max_age_s` is still `stale`, honestly. If you still see this line, the
+provider has had no good reading since the stack came up: wait a few minutes and re-collect
+(`scripts/up.sh --check`). The first means CodexBar answered for
 Grok, with a timestamp, but no window the router could call *weekly* — the profile requires one
 (`quota.require_windows`), and a provider that reports none is unknown, not free. What Grok did
 report is in the observation itself, in the run's own evidence or from a fresh reading:

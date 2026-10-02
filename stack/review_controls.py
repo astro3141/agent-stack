@@ -169,6 +169,56 @@ def codex_controls():
     check("codex: A's reading is kept as another source", any(s["source"].startswith("codexbar") for s in rec["other_sources"]), rec)
 
 
+# ---------------------------------------------------------------- 2b. a reading kept beside the login
+def kept_controls():
+    """The second install's 429 (OPERATIONS §64): every asker took its own live reading of
+    Claude's usage endpoint, the vendor rate-limited the endpoint, and a run held with the
+    quota at 6 % / 43 %. The collector keeps the last good reading beside the login now."""
+    root = Path(tempfile.mkdtemp(prefix="agentstack-kept-"))
+    logins, out, fake = root / "route", root / "out", root / "bin"
+    (root / "config" / "generated").mkdir(parents=True); (logins / "claude").mkdir(parents=True); fake.mkdir()
+    rt = json.loads(json.dumps(__import__("settings").DEFAULT_RUNTIME))
+    rt["paths"].update({"logins_root": str(logins), "observations": str(root / "obs")})
+    (root / "config" / "generated" / "runtime.json").write_text(json.dumps(rt))
+    (logins / "claude" / ".claude.json").write_text(json.dumps({"oauthAccount": {"organizationUuid": "org-1"}}))
+    (fake / "codexbar").write_text(f"""#!/bin/sh
+echo x >> {root}/calls
+if [ "$(cat {root}/mode)" = ok ]; then
+  printf '[{{"provider":"claude","source":"oauth","usage":{{"updatedAt":"%s","primary":{{"usedPercent":6,"windowMinutes":300}},"secondary":{{"usedPercent":43,"windowMinutes":10080}}}}}}]' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+else
+  printf '[{{"provider":"claude","source":"oauth","error":{{"message":"Claude OAuth usage endpoint is rate limited by Anthropic right now"}}}}]'
+fi
+"""); (fake / "codexbar").chmod(0o755)
+    (fake / "preloop").write_text("#!/bin/sh\nexit 1\n"); (fake / "preloop").chmod(0o755)
+    calls = lambda: sum(1 for _ in open(root / "calls")) if (root / "calls").exists() else 0
+
+    def collect(mode, reuse):
+        (root / "mode").write_text(mode)
+        env = {**os.environ, "AGENTSTACK_ROOT": str(root), "PATH": f"{fake}:{os.environ['PATH']}",
+               "AGENTSTACK_OBS_REUSE_S": str(reuse), "AGENTSTACK_MODEL_ROUTES": json.dumps({"claude": "direct"}),
+               "AGENTSTACK_LOGINS": json.dumps({"claude": "claude"})}
+        subprocess.run([sys.executable, str(HERE / "collect_obs.py"), str(out)], env=env, capture_output=True, text=True, timeout=60)
+        return json.loads((out / "claude.json").read_text())
+
+    a = collect("429", 0)
+    check("kept: no reading yet, vendor refuses → unknown, with the vendor's words",
+          not a["windows"] and "rate limited" in (a.get("error") or ""), a)
+    b = collect("ok", 0)
+    check("kept: a good reading is taken live and kept", b["source"] == "codexbar:oauth"
+          and b["windows"]["weekly"]["used_percent"] == 43 and (logins / ".quota" / "claude-claude.json").exists(), b)
+    c = collect("429", 0)
+    check("kept: vendor refuses after a good reading → the good one stands in, failure beside it",
+          c["source"] == "cache:codexbar:oauth" and c["windows"]["weekly"]["used_percent"] == 43
+          and "rate limited" in c.get("live_failed", ""), c)
+    n = calls()
+    d = collect("ok", 600)
+    check("kept: within the reuse window the vendor is not asked again",
+          d["source"] == "cache:codexbar:oauth" and "reused_after_s" in d and calls() == n, (d, calls(), n))
+    check("kept: the reused reading keeps its own time, so the router judges its age as before",
+          d["observed_at"] == b["observed_at"], (d["observed_at"], b["observed_at"]))
+    shutil.rmtree(root, ignore_errors=True)
+
+
 # ---------------------------------------------------------------- 3. restart after the end event
 def run_controls():
     sys.path.insert(0, str(HERE))
@@ -207,6 +257,7 @@ def run_controls():
 
 policy_controls()
 codex_controls()
+kept_controls()
 run_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

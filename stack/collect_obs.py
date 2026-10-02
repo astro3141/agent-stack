@@ -54,6 +54,64 @@ LOGIN_NAMES = json.loads(os.environ.get("AGENTSTACK_LOGINS", "{}"))
 login_dir = lambda provider: f"{LOGINS}/{LOGIN_NAMES.get(provider, provider)}"
 
 
+# ---- a reading that was taken, kept beside the login ---------------------------------------
+REUSE_S = int(os.environ.get("AGENTSTACK_OBS_REUSE_S", "120"))
+CACHE = f"{LOGINS}/.quota"
+
+
+def kept(provider, login, read):
+    """`read()` — one live reading from the vendor — with the last good one kept beside the login.
+
+    Measured on the second install (OPERATIONS §64): every place that asks "may this run" took
+    its own live reading of Claude's OAuth usage endpoint — a run's first step, the panel's
+    accounts view and its dashboard, `up.sh --check`, `verify.sh` — and Anthropic rate-limited
+    that endpoint (429) while the account's quota stood at 6 % / 43 %. The router then called
+    Claude unknown, and a run that needed it held: a limit on *asking* had become a refusal to
+    *run*, and there was nothing to fall back on because no reading was kept anywhere.
+
+    Two rules, both honest about time. A good reading younger than REUSE_S is presented again
+    rather than taken again (`source: cache:…`, `observed_at` unchanged — the router judges its
+    age exactly as before). And when the live reading fails, or arrives carrying the vendor's
+    error, the last good one stands in, with the failure written beside it (`live_failed`).
+    Nothing here extends the profile's max_age_s: a kept reading that is too old is still stale,
+    and a provider that never had a good reading is still unknown. "Good" is: an answer, with no
+    error — a vendor that answers with no usage figure (Grok, §64) is a good reading of that.
+    """
+    path = f"{CACHE}/{provider}-{login}.json"
+    try:
+        prev = json.load(open(path))
+    except Exception:
+        prev = None
+
+    def age(rec):
+        try:
+            return (datetime.now(timezone.utc)
+                    - datetime.fromisoformat(rec["observed_at"].replace("Z", "+00:00"))).total_seconds()
+        except Exception:
+            return None
+    a = age(prev) if prev else None
+    if a is not None and 0 <= a < REUSE_S:
+        return {**prev, "source": f"cache:{prev.get('source')}", "reused_after_s": round(a)}
+    try:
+        rec = read()
+        err = (rec.get("error") if rec else "no reading from the vendor") or None
+    except Exception as e:
+        rec, err = None, f"{type(e).__name__}: {e}"[:200]
+    if rec and not err:
+        try:
+            os.makedirs(CACHE, exist_ok=True)
+            json.dump(rec, open(path + ".tmp", "w"))
+            os.replace(path + ".tmp", path)
+        except Exception:
+            pass
+        return rec
+    if prev:
+        return {**prev, "source": f"cache:{prev.get('source')}", "live_failed": str(err)[:200]}
+    if rec:
+        return rec
+    raise RuntimeError(err)
+
+
 # ---- codex ------------------------------------------------------------------------------
 CODEX_HOME = login_dir("codex") if ROUTES.get("codex") == "direct" else os.path.expanduser("~/.codex")
 
@@ -155,19 +213,24 @@ def codex_direct():
     home = login_dir("codex")
     if not os.path.isfile(os.path.join(home, "auth.json")):
         return None
-    p = subprocess.run(["codexbar", "usage", "--provider", "codex", "--json"],
-                       capture_output=True, text=True, timeout=60,
-                       env={**os.environ, "CODEX_HOME": home, "HOME": f"{home}/home", **EGRESS})
-    item = next((x for x in json.loads(p.stdout or "[]") if x.get("provider") == "codex"), None)
-    if not item:
+    def read():
+        p = subprocess.run(["codexbar", "usage", "--provider", "codex", "--json"],
+                           capture_output=True, text=True, timeout=60,
+                           env={**os.environ, "CODEX_HOME": home, "HOME": f"{home}/home", **EGRESS})
+        item = next((x for x in json.loads(p.stdout or "[]") if x.get("provider") == "codex"), None)
+        if not item:
+            return None
+        u = item.get("usage") or {}
+        wins, reported = windows_of(u)
+        return {"source": f"codexbar-route:{item.get('source')}", "observed_at": u.get("updatedAt"),
+                "account": fp((u.get("identity") or {}).get("accountEmail") or ""), "windows": wins,
+                "reported_windows": reported,
+                **({"error": str((item.get("error") or {}).get("message") or item["error"])[:200]}
+                   if item.get("error") else {})}
+    try:
+        return kept("codex", LOGIN_NAMES.get("codex", "codex"), read)
+    except RuntimeError:
         return None
-    u = item.get("usage") or {}
-    wins, reported = windows_of(u)
-    if not wins:
-        return None
-    return {"source": f"codexbar-route:{item.get('source')}", "observed_at": u.get("updatedAt"),
-            "account": fp((u.get("identity") or {}).get("accountEmail") or ""), "windows": wins,
-            "reported_windows": reported}
 
 
 def codex_from_observer():
@@ -203,7 +266,8 @@ try:
         # the reading is taken with the credential that executes, like Grok's
         cands.append({"source": d["source"], "observed_at": d["observed_at"],
                       "observed_account": d["account"], "identity_basis": "same-credential",
-                      "windows": d["windows"], "reported_windows": d["reported_windows"]})
+                      "windows": d["windows"], "reported_windows": d["reported_windows"],
+                      **{k: d[k] for k in ("reused_after_s", "live_failed") if k in d}})
 except Exception:
     pass
 try:
@@ -235,25 +299,27 @@ if ROUTES.get("grok") == "direct":
     try:
         if not os.path.isfile(f"{login_dir('grok')}/auth.json"):
             raise FileNotFoundError(f"no Grok login at {login_dir('grok')}")
-        p = subprocess.run(["codexbar", "usage", "--provider", "grok", "--json"], capture_output=True,
-                           text=True, timeout=60, env={**os.environ, "HOME": f"{login_dir('grok')}/home",
-                           "GROK_HOME": login_dir("grok"), **EGRESS})
-        item = next((x for x in json.loads(p.stdout or "[]") if x.get("provider") == "grok"), None)
-        u = (item or {}).get("usage") or {}
-        wins, reported = windows_of(u)
-        acct = fp((u.get("identity") or {}).get("accountEmail") or "")
-        write("grok", {"provider": "grok", "source": f"codexbar:{(item or {}).get('source')}",
-                       "observed_at": u.get("updatedAt"), "observed_account": acct,
-                       "executing_account": acct if item else None,
-                       "identity_basis": "same-credential", "model_route": "direct", "windows": wins,
-                       # what the vendor said, as said — the line to read when a window is "not reported"
-                       "reported_windows": reported, "extra_windows": u.get("extraRateWindows") or [],
-                       # no item: CodexBar's stderr. An item with no window: its own error, when it
-                       # gives one — CodexBar builds Grok's one window from the billing period and
-                       # omits it when the period carries no percent (GrokStatusProbe, 0.63.0).
-                       **({"error": (p.stderr or "")[-200:]} if not item else
-                          {"error": str((item.get("error") or {}).get("message") or item["error"])[:200]}
-                          if (not wins and item.get("error")) else {})})
+        def read_grok():
+            p = subprocess.run(["codexbar", "usage", "--provider", "grok", "--json"], capture_output=True,
+                               text=True, timeout=60, env={**os.environ, "HOME": f"{login_dir('grok')}/home",
+                               "GROK_HOME": login_dir("grok"), **EGRESS})
+            item = next((x for x in json.loads(p.stdout or "[]") if x.get("provider") == "grok"), None)
+            u = (item or {}).get("usage") or {}
+            wins, reported = windows_of(u)
+            acct = fp((u.get("identity") or {}).get("accountEmail") or "")
+            return {"provider": "grok", "source": f"codexbar:{(item or {}).get('source')}",
+                    "observed_at": u.get("updatedAt"), "observed_account": acct,
+                    "executing_account": acct if item else None,
+                    "identity_basis": "same-credential", "model_route": "direct", "windows": wins,
+                    # what the vendor said, as said — the line to read when a window is "not reported"
+                    "reported_windows": reported, "extra_windows": u.get("extraRateWindows") or [],
+                    # no item: CodexBar's stderr. An item with no window: its own error, when it
+                    # gives one — CodexBar builds Grok's one window from the billing period and
+                    # omits it when the period carries no percent (GrokStatusProbe, 0.63.0).
+                    **({"error": (p.stderr or "")[-200:]} if not item else
+                       {"error": str((item.get("error") or {}).get("message") or item["error"])[:200]}
+                       if (not wins and item.get("error")) else {})}
+        write("grok", kept("grok", LOGIN_NAMES.get("grok", "grok"), read_grok))
     except Exception as e:
         write("grok", {"provider": "grok", "source": "codexbar", "observed_at": None,
                        "observed_account": None, "executing_account": None,
@@ -266,8 +332,9 @@ if ROUTES.get("grok") == "direct":
 def codexbar_claude_direct():
     """The reading taken here with the routing layer's own Claude login.
 
-    Claude in `direct` mode has one source and no fallback — codex has its rollouts and the
-    observer's file, Grok is read the same way as this but always returns a timestamp. On another
+    Claude in `direct` mode has one live source — codex has its rollouts and the observer's
+    file, Grok is read the same way as this but always returns a timestamp — and, since §64,
+    the last good reading kept beside the login (`kept`). On another
     machine this reading came back **without `updatedAt`**, and the router then called the state
     unknown and every run that wanted Claude held (reported from the second install). A reading
     that arrives with no timestamp of its own is not undated: it was taken now, and that is what
@@ -300,7 +367,7 @@ def codexbar_claude_direct():
 
 if ROUTES.get("claude") == "direct":
     try:
-        write("claude", codexbar_claude_direct())
+        write("claude", kept("claude", LOGIN_NAMES.get("claude", "claude"), codexbar_claude_direct))
     except Exception as e:
         write("claude", {"provider": "claude", "source": "codexbar", "observed_at": None,
                          "observed_account": None, "executing_account": None,
