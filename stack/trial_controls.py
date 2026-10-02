@@ -950,7 +950,7 @@ def controls_composition():
     comp = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
     comp_vols = set(re.findall(r'name: \$\{STACK:-agentstack\}-([a-z-]+)', comp.split("\nvolumes:\n", 1)[1].split("\nservices:\n")[0]))
     check("down lists every volume the composition declares",
-          all(f'"$STACK-{v}"' in down for v in comp_vols) and bool(comp_vols), sorted(comp_vols))
+          [v for v in sorted(comp_vols) if f'"$STACK-{v}"' not in down] if comp_vols else ["no volumes read"], [])
 
 
 def controls_approval_boundary():
