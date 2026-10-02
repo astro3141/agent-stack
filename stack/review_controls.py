@@ -537,9 +537,14 @@ def door_controls():
     pol = {"candidates": ["grok"], "login": {"grok": "grok"}, "model_route": {"grok": "direct"},
            "thresholds": {}, "max_age_s": 600, "reuse_s": 0}
     root = Path(tempfile.mkdtemp(prefix="agentstack-door-"))
-    (root / "route").mkdir(); (root / "obs").mkdir()
+    # a settings root of its own, with no login under it: the collector (a subprocess) reads the
+    # logins root from the generated runtime, so what it finds is nothing — and says so
+    (root / "config" / "generated").mkdir(parents=True); (root / "route").mkdir(); (root / "obs").mkdir()
+    rt = json.loads(json.dumps(__import__("settings").DEFAULT_RUNTIME))
+    rt["paths"].update({"logins_root": str(root / "route"), "observations": str(root / "obs")})
+    (root / "config" / "generated" / "runtime.json").write_text(json.dumps(rt))
     env = dict(os.environ)
-    os.environ.update({"AGENTSTACK_LOGINS_ROOT": str(root / "route"), "AGENTSTACK_OBS_DIR": str(root / "obs")})
+    os.environ["AGENTSTACK_ROOT"] = str(root)
     try:
         d = ad.evaluate(policy=pol, evidence_dir=str(root / "ev"))
     except Exception as e:                                       # noqa: BLE001
