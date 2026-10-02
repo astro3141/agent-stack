@@ -269,6 +269,16 @@ if in_agent /work/stack/run_workflow.py start "$RID" hello-lane research-default
   ok "hello-lane ran to completion ($RID) — a package step through Conductor, no model"
 else bad "hello-lane did not complete ($RID)" "$(tail -3 "$TMP/hello.log" | tr '\n' ';')"; fi
 
+# A sub-workflow and a wait, through this stack's door (stack/cases/child-run.yaml, #13). The
+# measurement is which run id the child's step saw; it is printed, and docs/packages.md says what
+# it means once a machine has said it.
+RID="verify-child-$(date +%s | tail -c 6)"
+if in_agent /work/stack/run_workflow.py start "$RID" child-run research-default text=child > "$TMP/child.log" 2>&1 \
+   && in_agent /work/stack/run_workflow.py show "$RID" 2>/dev/null | tail -1 | tee "$TMP/$RID.show" | grep -q '"completed_ok": true'; then
+  ok "child-run ran to completion ($RID) — hello-lane as a sub-workflow, then a wait"
+  tail -1 "$TMP/$RID.show" | $PY -c "import json,sys; o=(json.load(sys.stdin).get('output') or {}); print('  note  the child's step saw run id', repr(o.get('child_run')), '— the parent is', repr(o.get('parent_run')), '(same_run:', o.get('same_run'), ')')" 2>/dev/null | nocr || true
+else bad "child-run did not complete ($RID)" "$(tail -3 "$TMP/child.log" | tr '\n' ';')"; fi
+
 in_agent /work/stack/ops_health.py > "$TMP/health.log" 2>&1 && ok "ops_health answers" || bad "ops_health failed" "$(tail -2 "$TMP/health.log" | tr '\n' ';')"
 
 if [ "$LEVEL" = stack ]; then

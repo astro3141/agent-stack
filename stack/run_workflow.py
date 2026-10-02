@@ -45,7 +45,9 @@ import capabilities
 # including the five it was built with (OPERATIONS §30). The name is kept so that a stack which
 # has to carry one again has the place to put it, and so that a package cannot silently take over
 # a name the platform itself answers to.
-BUILT_IN = {}
+# Workflows this stack carries itself: fixtures that measure the stack with no model and no
+# package — a package may not take one of these names (known()).
+BUILT_IN = {"child-run": "stack/cases/child-run.yaml"}   # #13: a sub-workflow and a wait, measured
 
 
 def known():

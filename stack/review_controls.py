@@ -296,6 +296,14 @@ def state_controls():
           got.get("zz-nobody", {}).get("state") == "NO PACKAGE" and (root / "state" / "zz-nobody").exists(), got)
     import importlib
     check("state: requires.state is a key something reads", "state" in importlib.import_module("packages").KNOWN_REQUIRES)
+    # a scheduled cycle carries the workflow's inputs through (PACKAGE-MATRIX §4, #13)
+    cy = importlib.import_module("cycle")
+    a = cy.parse_args(["trading-b", "research-default", "day=2026-10-02", "--by", "scheduler", "--retain-days", "3"])
+    check("cycle: key=value words are the workflow's inputs, not a profile",
+          a["inputs"] == {"day": "2026-10-02"} and a["profile"] == "research-default" and a["by"] == "scheduler", a)
+    check("cycle: a bare profile still parses without inputs", cy.parse_args(["x"])["inputs"] == {})
+    check("cycle: the inputs reach the run's argv",
+          'argv += [f"{k}={v}" for k, v in sorted((inputs or {}).items())]' in (HERE / "cycle.py").read_text())
     # state kept with the work, elsewhere: declared as a string, reported as a place, never a directory
     pkgs = root / "packages"; (pkgs / "remote-one").mkdir(parents=True)
     (pkgs / "remote-one" / "manifest.yaml").write_text("name: remote-one\nversion: 0.0.1\nentry: w.yaml\nrequires:\n  state: \"github issue comments\"\n")
