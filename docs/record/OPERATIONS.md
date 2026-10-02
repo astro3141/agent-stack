@@ -3735,6 +3735,22 @@ with the previous file beside it; `up.sh --check` reports `grok native tools den
 for a login that exists and `--` for none. Seven controls in `review_controls` cover a bare login,
 an existing file, a second run, and a file that does not parse (left alone, reported).
 
+Measured on the second install after `git pull` and a bring-up (`grok posture: written`;
+`up.sh --check`: `grok native tools denied in its config  yes`), `verify.sh --level full`:
+
+```
+full: 21/21 passed
+novel-a  decision PASS, reviews_failed none, cold_available yes
+         story    codex   COMPLETED  produced   41 s
+         history  claude  COMPLETED  produced   42 s
+         cold     grok    COMPLETED  produced   74 s     (was DENIED at 336 s)
+         review_wall_s 73.9                              (was 336.0)
+review_cold.json written through preloop__write_file
+```
+
+Three vendors, three principals, three governed writes; the fan-out that waited out an approval
+window now ends when the slowest reviewer does.
+
 Still a person's decision, deliberately: a native tool a vendor cannot switch off (Codex's
 `apply_patch`) is held for approval, and an unattended run that asks for one ends `DENIED` after
 the window. The stack does not shorten that window — approval is the answer the stack gives for
