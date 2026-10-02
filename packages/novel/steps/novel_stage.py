@@ -175,7 +175,10 @@ def cmd_triage(max_repairs, required="story,history"):
     # times this step ran. Counting files let a repeated triage (a resumed run, a step re-executed)
     # inflate the count and, at the bound, turn a REPAIR into a BLOCK with no new work in between.
     this_round = f"{WS}/findings-{meta.get('draft_id', 'd00')}.json"
-    done = len([f for f in glob.glob(f"{WS}/findings-d*.json") if f != this_round])
+    # Compared by name: glob joins with the OS separator, so on a Windows host the full paths never
+    # matched and a repeated triage counted its own round as a repair already done.
+    done = len([f for f in glob.glob(f"{WS}/findings-d*.json")
+                if os.path.basename(f) != os.path.basename(this_round)])
     # Required reviews must be usable; the Cold Reader is advisory and may be missing entirely.
     missing = [f"{n} ({reviews[n].get('why')})" for n in need if not reviews[n].get("usable")]
     if rnd is None:
