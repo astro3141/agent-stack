@@ -1812,7 +1812,7 @@ def controls_packages():
     boot = open("/work/stack/bootstrap_preloop.py", encoding="utf-8").read()
     capsrc = open("/work/stack/capabilities.py", encoding="utf-8").read()
     pk_src = open("/work/stack/packages.py", encoding="utf-8").read()
-    check("a failed step carries the reason it failed", '"failure": ((r.get("failure")' in at_src, True)
+    check("a failed step carries the reason it failed", '"failure": execution.failure_of(r)' in at_src, True)
     check("the approval path is not cut before Preloop answers",
           "location = /api/v1/agents/permission-check" in guard
           and "proxy_read_timeout 900s" in guard, True)

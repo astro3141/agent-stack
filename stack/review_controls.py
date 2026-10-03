@@ -688,6 +688,35 @@ def next_controls():
           "## A package that brings its own runtime" in c and "Every model call goes through" in c and "may not do" in c)
 
 
+# ---------------------------------------------------------------- 10. the adapter, replayed (#27)
+def adapter_controls():
+    """run-agent.mjs's model-free halves (stack/adapter/*.mjs) reproduce what the adapter wrote
+    on the instance for four recorded runs; the step's failure line reads the denial."""
+    fx = WORK / "stack" / "fixtures" / "run-agent"
+    import hashlib
+    idx = (fx / "INDEX.txt").read_text()
+    bad = [m.group(1) for m in re.finditer(r"(\S+)\s+(\d+) B\s+sha256:([0-9a-f]+)", idx)
+           if not hashlib.sha256((fx / m.group(1)).read_bytes()).hexdigest().startswith(m.group(3))]
+    check("adapter: the fixtures are the ones the instance recorded (index hashes hold)", bad == [], bad)
+    r = subprocess.run(["node", str(WORK / "stack" / "adapter" / "replay.mjs")], capture_output=True, text=True, timeout=120)
+    check("adapter: four recorded runs replay through result.mjs — text, usage, denials, status, the whole result",
+          r.returncode == 0 and "4/4 recorded runs replayed" in r.stdout, (r.stdout + r.stderr)[-600:])
+    ra = (WORK / "stack" / "run-agent.mjs").read_text()
+    check("adapter: run-agent.mjs uses the modules and keeps no copy of the folded logic",
+          all(x in ra for x in ("from \"/work/stack/adapter/result.mjs\"", "take(acc, ev)", "normalizeStatus(", "buildResult(", "permissionBody(", "ledgerLine("))
+          and "Access denied:" not in ra.split("import { ledgerLine }")[1])
+    ex = importlib.import_module("execution")
+    deny = json.loads((fx / "grok-deny" / "result.json").read_text())
+    ok = json.loads((fx / "claude-auto" / "result.json").read_text())
+    check("adapter: a DENIED by an MCP rule says which rule, not \"{}\"",
+          ex.failure_of(deny) == "Access denied: Scoped rule 2", ex.failure_of(deny))
+    check("adapter: a completed call has no failure line", ex.failure_of(ok) == "")
+    check("adapter: a permission refused by a person is named",
+          ex.failure_of({"status": "DENIED", "permissions": [{"outcome": "reject_once", "denial": "denied", "title": "Write"}]}) == "permission denied: Write")
+    check("adapter: the adapter's own failure wins",
+          ex.failure_of({"status": "FAILED", "failure": {"message": "ENOENT: config.toml"}}) == "ENOENT: config.toml")
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -702,6 +731,7 @@ door_controls()
 instance_controls()
 panel_controls()
 next_controls()
+adapter_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

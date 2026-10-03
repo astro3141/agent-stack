@@ -1,0 +1,26 @@
+{
+ "status": "COMPLETED",
+ "provider": "grok",
+ "principal": "novel-reviewer",
+ "model_route": "direct",
+ "run_id": "ud2-grok50-n50a-grok",
+ "workspace": "/ws/ud2-grok50",
+ "produced_path": "/ws/ud2-grok50/review_r7.json",
+ "produced": true,
+ "produced_stale": false,
+ "model_session_reported": "grok-4.7",
+ "model_adapter_reported": "",
+ "model_served": "unknown",
+ "approvals_requested": 0,
+ "mcp_rule_denials": 0,
+ "retryable_elsewhere": false,
+ "evidence_dir": "/work/evidence/p281/ud2-grok50-n50a-grok",
+ "profile": "research-default",
+ "attempts": 1,
+ "failure": "",
+ "ledger_error": "",
+ "measurements": {
+  "wall_ms": 10974
+ },
+ "contract": 1
+}

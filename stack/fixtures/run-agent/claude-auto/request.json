@@ -1,0 +1,12 @@
+{
+ "run_id": "f26adcb9-claude",
+ "provider": "claude",
+ "cwd": "/ws/f26adcb9",
+ "login": "claude",
+ "profile": "research-default",
+ "timeout_ms": 600000,
+ "native_tools": false,
+ "evidence_dir": "/work/evidence/p281/f26adcb9-claude",
+ "model_route": "direct",
+ "prompt": "Create a file named verify.txt in the directory /ws/f26adcb9 containing exactly: V1. Use the write_file tool from the preloop MCP server with the absolute path. Do not do anything else."
+}

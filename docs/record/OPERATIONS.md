@@ -4197,3 +4197,32 @@ grok, principal novel-reviewer, write {WS}/zz_not_allowed.json  DENIED, mcp_rule
 grok's native `grep` (and `list_dir`) ran. The posture denies writes, shell and the web, and
 leaves reads alone. Every cold-role grok run on 1.0.40 since 09-23 shows the same, so 1.0.46
 reads the posture as 1.0.40 did. §64's cold role completed through Preloop on this run.
+\n\n## 74. The adapter, cut where a recorded run can check it (#27, 2026-10-03)
+
+The hold on #27 was the fixture: `run-agent.mjs` runs only with a model call, and cutting it
+blind was the kind of refactoring this repository does not do. The operator recorded four runs
+on the instance after update day 2 — claude and codex `auto`, grok's §50 pair (allowed, denied) —
+masked them, and posted them on #27; they live in `stack/fixtures/run-agent/` with their index.
+
+**Cut.** The model-free halves moved out of the 497-line file into `stack/adapter/`:
+`result.mjs` (what a turn's events fold into — text, usage, the MCP denials Preloop answers as
+ordinary results; how the status is decided; the one result shape; the exit code),
+`permissions.mjs` (what a permission request says to Preloop; how the answer, or its absence,
+becomes an outcome; the locally decided cases) and `ledger.mjs` (the codex session line).
+`run-agent.mjs` imports them and keeps the process, the credentials, the HTTP call and the
+providers — 430 lines. The provider table and the module-level `LOGIN`/`PRINCIPAL` stay; they
+are the half a model call measures (#27's steps 2–3 for them, at the full level).
+
+**Measured.** `stack/adapter/replay.mjs` feeds each recorded `events.jsonl` through the fold and
+rebuilds the result from the recorded inputs: text equal, usage count equal, MCP denials equal
+(grok-deny: one, "Access denied: Scoped rule 2"), status equal, every field of `result.json`
+equal — **4/4**. The static level runs it on the host, review_controls at the stack level.
+
+**Found by the fixtures.** grok-deny's `execution.json` said `failure: "{}"` — the step's failure
+line was the JSON of nothing for a DENIED, because the adapter's result had no `failure` and no
+turn error and the expression fell through to `json.dumps({})`. The line is `execution.failure_of`
+now: the adapter's own message, else the turn's error, else the MCP rule denial's text, else the
+refused permission; "" for a completed call. On the fixtures: grok-deny reads the rule, claude-auto
+reads nothing.
+
+Controls: review_controls 127/127 (7 new), static 12/12.

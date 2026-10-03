@@ -1,32 +1,4 @@
-# 남은 결정 4개와 그 근거 (2026-10-02)
-
-> **진행 상황 (같은 날, 추천대로 진행):** PR [#9](https://github.com/astro3141/agent-stack/pull/9)
-> 열림. update day 1차 핀 세 개(codexbar 0.70.0, claude-code 2.1.287, supergateway 4.1.0)는 각각
-> 커밋되어 cold-start-linux로 측정 중이며, 인스턴스 측 `release.sh update` → `verify.sh --level
-> full` → claude N7은 운영자 몫. 후보 6은 계약(docs/packages.md "State that outlives a run",
-> `requires.state`, `packages.py state`)으로, 후보 8은 안내("Child runs, and waiting on the world")로
-> 닫혔고, 후보 8의 측정 한 건(자식 run이 record에 부모 옆에 보이는가)은 아직 남아 있다.
-
-두 번째 설치(Windows)가 full 21/21로 끝난 시점에 남은 것들. 각 항목에 **무엇이 결정인지**, 그
-결정을 내릴 **자료**(패키지 제작자 관점은 docs/record/PACKAGE-MATRIX-*.md에 기록된 사실, in-tree
-패키지 제작자로서의 의견, 같은 부품의 실제 방향은 소스·체인지로그), 그리고 **추천**을 적는다.
-자료의 출처는 전부 이 날 읽은 것이다: Conductor 저장소(핀 87f7788, 2026-09-18 / head 0.1.41),
-CodexBar 저장소(핀 v0.63.0 / head 0.70), npm 레지스트리, 각 어댑터의 GitHub 릴리스 페이지,
-Claude Code CHANGELOG.
-
-## 결정 1. PR을 지금 여는가
-
-**사실.** 브랜치 `claude/github-agent-stack-review-ng7u7t`는 main보다 33커밋 앞서 있다. 마지막
-코드 커밋(8fa4fa3)은 CI run 22 green, Windows full 21/21, 리눅스 cold start green. 브랜치의
-내용은 §63·§64에 측정과 함께 기록돼 있다.
-
-**추천: 연다.** 더 쌓을수록 리뷰가 불가능해지고, 남은 항목(아래)은 전부 이 브랜치와 독립이다.
-
-## 결정 2. update day 첫 회 — 무엇을 올리고 무엇을 보류하는가
-
-drift가 newer로 보고한 것 전부와, 각각이 **무엇을 바꿨는지** 읽은 결과.
-
-| 컴포넌트 | pinned → latest | 읽은 것 | 위험 | 추천 |
+#\g<1>fixture 받음, 모델 없는 절반 분리·재생 4/4(§74); provider 표와 LOGIN/PRINCIPAL은 full 레벨 \2| 컴포넌트 | pinned → latest | 읽은 것 | 위험 | 추천 |
 |---|---|---|---|---|
 | codexbar | 0.63.0 → 0.70.0 | 0.64~0.70: Claude 읽기 안정화 세 건 — 일시적 타임아웃 뒤 CLI 소스 유지(#4129), "usage insights가 보일 때 실제 쿼터 값을 기다림"(#4115/#4083), 정규 윈도우가 없을 때 모델별 주간 쿼터로 대체(#4126). Grok 빌링 윈도우 구조는 변화 없음(GrokCreditsProxyFetcher·GrokStatusProbe 핀과 head 동일) | 낮음 | **1차에 포함.** §64의 429 사례를 CodexBar 쪽에서도 완화하는 변경이다 |
 | claude-code | 2.1.278 → 2.1.287 | 2.1.281~287: 프로젝트 `permissions.deny`(우리가 native tools를 끄는 방법)에 변화 없음. managed settings 추가(`allowedProviders`, `allowManagedPermissionRulesOnly`), headless MCP 재시도, OAuth 만료 메시지 개선 | 낮음 | **1차에 포함**, N7(native write off) 1회 측정 |

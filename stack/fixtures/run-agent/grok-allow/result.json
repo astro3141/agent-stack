@@ -1,0 +1,323 @@
+{
+ "run_id": "ud2-grok50-n50a-grok",
+ "status": "COMPLETED",
+ "hook": {
+  "principal": "claude-code-e7bab34cd7fd",
+  "source": "claude_code",
+  "matched": false
+ },
+ "retryable_elsewhere": false,
+ "provider": "grok",
+ "mcp_principal": "novel-reviewer",
+ "model": {
+  "requested": null,
+  "session_reported": "grok-4.7",
+  "served": "unknown"
+ },
+ "permissions": [],
+ "mcp_denials": [],
+ "native_tools": false,
+ "model_route": "direct",
+ "turn": {
+  "status": "completed",
+  "stopReason": "end_turn",
+  "_meta": {
+   "sessionId": "00000000-0000-0000-0000-000000000008",
+   "requestId": "00000000-0000-0000-0000-000000000009",
+   "promptId": "00000000-0000-0000-0000-000000000009",
+   "totalTokens": 17133,
+   "modelId": "grok-4.7",
+   "inputTokens": 17084,
+   "outputTokens": 42,
+   "cachedReadTokens": 16896,
+   "reasoningTokens": 18,
+   "usage": {
+    "inputTokens": 50588,
+    "outputTokens": 301,
+    "totalTokens": 50889,
+    "cachedReadTokens": 33408,
+    "cacheCreationTokens": 0,
+    "reasoningTokens": 209,
+    "modelCalls": 3,
+    "apiDurationMs": 8667,
+    "costUsdTicks": 179758000,
+    "modelUsage": {
+     "grok-4.7-build": {
+      "inputTokens": 50588,
+      "outputTokens": 301,
+      "totalTokens": 50889,
+      "cachedReadTokens": 33408,
+      "cacheCreationTokens": 0,
+      "reasoningTokens": 209,
+      "modelCalls": 3,
+      "apiDurationMs": 8667,
+      "costUsdTicks": 179758000
+     }
+    },
+    "numTurns": 3
+   }
+  }
+ },
+ "failure": null,
+ "text": "Wrote `{\"ok\": true}` to `/ws/ud2-grok50/review_r7.json`.",
+ "wall_ms": 10974,
+ "evidence_dir": "/work/evidence/p281/ud2-grok50-n50a-grok",
+ "ledger_error": null,
+ "status_raw": {
+  "lastRequestId": "ud2-grok50-n50a-grok-1",
+  "summary": "session=p281-ud2-grok50-n50a-grok:oneshot:00000000-0000-0000-0000-000000000010 backendSessionId=00000000-0000-0000-0000-000000000008 pid=21 open",
+  "acpxRecordId": "p281-ud2-grok50-n50a-grok:oneshot:00000000-0000-0000-0000-000000000010",
+  "backendSessionId": "00000000-0000-0000-0000-000000000008",
+  "models": {
+   "currentModelId": "grok-4.7",
+   "availableModelIds": [
+    "grok-4.7",
+    "grok-4.7-build-fast",
+    "grok-4.6",
+    "grok-4.5"
+   ],
+   "availableModels": [
+    {
+     "modelId": "grok-4.7",
+     "name": "Grok 4.7"
+    },
+    {
+     "modelId": "grok-4.7-build-fast",
+     "name": "Grok 4.7 Fast"
+    },
+    {
+     "modelId": "grok-4.6",
+     "name": "Grok 4.6"
+    },
+    {
+     "modelId": "grok-4.5",
+     "name": "Grok 4.5"
+    }
+   ]
+  },
+  "availableCommands": [
+   {
+    "name": "compact",
+    "description": "Compress conversation history to save context window",
+    "hasInput": false
+   },
+   {
+    "name": "always-approve",
+    "description": "Toggle always-approve mode (skip all permission prompts)",
+    "hasInput": true
+   },
+   {
+    "name": "flush",
+    "description": "Flush conversation memory to disk now",
+    "hasInput": false
+   },
+   {
+    "name": "dream",
+    "description": "Run memory consolidation (merge session logs into organized topics)",
+    "hasInput": false
+   },
+   {
+    "name": "memory",
+    "description": "Browse, view, and manage your memories",
+    "hasInput": false
+   },
+   {
+    "name": "context",
+    "description": "Show context window usage and session stats",
+    "hasInput": false
+   },
+   {
+    "name": "session-info",
+    "description": "Show session details (model, turns, context usage)",
+    "hasInput": false
+   },
+   {
+    "name": "feedback",
+    "description": "Send feedback about the current session",
+    "hasInput": true
+   },
+   {
+    "name": "deep-research",
+    "description": "Research with bounded parallel agents, cross-check evidence, and write a cited report",
+    "hasInput": true
+   },
+   {
+    "name": "workflow",
+    "description": "Launch a saved workflow, list runs, or manage a run (pause, resume, stop, save)",
+    "hasInput": true
+   },
+   {
+    "name": "goal",
+    "description": "Set, manage, or check an autonomous goal",
+    "hasInput": true
+   },
+   {
+    "name": "loop",
+    "description": "Run a prompt on a recurring interval",
+    "hasInput": true
+   },
+   {
+    "name": "build-with-ai",
+    "description": "Build AI apps on SpaceXAI (XAI_API_KEY + api.x.ai)",
+    "hasInput": true
+   },
+   {
+    "name": "code-review",
+    "description": "Run an extremely strict maintainability review for abstraction quality, giant files, and spaghetti-condition growth. Use for a deep code quality audit or an especially harsh maintainability review.",
+    "hasInput": false
+   },
+   {
+    "name": "create-skill",
+    "description": "Create a new Grok skill",
+    "hasInput": false
+   },
+   {
+    "name": "create-workflow",
+    "description": "Author a new multi-agent workflow",
+    "hasInput": false
+   },
+   {
+    "name": "design",
+    "description": "Run the full design-doc-writer and design-doc-reviewer loop until consensus. Produces a polished design document with a PR plan.",
+    "hasInput": true
+   },
+   {
+    "name": "execute-plan",
+    "description": "Execute a PR Plan DAG from a design document. Parses the plan, topologically sorts it, implements PRs in parallel using worktree-isolated subagents, runs mandatory orchestrator-level review, and assembles either a Graphite PR stack or a plain-git branch stack depending on tool availability.",
+    "hasInput": true
+   },
+   {
+    "name": "game-assets",
+    "description": "Engine-ready game art, 2D sprites to 3D models",
+    "hasInput": false
+   },
+   {
+    "name": "bundled:imagine",
+    "description": "Prompting and workflow guidance for Imagine image and video tools",
+    "hasInput": false
+   },
+   {
+    "name": "implement",
+    "description": "Run the full implement-review-fix loop using implementer and reviewer personas. Supports effort-based multi-reviewer scaling (2–7 reviewers) with automatic specialization selection. Includes memory-based feedback loop that learns from past review patterns. Loops until all reviewers find 0 issues of any severity.",
+    "hasInput": true
+   },
+   {
+    "name": "learn",
+    "description": "Learn from your own Grok Build sessions and tune your setup: add skills for things you keep typing, fix stale skill instructions, and retire skills, plugins, or MCP servers you never use. Use on \"/learn\", \"learn from my traces\", \"what skills do I never use\". Not for summarizing sessions into notes or memory.",
+    "hasInput": true
+   },
+   {
+    "name": "long-running-background-tasks",
+    "description": "Required reading before you start, watch, or wait on anything that keeps running after you launch it — background jobs, watchers, scheduled loops, CI, pull requests, training runs, dev servers, long builds. Read it before you launch such work and before you report on its state. Saying where a running job stands counts as working on it. Use when: about to launch, supervise, inspect, diagnose, or report on work that keeps running after it is started.",
+    "hasInput": false
+   },
+   {
+    "name": "pr-babysit",
+    "description": "Monitor PRs, fix CI failures, address review comments (human and bot/automated), resolve merge conflicts, and restack stacks. Supports independent PRs, Graphite stacks, and GitHub stacked PRs (gh-stack). Optional ship lands a ready PR bottom-up when every job has passed and no comments remain open.",
+    "hasInput": true
+   },
+   {
+    "name": "resume-claude",
+    "description": "Continue from a recent Claude Code session",
+    "hasInput": true
+   },
+   {
+    "name": "resume-codex",
+    "description": "Continue from a recent Codex session",
+    "hasInput": true
+   },
+   {
+    "name": "resume-cursor",
+    "description": "Continue from a recent Cursor session",
+    "hasInput": true
+   },
+   {
+    "name": "review",
+    "description": "Run a reviewer subagent against your whole branch vs main, your uncommitted working state, a named branch, a single GitHub PR, or an entire Graphite/stacked-PR stack (one reviewer subagent per PR). A bare /review defaults to reviewing your uncommitted working state when the tree is dirty, or your whole branch vs main when the tree is clean. Main, local, and branch modes write a review file plus a summary to disk. PR and stack modes post the findings as a PENDING GitHub review for the user to inspect and submit through the UI. Use --main for an explicit clean-tree branch review, --stack for stacked PRs, --submit to publish immediately as COMMENT, or --approve to publish and approve; the default remains PENDING.",
+    "hasInput": true
+   },
+   {
+    "name": "skill-design-principles",
+    "description": "Concise, high-signal principles for writing and editing skills well. Use whenever authoring or editing a skill.",
+    "hasInput": false
+   },
+   {
+    "name": "statusline",
+    "description": "Configure the Grok Build status line.",
+    "hasInput": false
+   },
+   {
+    "name": "threejs-frame-conventions",
+    "description": "One frame for Three.js controls, camera, and facing",
+    "hasInput": false
+   },
+   {
+    "name": "learn-traces",
+    "description": "Workflow: Map-reduce a collected set of Grok Build sessions into a curated list of harness changes: new or edited skills, plugin enables, deletes",
+    "hasInput": true
+   }
+  ],
+  "details": {
+   "cwd": "/ws/ud2-grok50",
+   "lastUsedAt": "2026-10-03T00:17:12.581Z",
+   "closed": false,
+   "configOptions": [
+    {
+     "id": "model",
+     "name": "Model",
+     "category": "model",
+     "type": "select",
+     "currentValue": "grok-4.7",
+     "options": [
+      {
+       "value": "grok-4.7",
+       "name": "Grok 4.7"
+      },
+      {
+       "value": "grok-4.7-build-fast",
+       "name": "Grok 4.7 Fast"
+      },
+      {
+       "value": "grok-4.6",
+       "name": "Grok 4.6"
+      },
+      {
+       "value": "grok-4.5",
+       "name": "Grok 4.5"
+      }
+     ]
+    },
+    {
+     "id": "reasoning_effort",
+     "name": "Reasoning Effort",
+     "category": "thought_level",
+     "type": "select",
+     "currentValue": "high",
+     "options": [
+      {
+       "value": "xhigh",
+       "name": "Extra High",
+       "description": "Maximum reasoning for the hardest tasks."
+      },
+      {
+       "value": "high",
+       "name": "High",
+       "description": "Thorough reasoning and quality. Recommended."
+      },
+      {
+       "value": "medium",
+       "name": "Medium",
+       "description": "Strong quality with a faster turnaround."
+      },
+      {
+       "value": "low",
+       "name": "Low",
+       "description": "Fastest responses. Best for simple tasks."
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "usage_events": []
+}
