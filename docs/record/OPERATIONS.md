@@ -4762,4 +4762,4 @@ measurements and the candidate fixes; nothing was changed for it here.
 
 **Measured.** Resume: the table above, on the live instance. Rollback: refused as quoted; the fix's
 function on this host through review_controls (verifies / refuses naming claude / refuses naming
-preloop); review_controls 189/189, static 13/13 here; the cold start — run number below.
+preloop); review_controls 189/189, static 13/13 here; **cold-start run 80 green** (review 189/189 in the container, among them the two archive-check cases). The rollback itself: the live instance, after this merges.
