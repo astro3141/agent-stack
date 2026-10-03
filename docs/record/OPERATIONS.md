@@ -4817,4 +4817,13 @@ trial_controls 511/511, review_controls 189/189, auto PASS; novel-a held on clau
 window at 81 % ≥ 80 % — the day's measurements used it — and router_controls skipped for the same
 reason. That hold is the router doing its job, not a defect.
 
+**Candidate images left behind.** Going through what the day had left on the host, the operator
+found five `governed-runtime:cand-*` images, one per update. `update` builds the target revision
+in a throw-away worktree under that tag for one purpose, the `will change` comparison, and the
+image the stack then runs is compose's own build; nothing referenced the candidate afterwards and
+`cleanup_all` removed the worktree and the script copy but not the image. It removes the image
+now, on every exit path. The five already there are the operator's to remove by hand; whether new
+ones stop appearing is measured after the next live update (`docker image ls | grep cand-`), not
+by the cold start, which has no update path.
+
 **Measured, this addendum.** The rollback and the way back: the operator's outputs above, on the live instance. The printed note and the docs: review_controls 189/189, static 13/13 here; **cold-start run 82 green** on 1d7e042.
