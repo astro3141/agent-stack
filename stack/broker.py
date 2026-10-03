@@ -153,6 +153,8 @@ class H(BaseHTTPRequestHandler):
                "expected": str(req.get("expected") or "out.txt"),
                "run_id": str(req.get("run_id") or f"broker-{int(time.time())}"),
                "timeout_s": int(req.get("timeout_s") or 900),
+               # the retry number, digits or nothing: it names the call's evidence in the runner
+               "attempt": str(req.get("attempt") or "") if re.fullmatch(r"\d{0,3}", str(req.get("attempt") or "")) else "",
                "job_token": token, "mcp_url": SELF_MCP}
         try:
             r = urllib.request.Request(f"http://runner-{profile}:{RUNNER_PORT}/run",

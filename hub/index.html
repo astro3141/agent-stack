@@ -155,7 +155,7 @@
   <div class="card">
     <h2>승인 대기 (Preloop)</h2>
     <div id="appr" class="muted">불러오는 중…</div>
-    <div class="row muted">판정은 여기서 합니다. 판정의 이력과 그 근거가 된 정책은 <a href="http://localhost:3000" target="_blank" rel="noopener">Preloop 콘솔</a>이 주인입니다.</div>
+    <div class="row muted">판정은 여기서 합니다. 판정의 이력과 그 근거가 된 정책은 <a data-link="preloop" href="http://localhost:3000" target="_blank" rel="noopener">Preloop 콘솔</a>이 주인입니다.</div>
   </div>
 </section>
 
@@ -307,6 +307,18 @@ async function loadConfig() {
     return `<tr><td class="mono">${esc(t.target)}</td><td class="${k}">${l}</td><td class="muted">${esc(t.applied_at||"—")}</td><td class="bad">${esc(t.error||"")}</td></tr>`; }).join("");
 }
 
+// ---- the consoles' addresses: this instance's ports, from the ops API, never written here
+// (a second instance on the same machine has other ports; a fixed 127.0.0.1:5000 sent its MLflow
+// link to the first instance — review 3, OPERATIONS §79)
+let LINKS = {};
+function applyLinks() {
+  document.querySelectorAll("[data-link]").forEach((a) => { if (LINKS[a.dataset.link]) a.href = LINKS[a.dataset.link]; });
+}
+async function ensureLinks() {
+  if (LINKS.mlflow) return;
+  try { const o = await api("/api/dashboard"); LINKS = (o && o.links) || {}; applyLinks(); } catch (e) { /* the fallback stays */ }
+}
+
 // ---- approvals: the one thing here that cannot go on without a person
 // A run that is waiting on a person is the one thing here that stops until someone looks. It used
 // to be visible only on the tab that shows it: a lane waited its whole timeout while nobody was
@@ -336,6 +348,14 @@ async function loadApprovals() {
   let a;
   try { a = await api("/api/approvals"); } catch (e) { a = {error: String(e)}; }
   showWaiting(Array.isArray(a) ? a.length : 0, Array.isArray(a) ? "" : ((a && a.error) || "no answer"));
+  // A read that failed is said beside the table, not in its place: replacing the table dropped the
+  // reasons a person was typing (review 3, §79). The badge above already says the state is unknown.
+  if (!Array.isArray(a)) {
+    const why = `<span class="bad">승인 목록을 읽지 못했습니다 — ${esc((a && a.error) || "no answer")}</span>`;
+    const msg = $("#appr-msg");
+    if (msg) msg.innerHTML = why; else $("#appr").innerHTML = why;
+    return;
+  }
   // the refresh rebuilds the table; what a person was typing into it is kept (review 2026-10-02)
   const typed = {}; let focused = null;
   document.querySelectorAll(".appr-c").forEach((i) => { if (i.value) typed[i.dataset.id] = i.value; if (i === document.activeElement) focused = i.dataset.id; });
@@ -347,7 +367,7 @@ async function loadApprovals() {
         `<button class="act" data-appr="approve" data-id="${esc(r.id)}">승인</button>` +
         `<button class="sub" data-appr="decline" data-id="${esc(r.id)}">거부</button></td></tr>`).join("") +
       `</table><div class="row muted" id="appr-msg"></div>`
-    : (Array.isArray(a) ? "승인 대기 없음" : `<span class="bad">승인 목록을 읽지 못했습니다 — ${esc((a && a.error) || "no answer")}</span>`);
+    : "승인 대기 없음";
   document.querySelectorAll(".appr-c").forEach((i) => { if (typed[i.dataset.id]) i.value = typed[i.dataset.id]; if (focused === i.dataset.id) i.focus(); });
   document.querySelectorAll("[data-appr]").forEach((b) => b.onclick = () => decideApproval(b));
 }
@@ -469,6 +489,7 @@ async function loadOverview() {
      `<span class="warn">${esc(el.mcp_servers_error || "없음")}</span>`) + `</div>`;
 
   const L = o.links || {};
+  LINKS = L; applyLinks();
   $("#dash-links").innerHTML =
     `<a class="sub" href="${esc(L.preloop)}" target="_blank" rel="noopener">Preloop 콘솔 — 정책·주체·승인 이력</a>` +
     `<a class="sub" href="${esc(L.mlflow)}" target="_blank" rel="noopener">MLflow — 실행 기록·비교 (부모 실행 아래 호출별 자식)</a>` +
@@ -513,16 +534,19 @@ function renderInputs() {
   // purpose: the value is the operator's, it goes in a git-ignored file on the host, and this panel
   // neither reads it nor offers a box to type it into (OPERATIONS §43).
   const needs = wf.needs_env || [];
-  const lg = wf.login || null;
-  $("#wf-needs").innerHTML = needs.length === 0 ? "" :
+  // `login` is {} for a package that declares none (packages.py login_of), and {} is true here:
+  // the button was then looked for on a package with nothing to need, where the line above had
+  // rendered nothing, and the whole render stopped there — hello-lane showed no command (review 3).
+  const lg = wf.login && wf.login.package ? wf.login : null;
+  $("#wf-needs").innerHTML = (needs.length === 0 ? "" :
     `<div>이 패키지가 환경에서 필요한 것 — 값은 호스트의 파일에, 이 화면은 유무만 봅니다</div>` +
     needs.map((n) =>
       `<div>${n.present ? "있음" : "<b>없음</b>"} <code>${esc(n.name)}</code> ` +
-      `<span class="muted">${esc(n.file)}${n.purpose ? " — " + esc(n.purpose) : ""}</span></div>`).join("")
+      `<span class="muted">${esc(n.file)}${n.purpose ? " — " + esc(n.purpose) : ""}</span></div>`).join(""))
     + (lg ? `<div>이 패키지는 자체 로그인을 선언합니다 <span class="muted">${esc(lg.purpose || "")}</span>
          <button class="sub" id="pkg-login" data-pkg="${esc(lg.package)}">연결</button>
          <span id="pkg-login-state" class="muted"></span></div>` : "");
-  if (lg) { pkgLoginState(lg.package); $("#pkg-login").onclick = () => pkgLogin(lg.package); }
+  if (lg && $("#pkg-login")) { pkgLoginState(lg.package); $("#pkg-login").onclick = () => pkgLogin(lg.package); }
   // the inputs it declares, as text: the values go on the command line, not into this page
   $("#wf-inputs").innerHTML = (wf.inputs || []).map((i) =>
       `<div class="row"><code>${esc(i.name)}</code>${i.required ? " (필수)" : ""}` +
@@ -530,9 +554,21 @@ function renderInputs() {
       (i.description ? ` <span class="muted">— ${esc(i.description)}</span>` : "") + `</div>`).join("")
     || `<div class="muted">입력 없음</div>`;
   const name = $("#wf").value, prof = $("#profile") ? $("#profile").value : "";
+  // The command is for copying, so it has to run as printed: a default with a space
+  // (`text=from the parent`) reached the parser as `text=from`, and a placeholder's angle brackets
+  // are shell syntax (review 3, OPERATIONS §79). Values are quoted; a placeholder is quoted and named.
+  const ph = [];
+  const slot = (what) => { ph.push(what); return `'<${what}>'`; };
+  const parts = [`scripts/cycle.sh`, shq(name || ""), prof ? shq(prof) : slot("profile")]
+    .concat((wf.inputs || []).map((i) => `${i.name}=${i.default ? shq(i.default) : slot(i.name)}`));
   $("#wf-command").textContent = name
-    ? `scripts/cycle.sh ${name} ${prof || "<profile>"}` + (wf.inputs || []).map((i) => ` ${i.name}=${i.default || "<" + i.name + ">"}`).join("")
+    ? parts.join(" ") + (ph.length ? `\n# ${ph.map((w) => "<" + w + ">").join(", ")}: 값으로 바꿔 넣습니다` : "")
     : "";
+}
+// a value as the shell takes it: bare when it is only safe characters, single-quoted otherwise
+function shq(v) {
+  v = String(v);
+  return /^[A-Za-z0-9_./:=@%+,-]+$/.test(v) ? v : `'${v.replace(/'/g, `'\\''`)}'`;
 }
 // A package's own login, driven exactly like a provider's (OPERATIONS §44): start it, show the URL
 // and the code the flow issued, hand back the one-time code the operator got from the service. The
@@ -598,7 +634,9 @@ async function showRun(id) {
                 waiting && waiting.length ? `Preloop 승인 대기 중 (${waiting.map((w) => w.tool + " " + (w.target||"")).join(", ")}) — 운영 탭에서 판정` :
                 r.state === "interrupted" ? "중단됨 — 실행이 끝나기 전에 실행기가 사라졌습니다(재시작 등). 자동 재개하지 않습니다." :
                 r.termination_reason || (r.state === "running" ? "진행 중" : "");
-    const ml = r.mlflow && r.mlflow.run_id ? `<a href="http://127.0.0.1:5000/#/experiments/${esc(r.mlflow.experiment_id)}/runs/${esc(r.mlflow.run_id)}" target="_blank" rel="noopener">MLflow 기록 열기</a>` : "—";
+    await ensureLinks();
+    const mlBase = LINKS.mlflow || "http://127.0.0.1:5000";
+    const ml = r.mlflow && r.mlflow.run_id ? `<a href="${esc(mlBase)}/#/experiments/${esc(r.mlflow.experiment_id)}/runs/${esc(r.mlflow.run_id)}" target="_blank" rel="noopener">MLflow 기록 열기</a>` : "—";
     el.innerHTML = `<h2>실행 ${esc(r.ui_id)} <span class="chip">${r.state === "running" ? "진행 중" : r.state === "interrupted" ? "중단됨" : "종료"}</span></h2>
       <div class="steps">${(r.steps||[]).map((s, i, a) => `<span class="${r.state === "running" && i === a.length-1 ? "cur" : ""}">${esc(s.step)}</span>`).join("")}</div>
       <div class="kv" style="margin-top:12px">
@@ -609,7 +647,7 @@ async function showRun(id) {
         <div>기록</div><div>${ml} ${r.mlflow && r.mlflow.error ? `<span class="bad">기록 오류: ${esc(r.mlflow.error)}</span>` : ""}</div>
         <div>출력</div><div class="mono">${esc(JSON.stringify(o))}</div>
         ${r.error ? `<div>오류</div><div class="bad mono">${esc(r.error)}</div>` : ""}
-        <div>추적</div><div class="muted">Conductor 실행 ${esc(r.conductor_run||"—")} · <a href="http://localhost:3000" target="_blank" rel="noopener">Preloop 콘솔</a></div>
+        <div>추적</div><div class="muted">Conductor 실행 ${esc(r.conductor_run||"—")} · <a href="${esc(LINKS.preloop || "http://localhost:3000")}" target="_blank" rel="noopener">Preloop 콘솔</a></div>
       </div>`;
     if (r.state !== "running") { clearInterval(runTimer); loadRuns(); }
   };

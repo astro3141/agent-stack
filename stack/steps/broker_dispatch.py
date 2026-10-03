@@ -54,7 +54,10 @@ timeout_s = int(((settings.profile(prof_name) or {}).get("execution")
 req = {"role": principal, "provider": provider, "model_route": model_route or "direct",
        "label": label, "prompt": prompt, "expected": expected,
        "profile_name": prof_name, "login": login, "run_id": run,
-       "timeout_s": timeout_s}
+       "timeout_s": timeout_s,
+       # a retry's number names the call's evidence (agent_task.py); brokered, it has to travel
+       # with the request or the second attempt overwrites the first (review 3, §79)
+       "attempt": os.environ.get("AGENTSTACK_ATTEMPT", "")}
 try:
     r = urllib.request.Request(BROKER + "/dispatch", data=json.dumps(req).encode(),
                                headers={"content-type": "application/json"})

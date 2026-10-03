@@ -611,7 +611,7 @@ def panel_controls():
     check("panel: no start and no precheck on the page",
           'id="start"' not in hub and 'id="precheck"' not in hub and 'api("/api/runs", {' not in hub)
     check("panel: the page shows the command instead, and says it does not start",
-          'id="wf-command"' in hub and "scripts/cycle.sh ${name}" in hub and "이 화면은 시작하지 않습니다" in hub)
+          'id="wf-command"' in hub and "`scripts/cycle.sh`, shq(name" in hub and "이 화면은 시작하지 않습니다" in hub)
     check("panel: the ops API has no start endpoint", 'run_workflow.py", "start"' not in srv
           and "POST /api/runs  body" not in srv)
     check("panel: stopping a run that is going is still the panel's", "/stop" in srv and "data-stop" in hub)
@@ -742,12 +742,12 @@ def update_controls():
     comp = (WORK / "docker" / "compose.poc.yaml").read_text()
     check("image: the replay service runs Conductor's venv where the image puts it",
           'entrypoint: ["/opt/uv/tools/conductor-cli/bin/python"]' in comp and "/home/agent/.local" not in comp)
-    check("release: no toolchain archive, no staging, no swap, no flag — a release is revision + images + configuration",
-          all(x not in rel for x in ("toolchain.tar.gz -C", "verify_staged", "swap_staged", "keep_or_restore_toolchain",
+    check("release: a record carries no toolchain archive, an update stages and swaps nothing and has no flag — a release is revision + images + configuration",
+          all(x not in rel for x in ("tar czf /out/toolchain.tar.gz", "verify_staged", "swap_staged", "keep_or_restore_toolchain",
                                      "REPLACE_TOOLCHAIN=1", "VOLUME_TOOLS", "refusing an update whose toolchain"))
           and "format=3" in rel and 'say "will change $t"' in rel)
-    check("release: a record from before #34 still rolls back — its archive is named and left alone",
-          'toolchain.tar.gz" ] || say "toolchain archive"' in rel)
+    check("release: a record from before #34 still rolls back — its archive is restored into the volume, verified first (§79)",
+          'if [ -f "$SRC/toolchain.tar.gz" ]; then' in rel and "OLD_TOOLCHAIN=1" in rel)
     ud = (WORK / "docs" / "update-day.md").read_text()
     check("docs: update-day.md has no flag and says the rebuild changes every tool",
           "--replace-toolchain]" not in ud and "There is\nno flag" in ud.replace("There is no flag", "There is\nno flag")
@@ -787,6 +787,121 @@ def update_controls():
           (r.returncode, states, out[-1:], r.stderr[-300:]))
 
 
+# ---------------------------------------------------------------- 12. review 3: the contract across repeat, resume, rollback (§79)
+def review3_controls():
+    """The six findings of the third review, each reproduced without a model where it can be."""
+    import tempfile, types
+    # (2) a call made twice is two calls: the second's evidence sits beside the first's
+    at = (HERE / "steps" / "agent_task.py").read_text()
+    src = at[at.index("def _own_evidence_dir(base):"):at.index("    return rid, f\"{root}/{rid}\"") + len("    return rid, f\"{root}/{rid}\"")]
+    with tempfile.TemporaryDirectory() as root:
+        ns = {"os": os, "RT": {"paths": {"evidence_root": root}}}
+        exec(src, ns)
+        own = ns["_own_evidence_dir"]
+        first = own("run-repair-claude")
+        check("calls: the first call of a label takes the plain name", first[0] == "run-repair-claude", first)
+        os.makedirs(first[1]); Path(first[1], "execution.json").write_text("{}")
+        second = own("run-repair-claude")
+        os.makedirs(second[1]); Path(second[1], "result.json").write_text("{}")
+        third = own("run-repair-claude")
+        check("calls: the same label again is -r2, then -r3 — never the same directory",
+              (second[0], third[0]) == ("run-repair-claude-r2", "run-repair-claude-r3"), (second[0], third[0]))
+        os.makedirs(f"{root}/run-x-codex")            # an empty directory is this call's own, not a repeat
+        check("calls: an empty directory left by a door that re-executed is not read as a repeat",
+              own("run-x-codex")[0] == "run-x-codex")
+        retry = own("run-repair-claude-a2")
+        check("calls: a retry's own name (-a2) is kept and repeats under it (-a2-r2)",
+              retry[0] == "run-repair-claude-a2" and (os.makedirs(retry[1]), Path(retry[1], "x").write_text(""), own("run-repair-claude-a2")[0])[2] == "run-repair-claude-a2-r2")
+    check("calls: the name is decided after the door, by the process that makes the call",
+          at.index("broker_dispatch.py\"] + sys.argv[1:])") < at.index("run_id, evid = _own_evidence_dir(run_id)") < at.index("os.makedirs(evid, exist_ok=True)"))
+    check("calls: the retry number travels through the broker to the runner's environment",
+          '"attempt": os.environ.get("AGENTSTACK_ATTEMPT", "")' in (HERE / "steps" / "broker_dispatch.py").read_text()
+          and '"attempt": str(req.get("attempt") or "")' in (HERE / "broker.py").read_text()
+          and '"AGENTSTACK_ATTEMPT": str(job["attempt"])' in (HERE / "profile_runner.py").read_text())
+    check("calls: the adapter's own refresh retry keeps the first attempt — its result file, its cost, both outcomes",
+          'os.path.join(evid, "result.a1.json")' in at and "t1, w1 = _cost(first)" in at and '"attempt_outcomes": [first.get("status"' in at)
+    check("calls: the trajectory still counts a retry that was also repeated",
+          r'-a\d+(?:-r\d+)?$' in (HERE / "trajectory.py").read_text())
+
+    # (3) one execution named twice is one record, the evidence whole and the passed fields on it
+    rec_src = (HERE / "steps" / "record.py").read_text()
+    with tempfile.TemporaryDirectory() as root:
+        rt = {"paths": {"evidence_root": root, "workspace_root": root, "logins_root": root}}
+        gen = Path(root) / "config" / "generated"; gen.mkdir(parents=True)
+        (gen / "runtime.json").write_text(json.dumps(rt))
+        ex = importlib.import_module("execution")
+        d = Path(root) / "r1-E1-claude"; d.mkdir()
+        ex.write(str(d), ex.record(run_id="r1-E1-claude", provider="claude", status="COMPLETED", produced=True,
+                                   evidence_dir=str(d), measurements={"total_tokens": 300, "wall_ms": 10}, model_served="m"))
+        env = {**os.environ, "AGENTSTACK_ROOT": root, "CONDUCTOR_SELF_RUN_ID": "r1"}
+        code = ("import json,sys; sys.path.insert(0,'/work/stack'); sys.path.insert(0,'/work/stack/steps'); import record as R; "
+                "ex,err=R.executions_of({'execute': {'run_id':'r1-E1-claude','provider':'claude','status':'COMPLETED'}}, 'r1'); "
+                "print(json.dumps([ex, err]))").replace("/work/stack", str(HERE))
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=60)
+        try:
+            exs, errs = json.loads(r.stdout.strip().splitlines()[-1])
+        except Exception:
+            exs, errs = [], [r.stderr[-300:]]
+        check("record: a partial `execute` and the evidence directory are one record with the evidence's measurements",
+              len(exs) == 1 and exs[0].get("measurements", {}).get("total_tokens") == 300 and exs[0].get("model_served") == "m"
+              and "model_session_reported" in exs[0], (exs, errs))
+
+    # (4) a resumed run is a new segment of the same log; the parent travels with a resume
+    rv = importlib.import_module("runevents")
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+        for e in [{"type": "agent_started", "data": {"agent_name": "a"}, "timestamp": "t1"},
+                  {"type": "workflow_failed", "data": {"output": {"x": 1}}, "timestamp": "t2"},
+                  {"type": "agent_started", "data": {"agent_name": "b"}, "timestamp": "t3"}]:
+            f.write(json.dumps(e) + "\n")
+        path = f.name
+    v = rv.read(path)
+    check("resume: a step that starts after a failure is read as a run that is going again — not ended, no stale output",
+          v["ended"] is False and v["completed_ok"] is False and v["output"] is None and v["current_step"] == "b" and v["segment"] == 1 and len(v["steps"]) == 2,
+          {k: v[k] for k in ("ended", "output", "current_step", "segment")})
+    with open(path, "a") as f:
+        f.write(json.dumps({"type": "workflow_completed", "data": {"output": {"y": 2}}, "timestamp": "t4"}) + "\n")
+    v = rv.read(path)
+    check("resume: the segment's own end is the run's end", v["ended"] and v["completed_ok"] and v["output"] == {"y": 2})
+    os.unlink(path)
+    check("resume: the saved parent is in a resumed run's environment",
+          '"AGENTSTACK_PARENT_RUN": str(meta.get("parent") or "")' in (HERE / "run_workflow.py").read_text())
+
+    # (5) an observation directory holds this collection's files and no other's
+    ad = importlib.import_module("admission")
+    with tempfile.TemporaryDirectory() as root:
+        obs = Path(root) / "obs"; obs.mkdir(); (obs / "claude.json").write_text('{"stale": true}')
+        err = ad.collect({"model_route": {}, "login": {}, "reuse_s": 0}, str(obs), timeout=0.001)
+        check("admission: a collection that failed leaves no earlier file for the router to read",
+              bool(err) and not list(obs.glob("*.json")), (err, [p.name for p in obs.glob("*")]))
+
+    # (1) a rollback to a release from before #34 restores its toolchain archive into the volume
+    rel = (WORK / "scripts" / "release.sh").read_text()
+    check("rollback: a pre-#34 archive is unpacked and verified (claude, conductor, preloop) before anything moves",
+          "tar xzf /in/toolchain.tar.gz -C /vol/.local.new" in rel and "for t in claude conductor preloop; do" in rel
+          and rel.index("for t in claude conductor preloop; do") < rel.index('docker stop "$AGENT" >/dev/null 2>&1 || true\n  if [ "$OLD_TOOLCHAIN" = 1 ]'))
+    check("rollback: the swap into /home/agent/.local happens only after everything verified, keeps what was there, and clears it after the checks pass",
+          "mv /vol/.local.new /vol/.local" in rel and ".local.old" in rel
+          and rel.index('[ "$OLD_TOOLCHAIN" = 0 ] || docker run --rm -v "$STACK-agent-home:/vol" alpine rm -rf /vol/.local.old')
+              > rel.index("reapply_policy || exit 1\n  [ \"$OLD_TOOLCHAIN\""))
+    check("rollback: nothing says the archive is left alone any more", "not used; the kept images carry the toolchain" not in rel)
+
+    # (6) the command a person copies runs as printed; the first-use path in the docs runs
+    hub = (WORK / "hub" / "index.html").read_text()
+    check("hub: command values are shell-quoted and a placeholder is quoted and named",
+          "function shq(v)" in hub and "slot(i.name)" in hub and "값으로 바꿔 넣습니다" in hub and '${i.default || "<" + i.name + ">"}' not in hub)
+    check("hub: the package login line does not depend on the needs list, and an empty login object is no login",
+          "const lg = wf.login && wf.login.package ? wf.login : null;" in hub and 'if (lg && $("#pkg-login"))' in hub)
+    check("hub: the consoles' addresses come from the ops API — no fixed MLflow port in the run detail",
+          "http://127.0.0.1:5000/#/experiments" not in hub and "await ensureLinks();" in hub and 'data-link="preloop"' in hub)
+    check("hub: a failed read of the approvals leaves the table and its drafts in place",
+          "if (!Array.isArray(a)) {" in hub and hub.index("if (!Array.isArray(a)) {") < hub.index("const typed = {}; let focused = null;"))
+    inst = (WORK / "docs" / "install.md").read_text()
+    m = re.search(r"run_workflow\.py start (\S+) ", inst)
+    check("docs: the install example declares the package before running it, and its run id is one run_workflow.py accepts",
+          "packages.local.yaml" in inst and "scripts/packages.sh install" in inst and bool(m) and re.fullmatch(r"[a-z0-9-]{6,40}", m.group(1) or "") is not None,
+          m.group(1) if m else None)
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -803,6 +918,7 @@ panel_controls()
 next_controls()
 adapter_controls()
 update_controls()
+review3_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

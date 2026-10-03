@@ -139,13 +139,29 @@ def executions_of(payload, cid=None):
             else:
                 errors.append(f"receipt member {label}: no execution record")
     found.extend(from_evidence(cid if cid is not None else os.environ.get("CONDUCTOR_SELF_RUN_ID", "")))
-    seen, unique = set(), []
-    for e in found:                       # a receipt and an `execute` can name the same execution
-        if e["run_id"] in seen:
+    # A receipt, an `execute` and the evidence directory can all name the same execution. They are
+    # one record: every field any of them has, a later (fuller) source filling what an earlier one
+    # left empty — the evidence directory comes last and is the step's own whole record. Keeping
+    # the first mention alone let a workflow that passed `run_id/provider/status` hide the
+    # measurements its own evidence held, and a reader then met a KeyError (review 3, §79).
+    by_id, order = {}, []
+    for e in found:
+        rid = e["run_id"]
+        if rid not in by_id:
+            by_id[rid] = execution.normalize(e)
+            order.append(rid)
             continue
-        seen.add(e["run_id"])
-        unique.append(e)
-    return unique, errors
+        cur = by_id[rid]
+        for k, v in e.items():
+            if v in (None, "", [], {}):
+                continue
+            if k == "measurements" and isinstance(v, dict):
+                cur["measurements"] = {**(cur.get("measurements") or {}), **v}
+            elif k == "member" and cur.get("member"):
+                continue                  # the receipt's name for the lane, over a directory's
+            else:
+                cur[k] = v
+    return [by_id[r] for r in order], errors
 
 
 def numbers(d):

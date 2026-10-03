@@ -415,7 +415,10 @@ def cmd_resume(ui):
                  "launcher_pid": os.getpid(), "instance": instance_id()})
     meta_path(ui).write_text(json.dumps(meta))
     argv = ["conductor", "--silent", "resume", "--from", str(cps[-1]), "--no-interactive"]
-    env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor")}
+    env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor"),
+           # the parent travels with a resumed run as it did with the first start, so the record
+           # step tags the same parent the panel shows (review 3, §79)
+           "AGENTSTACK_PARENT_RUN": str(meta.get("parent") or "")}
     with open(d / "run.log", "ab") as log:
         rc = run_conductor(ui, argv, env, log)
     meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})

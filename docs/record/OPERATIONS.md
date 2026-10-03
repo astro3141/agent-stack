@@ -4464,3 +4464,42 @@ no principal) COMPLETED, produced: true, tools: mcp.preloop.write_file ×1; veri
 The empty file the bootstrap now seeds is what the Preloop CLI needed to see codex; its onboarding
 then wrote the entry the adapter's own-login path reads. #37 is closed by this. The operator's
 logs are in `evidence/issue37/` on their host.
+
+## 79. The third review, verified: the contract across repeat, resume and rollback (2026-10-03)
+
+The third external review, against 0a0536b, read the structure as improved and the remaining
+weakness as one of contract, not of modules: "the meaning of a run id and a state does not match
+between file names, environment variables, logs and HTTP requests." Six findings, two P1. Each was
+read back to the code before anything was changed; all six held.
+
+| # | finding | read | fixed |
+|---|---|---|---|
+| 1 | P1 — a rollback to a release from before #34 ignores its `toolchain.tar.gz`; that revision's tools lived in the volume, and an instance that followed `up.sh`'s note has removed them | **holds.** §76 said "the kept images carry the same tools" — true of the image, false of what runs: the volume masks `/home/agent`. §76 was wrong on this line | `release.sh rollback` unpacks the archive into `.local.new`, verifies claude, conductor and preloop are in it, and only after every other check swaps it into `/home/agent/.local` (a copy that was there is kept as `.local.old` until the checks pass) |
+| 2 | P1 — the call id is `run-label-provider`: the same step called again writes the same `execution.json`; the broker is not told the attempt; the adapter's refresh retry keeps only `attempts=2` | **holds**, all three. Reproduced by the reviewer: 100 and 200 tokens left one record of 200 | `agent_task.py` names a second call of a label `-r2`, `-r3` … (decided after the door, so the process that makes the call names it); `broker_dispatch` → `broker` → `profile_runner` carry `attempt` into the runner's environment; the refresh retry keeps the first attempt's `result.a1.json`, sums both attempts' tokens and wall time, and records `attempt_outcomes` |
+| 3 | P2 — the recorder keeps the first mention of an execution, so a partial `execute` hides the whole evidence record, and a reader meets a `KeyError` | **holds** (`executions_of`, dedupe by first) | one record per id: every source normalized, a later (fuller) source fills what an earlier one left empty, the evidence directory last; measurements merge; the receipt's lane name is kept |
+| 4 | P2 — a resumed run reads as `finished` with the earlier failure; a resume does not restore the parent | **holds** (`runevents.read` never reset; `cmd_resume` env without the parent) | `workflow_started`, or a step starting after the log ended, opens a new segment: end, error, output, termination cleared, `segment` counted; `cmd_resume` sets `AGENTSTACK_PARENT_RUN` from the meta |
+| 5 | P2 — a collection that fails leaves an earlier login's observation for the router | **holds**: `collect()` wrote into a directory it did not empty. The valid reuse is a different thing (`collect_obs.py kept`, beside the login, within the window) and is untouched | `collect()` empties the observation directory first |
+| 6 | P2 — the command the panel shows does not run as printed; an empty login object stops the render; fixed ports; the install example cannot run | **holds**, each: `text=from the parent` unquoted; `login: {}` is true in JavaScript; `127.0.0.1:5000` and `localhost:3000` written in; `r1` is shorter than the rule allows and the package was never declared | values shell-quoted and placeholders quoted and named; the login line stands on its own and `{}` is no login; the consoles' addresses come from the ops API; a failed approvals read is said beside the table, not in its place; the install example declares the package and uses a run id the rule accepts |
+
+**Measured.** Each fix has a model-free reproduction in review_controls (`review3_controls`, 24
+pins): the id sequence `plain → -r2 → -r3` and `-a2 → -a2-r2` on a temporary evidence root; a
+partial `execute` merged with its evidence (300 tokens, `model_served`, every field present); a
+synthetic log with a failure then a new step (not ended, no stale output, `segment` 1) and then
+its own end; a stale observation file gone after a collection that failed; and text pins for the
+rollback, the broker path, the hub and the docs. review_controls 166/166, static on this runner,
+the cold start for the rest — run number below. What this level cannot say: a resumed run on the
+instance reading as going while it goes (a resume with a live process), and a rollback to
+`pre-202610` on an instance whose volume has no `.local` — the second is the operator's to run
+when a rollback is wanted, and the first falls out of the next resume.
+
+**What the review got right about §76.** The sentence "a release recorded before this still
+rolls back: its `toolchain.tar.gz` is named and left alone, the kept images carry the same tools"
+was reasoning from the image and not from the volume that masks it. It is corrected by the fix
+above and stands in §76 as written, with this note.
+
+**Not done here, and why.** The review's fourth recommendation — run the three external packages
+on the new contract (long runs, parent/child and resume, repeat and aggregation) — is the
+packages' authors' measurement (trading#2, devflow#1) and needs their repositories to move; the
+stack's side of it is this section. Its remark that some controls check source text rather than
+behaviour is fair: the reproductions above are behaviour where a behaviour exists without a model,
+and text where the behaviour is a shell script against a Docker volume.
