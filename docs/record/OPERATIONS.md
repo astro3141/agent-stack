@@ -4672,4 +4672,4 @@ the rule before it was pinned against the function.
 
 **Measured, second round.** The two groups and `controls_composition` on this host in one process,
 80/80 (the canary for the leak above among them); the run_conductor pair costs ~12 s; pin_kinds
-trial 179/438, review 51/170; the ratchet bound lowered to 179; the cold start — run number below.
+trial 179/438, review 51/170; the ratchet bound lowered to 179; **cold-start run 76 green**: trial_controls 505/505 in the container, review 187/187, stack 24/24, the first-use and child-run checks among them.
