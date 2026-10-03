@@ -60,10 +60,13 @@ scripts/verify.sh --level full              # the checks, the three control suit
                                             # controls and floors, then hello-lane, auto and novel-a
 ```
 
-`--replace-toolchain` is needed whenever a CLI pin in `docker/agent.Dockerfile` moved (claude-code,
-codex, grok, the acp adapters, acpx): the toolchain lives in the home volume, not the image, and
-`update` **refuses** an update whose toolchain would silently stay behind — measured, §65:
-`claude: running '2.1.278', candidate image '2.1.287'`. The refusal leaves the instance untouched.
+`--replace-toolchain` is needed whenever a pin that lives in the home volume moved: claude-code,
+Conductor and the Preloop CLI install under `/home/agent/.local`, which is the `agent-home` volume,
+so a rebuilt image does not change them, and `update` **refuses** an update whose toolchain would
+silently stay behind — measured, §65: `claude: running '2.1.278', candidate image '2.1.287'`. The
+refusal leaves the instance untouched. The provider CLIs under `/opt` (codex, grok, the two acp
+adapters, acpx, node) are the image's: the recreate every update does is what changes them, and
+`update` lists them as "move with the recreate" rather than refusing (§75).
 
 4. `verify.sh --level full` makes the cheap runs (`hello-lane`, `auto`, `novel-a`). For a provider
    CLI change, add the N7 native-tool check on the vendor that changed (OPERATIONS §7) by hand:

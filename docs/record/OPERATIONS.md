@@ -4197,7 +4197,7 @@ grok, principal novel-reviewer, write {WS}/zz_not_allowed.json  DENIED, mcp_rule
 grok's native `grep` (and `list_dir`) ran. The posture denies writes, shell and the web, and
 leaves reads alone. Every cold-role grok run on 1.0.40 since 09-23 shows the same, so 1.0.46
 reads the posture as 1.0.40 did. §64's cold role completed through Preloop on this run.
-\n\n## 74. The adapter, cut where a recorded run can check it (#27, 2026-10-03)
+## 74. The adapter, cut where a recorded run can check it (#27, 2026-10-03)
 
 The hold on #27 was the fixture: `run-agent.mjs` runs only with a model call, and cutting it
 blind was the kind of refactoring this repository does not do. The operator recorded four runs
@@ -4226,3 +4226,48 @@ refused permission; "" for a completed call. On the fixtures: grok-deny reads th
 reads nothing.
 
 Controls: review_controls 127/127 (7 new), static 12/12.
+
+## 75. After update day 2: what the two confusions were made of (#34, 2026-10-03)
+
+Update day 2 left two things that read as confusion and were not: the operator asked why a cold
+start's build did not carry the new versions (§73 addendum), and `drift.sh` on that host said
+`unknown` on every line. Both were read back to the code.
+
+**Two kinds of tool, one word for them.** `docker/agent.Dockerfile` installs claude-code,
+Conductor and the Preloop CLI under `/home/agent/.local` — the `agent-home` volume, filled from
+the image once and never again (§3) — and node, acpx, the acp adapters, codex, grok and codexbar
+under `/opt`, in the image, with the comment that says why ("$HOME is a volume"). One Dockerfile,
+the principle applied to half of it. `release.sh update` compared all six tools alike and asked
+for `--replace-toolchain` whenever any differed, and `update-day.md` said the flag was for
+"claude-code, codex, grok, the acp adapters, acpx" — four of those five are the image's and move
+with the recreate without any flag; the three that need it (claude-code, Conductor, Preloop CLI)
+were not the list. Day 2 needed the flag for Conductor, and the operator was told it was for
+codex and grok.
+
+Now `release.sh` holds `VOLUME_TOOLS="claude conductor preloop_cli"` and `IMAGE_TOOLS="codex grok
+node"`, refuses only on the first kind and prints the second as "the image's tools move with the
+recreate"; `update-day.md` names the three. Whether the three should move to `/opt` as well — which
+would delete the stage/verify/swap machinery (§65–§66, about 100 lines), the flag and the 256 MB
+toolchain archive in every release record — is the operator's call, and it is [#34] with the facts.
+
+**`unknown`, three ways.** `drift.sh` said `unknown` for a component with no registry (Preloop,
+docker-cli), for a registry asked that did not answer, and said nothing about why. On the
+instance's host every line read `unknown`; on this runner the GitHub API answers 403 through the
+proxy and npm and PyPI answer. The states are now `same | newer | unasked | unanswered`, an
+unanswered line carries the registry's own words (`api.github.com: HTTP 403`, `Failed to connect
+to …`, npm's `code E…`), and the last line counts them: `2 of 14 lines unanswered — 1 registry
+did not answer from this host: api.github.com: HTTP 403`. `verify.sh` prints that line under its
+drift note, so "nothing newer" is never read as "all current" on a host that could not ask.
+`--json` carries `reason`. Column 4 is still the state, which is what `verify.sh` reads.
+
+**Measured on this runner.** `drift.sh`: 14 lines, 9 same, 1 newer (claude-code 2.1.288), 3
+unasked, 2 unanswered (api.github.com: HTTP 403); with the proxy pointed at a closed port the
+GitHub lines read `Failed to connect to 127.0.0.1 port 9`. `release.sh` parses; the update path
+runs only on an instance and is for the operator's next update day, where the expected line for a
+provider-CLI-only day is the "move with the recreate" list and no refusal.
+
+Also fixed here: §74's heading carried a literal `\n\n` from the heredoc that wrote it, and the
+decisions table's first line had the leftovers of a regex that was meant for the #27 row (the row
+itself was never updated); both from the §74 commit.
+
+[#34]: https://github.com/astro3141/agent-stack/issues/34

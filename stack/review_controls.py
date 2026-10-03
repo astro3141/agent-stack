@@ -717,6 +717,45 @@ def adapter_controls():
           ex.failure_of({"status": "FAILED", "failure": {"message": "ENOENT: config.toml"}}) == "ENOENT: config.toml")
 
 
+# ---------------------------------------------------------------- 11. update day's two kinds (§75)
+def update_controls():
+    """release.sh tells the volume's toolchain from the image's, as the Dockerfile installs them;
+    update-day.md names the three that need the flag; drift.sh says why a line has no answer."""
+    df = (WORK / "docker" / "agent.Dockerfile").read_text()
+    rel = (WORK / "scripts" / "release.sh").read_text()
+    vol = re.search(r'^VOLUME_TOOLS="([^"]+)"', rel, re.M).group(1).split()
+    img = re.search(r'^IMAGE_TOOLS="([^"]+)"', rel, re.M).group(1).split()
+    # what the Dockerfile really puts under $HOME: the three installers that write to /home/agent/.local
+    under_home = {"claude": "claude.ai/install.sh" in df,
+                  "conductor": "uv tool install" in df and "UV_TOOL_DIR" not in df,
+                  "preloop_cli": "INSTALL_DIR=/home/agent/.local/bin" in df}
+    check("update: release.sh's volume tools are the ones the Dockerfile installs under $HOME",
+          sorted(vol) == sorted(t for t, home in under_home.items() if home), (vol, under_home))
+    check("update: the image's tools are under /opt in the Dockerfile and not in the volume list",
+          "NPM_CONFIG_PREFIX=/opt/npm-global" in df and all(t in ("codex", "grok", "node") for t in img)
+          and not set(img) & set(vol), img)
+    check("update: only a volume tool can refuse; an image tool is reported as moving with the recreate",
+          'case " $VOLUME_TOOLS " in' in rel and "move with the recreate" in rel
+          and rel.index('case " $VOLUME_TOOLS " in') < rel.index("refusing an update whose toolchain"))
+    ud = (WORK / "docs" / "update-day.md").read_text()
+    para = ud[ud.index("`--replace-toolchain` is needed"):ud.index("4. `verify.sh --level full`")]
+    check("update: update-day.md says the flag is for claude-code, Conductor and the Preloop CLI, and that codex/grok move with the recreate",
+          all(x in para for x in ("claude-code", "Conductor", "Preloop CLI", "move with the recreate"))
+          and "codex, grok, the acp adapters, acpx): the toolchain lives" not in para)
+    dr = (WORK / "scripts" / "drift.sh").read_text()
+    check("drift: four states, and an unanswered line carries the registry's reason",
+          all(w in dr for w in ('state="same"', 'state="newer"', 'state="unasked"', 'state="unanswered"', "UNANSWERED+=", '"reason":"%s"')))
+    check("drift: verify.sh prints the summary line, not only 'nothing newer'",
+          'note "drift: $(tail -1 <<<"$drift")"' in (WORK / "scripts" / "verify.sh").read_text())
+    r = subprocess.run(["bash", str(WORK / "scripts" / "drift.sh")], capture_output=True, text=True, timeout=240)
+    out = [l for l in r.stdout.splitlines() if l.strip()]
+    states = [l.split()[3] for l in out[1:-1]]
+    check("drift: runs here — 14 lines, every state one of the four words, and a last line that counts the unanswered",
+          r.returncode == 0 and len(states) == 14 and set(states) <= {"same", "newer", "unasked", "unanswered"}
+          and (out[-1].startswith("every registry asked answered") or "did not answer from this host" in out[-1]),
+          (r.returncode, states, out[-1:] , r.stderr[-300:]))
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -732,6 +771,7 @@ instance_controls()
 panel_controls()
 next_controls()
 adapter_controls()
+update_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

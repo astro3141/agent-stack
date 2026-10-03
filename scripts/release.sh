@@ -44,7 +44,14 @@ RELEASES="${RELEASE_DIR:-$HOME/agentstack-releases}"
 RELEASESU="$(u "$RELEASES")"; RELEASES="$(m "$RELEASESU")"
 # services of this stack (the agent and the observer share one image)
 SERVICES="agent mlflow fsmcp egress ops hub"
-TOOLS="claude conductor preloop_cli codex grok node"
+# Two kinds of tool, and the update treats them differently (OPERATIONS §75):
+#   * VOLUME_TOOLS live in /home/agent/.local, which is the agent-home volume: a rebuilt image does
+#     not change them, so a pin that moved needs --replace-toolchain or it silently stays behind.
+#   * IMAGE_TOOLS live under /opt in the image (docker/agent.Dockerfile, "#281"): the recreate that
+#     every update does is what changes them, and no flag is involved.
+VOLUME_TOOLS="claude conductor preloop_cli"
+IMAGE_TOOLS="codex grok node"
+TOOLS="$VOLUME_TOOLS $IMAGE_TOOLS"
 
 say()  { printf '  %-42s %s\n' "$1" "$2"; }
 fail() { echo "release: $*" >&2; exit 1; }
@@ -279,14 +286,20 @@ cmd_update() {
   docker build --quiet -t "$CAND_IMAGE" -f "$CAND_DOCKER/agent.Dockerfile" "$CAND_DOCKER" >/dev/null \
     || fail "the candidate build failed; nothing was changed"
   say "built" "$CAND_IMAGE"
-  DIFFS=""
+  DIFFS=""; IMAGE_DIFFS=""
   for t in $TOOLS; do
     have="$(tool_running "$t")"; want="$(tool_in_image "$CAND_IMAGE" "$t")"
     [ -n "$want" ] || continue
-    [ "$have" = "$want" ] || DIFFS="$DIFFS    $t: running '$have', candidate image '$want'\n"
+    [ "$have" = "$want" ] && continue
+    case " $VOLUME_TOOLS " in
+      *" $t "*) DIFFS="$DIFFS    $t: running '$have', candidate image '$want'\n";;
+      *)        IMAGE_DIFFS="$IMAGE_DIFFS    $t: running '$have', candidate image '$want'\n";;
+    esac
   done
+  # a tool under /opt changes with the recreate below; only the volume's toolchain can stay behind
+  [ -z "$IMAGE_DIFFS" ] || { printf "  the image's tools move with the recreate:\n"; printf "%b" "$IMAGE_DIFFS"; }
   if [ -n "$DIFFS" ] && [ "$REPLACE_TOOLCHAIN" = 0 ]; then
-    printf "  the new revision builds different tool versions:\n" >&2
+    printf "  the new revision builds a different toolchain for the home volume:\n" >&2
     printf "%b" "$DIFFS" >&2
     echo "  the volume is what runs, so this update would NOT change them." >&2
     echo "  re-run with --replace-toolchain to replace /home/agent/.local." >&2
