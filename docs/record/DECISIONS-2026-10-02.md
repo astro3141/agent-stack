@@ -94,7 +94,7 @@ CADP effect client와 CADP-GAP의 큰 갭 1~4는 CADP가 v0.5를 authority로 �
 | [#24](https://github.com/astro3141/agent-stack/issues/24) | **결정: 패널에서 시작 제거** | CONTRACT 화면 규칙 vs 패널: 운영자가 (B)를 택했다 — 시작(precheck/start)·재개·설정 생성·적용은 명령으로, 패널은 상태와 명령을 보여 준다 (§70). 남은 버튼은 사람의 것뿐: 로그인 코드, 승인·거부, 중지, 그래프 보기 |
 | [#25](https://github.com/astro3141/agent-stack/issues/25) | 완료(§71, 계약 절) | 자기 런타임을 가져오는 패키지(trading)의 확장 계약 — 스택이 마련할 자리 (#18과 함께) |
 | [#26](https://github.com/astro3141/agent-stack/issues/26) | 완료(§71, #24로 재해석) | 새 제작자의 첫 성공 측정: 문서 예제 그대로의 패키지가 로그인 없이 패널에서 시작되는지 |
-| [#27](https://github.com/astro3141/agent-stack/issues/27) | fixture 받음 → 모델 없는 절반 분리·재생 4/4(§74); provider 표와 LOGIN/PRINCIPAL은 full 레벨 | run-agent.mjs 분리(공급자 어댑터 / 승인 / 원장 / 결과) — 모델 호출이 있어야 검증되므로 fixture부터 |
+| [#27](https://github.com/astro3141/agent-stack/issues/27) | **완료**(§74 모델 없는 절반, §77 provider 모듈 — 콜드 스타트 전후 7/7 동일, full 24/24) | run-agent.mjs 분리(공급자 어댑터 / 승인 / 원장 / 결과) — 모델 호출이 있어야 검증되므로 fixture부터 |
 | [#34](https://github.com/astro3141/agent-stack/issues/34) | **결정: 이미지로 옮김**(§76) | toolchain의 자리: claude·Conductor·Preloop CLI도 `/opt`로. release.sh의 toolchain 기계·플래그·256 MB 아카이브 삭제(437→329줄); release = 리비전 + 이미지 id + 설정. 옛 인스턴스의 볼륨 사본은 up.sh가 알려만 준다 |
 
 #22–#26은 PR #21 머지 전 외부 리뷰를 코드로 검증한 결과(OPERATIONS §67)에서 나온 설계 수준 항목이다. 확인된 결함 일곱은 같은 PR에서 고쳤다.
