@@ -212,8 +212,10 @@ else
 fi
 
 if [ -x scripts/drift.sh ]; then
-  newer="$(bash scripts/drift.sh 2>/dev/null | awk 'NR>1 && $4=="newer"{print $1}' | tr '\n' ' ')"
-  [ -n "$newer" ] && note "drift (report only): newer upstream — $newer" || note "drift: nothing newer, or no registry answered"
+  drift="$(bash scripts/drift.sh 2>/dev/null)"
+  newer="$(awk 'NR>1 && $4=="newer"{print $1}' <<<"$drift" | tr '\n' ' ')"
+  [ -n "$newer" ] && note "drift (report only): newer upstream — $newer" || note "drift: nothing newer among the lines answered"
+  note "drift: $(tail -1 <<<"$drift")"     # which registries did not answer, so "nothing newer" is not read as "all current"
 fi
 
 if [ "$LEVEL" = static ]; then

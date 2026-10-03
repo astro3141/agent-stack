@@ -1,4 +1,4 @@
-#\g<1>fixture 받음, 모델 없는 절반 분리·재생 4/4(§74); provider 표와 LOGIN/PRINCIPAL은 full 레벨 \2| 컴포넌트 | pinned → latest | 읽은 것 | 위험 | 추천 |
+| 컴포넌트 | pinned → latest | 읽은 것 | 위험 | 추천 |
 |---|---|---|---|---|
 | codexbar | 0.63.0 → 0.70.0 | 0.64~0.70: Claude 읽기 안정화 세 건 — 일시적 타임아웃 뒤 CLI 소스 유지(#4129), "usage insights가 보일 때 실제 쿼터 값을 기다림"(#4115/#4083), 정규 윈도우가 없을 때 모델별 주간 쿼터로 대체(#4126). Grok 빌링 윈도우 구조는 변화 없음(GrokCreditsProxyFetcher·GrokStatusProbe 핀과 head 동일) | 낮음 | **1차에 포함.** §64의 429 사례를 CodexBar 쪽에서도 완화하는 변경이다 |
 | claude-code | 2.1.278 → 2.1.287 | 2.1.281~287: 프로젝트 `permissions.deny`(우리가 native tools를 끄는 방법)에 변화 없음. managed settings 추가(`allowedProviders`, `allowManagedPermissionRulesOnly`), headless MCP 재시도, OAuth 만료 메시지 개선 | 낮음 | **1차에 포함**, N7(native write off) 1회 측정 |
@@ -94,7 +94,8 @@ CADP effect client와 CADP-GAP의 큰 갭 1~4는 CADP가 v0.5를 authority로 �
 | [#24](https://github.com/astro3141/agent-stack/issues/24) | **결정: 패널에서 시작 제거** | CONTRACT 화면 규칙 vs 패널: 운영자가 (B)를 택했다 — 시작(precheck/start)·재개·설정 생성·적용은 명령으로, 패널은 상태와 명령을 보여 준다 (§70). 남은 버튼은 사람의 것뿐: 로그인 코드, 승인·거부, 중지, 그래프 보기 |
 | [#25](https://github.com/astro3141/agent-stack/issues/25) | 완료(§71, 계약 절) | 자기 런타임을 가져오는 패키지(trading)의 확장 계약 — 스택이 마련할 자리 (#18과 함께) |
 | [#26](https://github.com/astro3141/agent-stack/issues/26) | 완료(§71, #24로 재해석) | 새 제작자의 첫 성공 측정: 문서 예제 그대로의 패키지가 로그인 없이 패널에서 시작되는지 |
-| [#27](https://github.com/astro3141/agent-stack/issues/27) | 운영자 full 레벨 | run-agent.mjs 분리(공급자 어댑터 / 승인 / 원장 / 결과) — 모델 호출이 있어야 검증되므로 fixture부터 |
+| [#27](https://github.com/astro3141/agent-stack/issues/27) | fixture 받음 → 모델 없는 절반 분리·재생 4/4(§74); provider 표와 LOGIN/PRINCIPAL은 full 레벨 | run-agent.mjs 분리(공급자 어댑터 / 승인 / 원장 / 결과) — 모델 호출이 있어야 검증되므로 fixture부터 |
+| [#34](https://github.com/astro3141/agent-stack/issues/34) | **결정: 이미지로 옮김**(§76) | toolchain의 자리: claude·Conductor·Preloop CLI도 `/opt`로. release.sh의 toolchain 기계·플래그·256 MB 아카이브 삭제(437→329줄); release = 리비전 + 이미지 id + 설정. 옛 인스턴스의 볼륨 사본은 up.sh가 알려만 준다 |
 
 #22–#26은 PR #21 머지 전 외부 리뷰를 코드로 검증한 결과(OPERATIONS §67)에서 나온 설계 수준 항목이다. 확인된 결함 일곱은 같은 PR에서 고쳤다.
 

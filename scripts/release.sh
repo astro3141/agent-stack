@@ -3,14 +3,18 @@
 #
 #   scripts/release.sh record [--tag NAME]                    keep the running release
 #   scripts/release.sh list                                   what is kept
-#   scripts/release.sh update --to REV [--replace-toolchain]  record, move to REV, rebuild, check
+#   scripts/release.sh update --to REV                        record, move to REV, rebuild, check
 #   scripts/release.sh rollback --to TAG                      put a kept release back (operator-run)
 #
-# A release is NOT an image tag. OPERATIONS.md §3: Claude, Conductor and the Preloop CLI live in
-# /home/agent, which is a volume that masks the image's copy — so replacing the image does not
-# change what actually runs. A release here is
+# A release is
 #
-#   code revision + image ids (kept under a release tag) + configuration + the toolchain itself.
+#   code revision + image ids (kept under a release tag) + configuration.
+#
+# The toolchain is the image's: every tool is installed under /opt (docker/agent.Dockerfile, #34,
+# OPERATIONS §76), so the image ids say what runs. Until §76 claude, Conductor and the Preloop CLI
+# lived in the home volume, which masked the image's copy, and a release had to carry the
+# toolchain itself and swap it in; releases recorded then still hold a toolchain.tar.gz, which a
+# rollback now leaves alone.
 #
 # Data is not part of a release: logins, the Preloop database, MLflow and run history stay where
 # they are and must survive both directions. scripts/backup.sh covers those. The one exception is
@@ -44,18 +48,19 @@ RELEASES="${RELEASE_DIR:-$HOME/agentstack-releases}"
 RELEASESU="$(u "$RELEASES")"; RELEASES="$(m "$RELEASESU")"
 # services of this stack (the agent and the observer share one image)
 SERVICES="agent mlflow fsmcp egress ops hub"
+# the tools whose versions a release records, all of them the image's
 TOOLS="claude conductor preloop_cli codex grok node"
 
 say()  { printf '  %-42s %s\n' "$1" "$2"; }
 fail() { echo "release: $*" >&2; exit 1; }
 
 CMD="${1:-}"; shift || true
-TAG=""; TO=""; REPLACE_TOOLCHAIN=0
+TAG=""; TO=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --tag) TAG="$2"; shift 2;;
     --to) TO="$2"; shift 2;;
-    --replace-toolchain) REPLACE_TOOLCHAIN=1; shift;;
+    --replace-toolchain) echo "  --replace-toolchain is gone: the toolchain is the image's, and the recreate changes it (#34)"; shift;;
     *) echo "unknown argument: $1" >&2; exit 2;;
   esac
 done
@@ -99,60 +104,6 @@ require_same_workspace() {
 require_clean_tree() {  # only tracked files matter; run evidence in the workspace is untracked data
   [ -z "$(git_here status --porcelain --untracked-files=no)" ] || \
     fail "the workspace has uncommitted changes to tracked files — commit or stash them first ($1)"
-}
-
-# ---------------------------------------------------------------------- toolchain handling
-# The toolchain is swapped in three steps — stage, verify, swap — and the copy that was running is
-# kept until the new one has actually answered. An archive can be a valid tar and still be empty
-# of tools: `bin/claude` is an absolute symlink into /home/agent/.local, so it must be followed
-# *inside the staged copy*, and the tools it names must really be there.
-REQUIRED_TOOLS_IN_VOLUME="claude conductor preloop"
-verify_staged() {
-  docker run --rm -v "$STACK-agent-home:/vol" alpine sh -c '
-    set -e
-    for t in '"$REQUIRED_TOOLS_IN_VOLUME"'; do
-      p=/vol/.local.new/bin/$t
-      if [ -L "$p" ]; then
-        tgt="$(readlink "$p")"
-        case "$tgt" in
-          /home/agent/.local/*) tgt=/vol/.local.new/"${tgt#/home/agent/.local/}";;
-          /*) ;;
-          *) tgt="/vol/.local.new/bin/$tgt";;
-        esac
-        [ -e "$tgt" ] || { echo "$t points at $tgt, which the archive does not contain"; exit 1; }
-        [ -s "$tgt" ] || [ -d "$tgt" ] || { echo "$t target $tgt is empty"; exit 1; }
-      elif [ -f "$p" ]; then
-        [ -s "$p" ] || { echo "$t is empty"; exit 1; }
-      else
-        echo "$t is missing from the staged toolchain"; exit 1
-      fi
-    done' || return 1
-  say "verified" "the staged toolchain really contains $REQUIRED_TOOLS_IN_VOLUME"
-}
-swap_staged() {  # keeps .local.old until the new one has answered (see keep_or_restore_toolchain)
-  docker run --rm -v "$STACK-agent-home:/vol" alpine sh -c \
-    'rm -rf /vol/.local.old && mv /vol/.local /vol/.local.old && mv /vol/.local.new /vol/.local'
-}
-keep_or_restore_toolchain() {
-  docker run --rm -v "$STACK-agent-home:/vol" alpine sh -c '[ -d /vol/.local.old ]' 2>/dev/null || return 0
-  # the tools are asked inside the container, so it has to be up even when the checks failed
-  docker start "$AGENT" >/dev/null 2>&1 || true
-  for i in $(seq 1 15); do docker exec "$AGENT" true >/dev/null 2>&1 && break; sleep 1; done
-  bad=""
-  for t in claude conductor preloop_cli; do
-    [ -n "$(tool_running "$t")" ] || bad="$bad $t"
-  done
-  if [ -n "$bad" ]; then
-    echo "  the new toolchain does not answer ($bad) — putting the previous one back" >&2
-    docker stop "$AGENT" >/dev/null 2>&1 || true
-    docker run --rm -v "$STACK-agent-home:/vol" alpine sh -c \
-      'rm -rf /vol/.local.broken && mv /vol/.local /vol/.local.broken && mv /vol/.local.old /vol/.local'
-    docker start "$AGENT" >/dev/null 2>&1 || true
-    return 1
-  fi
-  docker run --rm -v "$STACK-agent-home:/vol" alpine sh -c 'rm -rf /vol/.local.old'
-  say "toolchain" "answers; the previous copy was removed"
-  return 0
 }
 
 # Bring the Preloop policy in line with the configuration now on disk. The apply state lives in
@@ -210,13 +161,6 @@ cmd_record() {
     say "image $s" "$keep"
   done
 
-  # the toolchain, from the volume where it actually lives
-  docker run --rm -v "$STACK-agent-home:/v:ro" -v "$(m "$DEST"):/out" alpine \
-    tar czf /out/toolchain.tar.gz -C /v .local
-  docker run --rm -v "$(m "$DEST"):/in:ro" alpine tar tzf /in/toolchain.tar.gz >/dev/null \
-    || fail "the toolchain archive did not verify"
-  say "toolchain" "$(du -h "$DEST/toolchain.tar.gz" | cut -f1) (/home/agent/.local)"
-
   # configuration sources only: config/generated is derived, and its state.json describes the
   # Preloop account rather than this code — see reapply_policy()
   tar czf "$DEST/config.tar.gz" --exclude='config/generated' -C "$HERE" config policy docker/.env 2>/dev/null || \
@@ -232,7 +176,7 @@ cmd_record() {
     echo "workspace_dir=$HERE"
     echo "backup_at_update=${BACKUP_NOTE:-}"      # empty for a plain record; what update saw
     echo "stack=$STACK"
-    echo "format=2"                  # 2: configuration sources only (no config/generated)
+    echo "format=3"                  # 2: configuration sources only (no config/generated); 3: no toolchain archive (#34)
     for t in $TOOLS; do echo "tool.$t=$(tool_running "$t")"; done
   } > "$DEST/release.kv"
   for t in $TOOLS; do
@@ -262,10 +206,10 @@ cmd_update() {
   require_same_workspace
   require_clean_tree "an update checks out another revision"
   git_here rev-parse --verify --quiet "$TO" >/dev/null || fail "unknown revision $TO"
-  # ---- decide on a candidate, before the workspace in use is touched --------------------
-  # What runs is the volume's toolchain, not the image's. Whether this update would change it can
-  # only be told by building the target revision — so that happens in a throw-away worktree with
-  # its own image tag. Until this passes, /work and the `:local` tags are exactly as they were.
+  # ---- build a candidate, before the workspace in use is touched -------------------------
+  # The target revision is built in a throw-away worktree under its own image tag: a revision that
+  # does not build changes nothing here (§66), and what the update will change is read from that
+  # image before anything moves. Until this passes, /work and the `:local` tags are as they were.
   echo "== candidate $TO"
   CAND_DIR="$(u "${TMPDIR:-/tmp}")/agentstack-candidate-$$"
   CAND_IMAGE="$STACK/governed-runtime:cand-$(git_here rev-parse --short "$TO")"
@@ -279,19 +223,12 @@ cmd_update() {
   docker build --quiet -t "$CAND_IMAGE" -f "$CAND_DOCKER/agent.Dockerfile" "$CAND_DOCKER" >/dev/null \
     || fail "the candidate build failed; nothing was changed"
   say "built" "$CAND_IMAGE"
-  DIFFS=""
   for t in $TOOLS; do
     have="$(tool_running "$t")"; want="$(tool_in_image "$CAND_IMAGE" "$t")"
     [ -n "$want" ] || continue
-    [ "$have" = "$want" ] || DIFFS="$DIFFS    $t: running '$have', candidate image '$want'\n"
+    [ "$have" = "$want" ] && continue
+    say "will change $t" "'$have' -> '$want'"
   done
-  if [ -n "$DIFFS" ] && [ "$REPLACE_TOOLCHAIN" = 0 ]; then
-    printf "  the new revision builds different tool versions:\n" >&2
-    printf "%b" "$DIFFS" >&2
-    echo "  the volume is what runs, so this update would NOT change them." >&2
-    echo "  re-run with --replace-toolchain to replace /home/agent/.local." >&2
-    fail "refusing an update whose toolchain would silently stay behind — the instance is untouched"
-  fi
 
   # The one thing a rollback cannot undo is a Preloop schema migration, and the backup is what
   # covers it (docs/update-day.md). Taking it is a person's decision, so this says, and records,
@@ -317,28 +254,9 @@ cmd_update() {
   echo "== rebuilding images"
   (cd "$HERE/docker" && docker compose -f compose.poc.yaml build) || fail "the build failed; nothing was recreated"
 
-  echo "== toolchain"
-  if [ -n "$DIFFS" ]; then
-    say "replacing" "/home/agent/.local with the new image's toolchain"
-    # staging needs no downtime; only the swap does
-    docker run --rm -v "$STACK-agent-home:/vol" --entrypoint sh "$CAND_IMAGE" -c \
-      'rm -rf /vol/.local.new && cp -a /home/agent/.local /vol/.local.new' \
-      || fail "could not stage the new toolchain; nothing was replaced"
-    verify_staged || fail "the new toolchain did not verify; nothing was replaced"
-    docker stop "$AGENT" >/dev/null 2>&1 || true
-    swap_staged || fail "could not swap in the new toolchain"
-  else
-    say "unchanged" "the new revision builds the same tool versions"
-  fi
-
   echo "== starting and checking"
   UP_RC=0
   (cd "$HERE" && bash scripts/up.sh --recreate) || UP_RC=1
-  # Whatever happened, the swapped-in toolchain is judged now: a copy that does not answer is put
-  # back before anything else is decided, so no failure path can leave the instance without tools.
-  keep_or_restore_toolchain || {
-    echo; echo "the previous toolchain was put back; the update did not take effect." >&2
-    exit 1; }
   [ "$UP_RC" = 0 ] || {
     echo; echo "the checks did not pass after the update. Go back with:" >&2
     echo "  scripts/release.sh rollback --to <tag>   (scripts/release.sh list)" >&2
@@ -365,23 +283,17 @@ cmd_rollback() {
   REV="$(sed -n 's/^workspace_revision=//p' "$SRC/release.kv")"
   echo "== rolling back to $TO (workspace $REV)"
 
-  # Everything is verified BEFORE anything changes: a rollback that fails half way would leave
-  # the instance without the toolchain it had.
+  # Everything is verified BEFORE anything changes.
   git_here rev-parse --verify --quiet "$REV" >/dev/null || fail "the release's revision $REV is not in this repository"
   while read -r s ref id keep; do
     docker image inspect "$keep" >/dev/null 2>&1 || fail "kept image $keep is gone — cannot roll back"
   done < "$SRC/images.txt"
-  docker run --rm -v "$(m "$SRC"):/in:ro" alpine sh -c \
-    'tar tzf /in/toolchain.tar.gz >/dev/null && tar tzf /in/config.tar.gz >/dev/null' \
-    || fail "the release's archives do not verify — nothing was changed"
-  # Unpack beside the running toolchain and only then swap: what runs is never deleted before a
-  # usable replacement exists. Staging needs no downtime, so the agent keeps running until the
-  # staged copy has been verified — a refusal leaves the instance exactly as it was, still up.
-  docker run --rm -v "$STACK-agent-home:/vol" -v "$(m "$SRC"):/in:ro" alpine sh -c \
-    'rm -rf /vol/.local.new && mkdir -p /vol/.local.new && tar xzf /in/toolchain.tar.gz -C /vol/.local.new --strip-components=1' \
-    || fail "the release's toolchain did not unpack — the running one is untouched"
-  verify_staged || fail "the release's toolchain has no usable tools in it — the running one is untouched"
-  say "verified" "images, archives, and the unpacked toolchain"
+  docker run --rm -v "$(m "$SRC"):/in:ro" alpine tar tzf /in/config.tar.gz >/dev/null \
+    || fail "the release's configuration archive does not verify — nothing was changed"
+  # a release recorded before #34 carries the toolchain it swapped into the home volume; the
+  # kept images carry the same tools now, so the archive is not used
+  [ ! -f "$SRC/toolchain.tar.gz" ] || say "toolchain archive" "from before #34 — not used; the kept images carry the toolchain"
+  say "verified" "images and the configuration archive"
   docker stop "$AGENT" >/dev/null 2>&1 || true
 
   git_here checkout --quiet "$REV" || fail "cannot check out $REV"
@@ -390,8 +302,6 @@ cmd_rollback() {
     docker tag "$keep" "$ref"
     say "image $s" "$ref ← $keep"
   done < "$SRC/images.txt"
-  swap_staged || fail "could not swap in the release's toolchain"
-  say "toolchain" "/home/agent/.local from the release (the previous copy is kept until it answers)"
   # Releases recorded by an older version of this script carry config/generated, whose state.json
   # describes the ACCOUNT, not the code. Restoring it would claim a policy the account may not
   # have, and the apply below would then skip as "already applied".
@@ -402,11 +312,6 @@ cmd_rollback() {
   echo "== starting and checking"
   UP_RC=0
   (cd "$HERE" && bash scripts/up.sh --recreate) || UP_RC=1
-  # judged before anything else, exactly as in an update: a toolchain that does not answer is put
-  # back, whatever the checks said
-  keep_or_restore_toolchain || {
-    echo; echo "the previous toolchain was put back; the rollback did not take effect." >&2
-    exit 1; }
   [ "$UP_RC" = 0 ] || { echo "the checks did not pass after the rollback" >&2; exit 1; }
   # the account must enforce the policy that was just restored, not the one from before
   reapply_policy || exit 1

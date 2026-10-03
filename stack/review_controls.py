@@ -717,6 +717,60 @@ def adapter_controls():
           ex.failure_of({"status": "FAILED", "failure": {"message": "ENOENT: config.toml"}}) == "ENOENT: config.toml")
 
 
+# ---------------------------------------------------------------- 11. the image is the toolchain (#34, §76)
+def update_controls():
+    """Every tool is installed under /opt in the image and nothing under $HOME; release.sh carries
+    no toolchain and no flag; the docs say so; drift.sh says why a line has no answer (§75)."""
+    df = (WORK / "docker" / "agent.Dockerfile").read_text()
+    rel = (WORK / "scripts" / "release.sh").read_text()
+    check("image: claude, uv/Conductor and the Preloop CLI install under /opt, each proven present at build",
+          all(x in df for x in ("HOME=/opt/claude bash -c", "test -x /opt/claude/.local/bin/claude",
+                                "--prefix=/opt/uv uv", "UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/opt/uv/bin",
+                                "test -x /opt/uv/bin/conductor", "INSTALL_DIR=/opt/preloop/bin", "test -x /opt/preloop/bin/preloop")))
+    check("image: nothing is installed under /home/agent, and /home/agent/.local/bin is not on PATH",
+          "/home/agent/.local" not in df.replace("Nothing of them is under /home/agent", "") and "PATH=/opt/claude/.local/bin:/opt/uv/bin:/opt/preloop/bin:" in df)
+    check("image: the Preloop installer runs as the agent (it writes the agent's home), the rest as root, and the build proves /home/agent is all the agent's",
+          df.index("chown agent:agent /opt/preloop/bin\nUSER agent\n") < df.index("sh /tmp/preloop-cli.sh")
+          < df.index("chown -R root:root /opt/preloop") < df.index('RUN test -z "$(find /home/agent ! -user agent)"')
+          and "RUN HOME=/root pip install" in df and "RUN HOME=/root UV_TOOL_DIR" in df)
+    check("image: claude's self-update is off — the pin is the version", "DISABLE_AUTOUPDATER=1" in df)
+    check("image: the three are world-readable for the role users a step runs as",
+          all(f"chmod -R a+rX {d}" in df for d in ("/opt/claude", "/opt/uv", "/opt/preloop")))
+    comp = (WORK / "docker" / "compose.poc.yaml").read_text()
+    check("image: the replay service runs Conductor's venv where the image puts it",
+          'entrypoint: ["/opt/uv/tools/conductor-cli/bin/python"]' in comp and "/home/agent/.local" not in comp)
+    check("release: no toolchain archive, no staging, no swap, no flag — a release is revision + images + configuration",
+          all(x not in rel for x in ("toolchain.tar.gz -C", "verify_staged", "swap_staged", "keep_or_restore_toolchain",
+                                     "REPLACE_TOOLCHAIN=1", "VOLUME_TOOLS", "refusing an update whose toolchain"))
+          and "format=3" in rel and 'say "will change $t"' in rel)
+    check("release: a record from before #34 still rolls back — its archive is named and left alone",
+          'toolchain.tar.gz" ] || say "toolchain archive"' in rel)
+    ud = (WORK / "docs" / "update-day.md").read_text()
+    check("docs: update-day.md has no flag and says the rebuild changes every tool",
+          "--replace-toolchain]" not in ud and "There is\nno flag" in ud.replace("There is no flag", "There is\nno flag")
+          and "Every tool is the image's" in ud)
+    check("docs: the runbook's release line matches release.sh",
+          "**A release is** *code revision + image ids + configuration*" in (WORK / "docs" / "runbook.md").read_text())
+    up = (WORK / "scripts" / "up.sh").read_text()
+    check("instance: up.sh --check names an unused pre-#34 toolchain copy in the volume, with the command, and does not remove it",
+          "pre-#34 toolchain copy" in up and "alpine rm -rf /vol/.local" in up
+          and up.index("test -d /home/agent/.local/share/claude") < up.index('echo "        docker run --rm'))
+    dr = (WORK / "scripts" / "drift.sh").read_text()
+    check("drift: four states, and an unanswered line carries the registry's reason",
+          all(w in dr for w in ('state="same"', 'state="newer"', 'state="unasked"', 'state="unanswered"', "UNANSWERED+=", '"reason":"%s"')))
+    check("drift: verify.sh prints the summary line, not only 'nothing newer'",
+          'note "drift: $(tail -1 <<<"$drift")"' in (WORK / "scripts" / "verify.sh").read_text())
+    # --offline: this runs inside the governed runtime at the stack level, which has no egress, and
+    # eleven asks that each wait for a timeout are what made cold-start run 52 fail (§75)
+    r = subprocess.run(["bash", str(WORK / "scripts" / "drift.sh"), "--offline"], capture_output=True, text=True, timeout=60)
+    out = [l for l in r.stdout.splitlines() if l.strip()]
+    states = [l.split()[3] for l in out[1:-1]]
+    check("drift: the shape, without a registry — 14 lines, 11 unanswered as 'not asked', 3 unasked, and the last line counts them",
+          r.returncode == 0 and len(states) == 14 and states.count("unanswered") == 11 and states.count("unasked") == 3
+          and out[-1].startswith("11 of 14 lines unanswered") and "not asked (--offline)" in out[-1],
+          (r.returncode, states, out[-1:], r.stderr[-300:]))
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -732,6 +786,7 @@ instance_controls()
 panel_controls()
 next_controls()
 adapter_controls()
+update_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

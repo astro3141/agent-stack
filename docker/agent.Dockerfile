@@ -7,6 +7,12 @@
 #
 # This image deliberately contains NO Anthropic credential. Credentials are minted
 # inside the container at provisioning time and live only in the agent-home volume.
+#
+# Every tool lives under /opt, in the image (#34, OPERATIONS §76). /home/agent is a volume, and a
+# volume is filled from the image once, when it is empty: a tool installed under $HOME would be
+# pinned to the image as it was the first time the volume was made, and later pins would silently
+# not apply (measured in #280, and again on update days 1 and 2, §65 §73). The image is the
+# toolchain; a release is a revision plus image ids plus configuration (scripts/release.sh).
 FROM python:3.13-slim-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -48,31 +54,51 @@ RUN chmod 0755 /usr/local/bin/role-exec \
       'agent ALL=(%roles) NOPASSWD:SETENV: ROLE_EXEC' > /etc/sudoers.d/role-exec \
  && chmod 0440 /etc/sudoers.d/role-exec \
  && visudo -c -f /etc/sudoers.d/role-exec
-USER agent
 # Python/requests-based tools read their own bundle; point them at the system store.
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+# The three tools below install as root under /opt and are read by everyone (a+rX): the agent, and
+# the role users a step runs as. Nothing of them is under /home/agent. DISABLE_AUTOUPDATER: the
+# pin is the version, and /opt is not writable by the user that runs claude anyway.
 ENV HOME=/home/agent \
-    PATH=/home/agent/.local/bin:$PATH \
-    PYTHONUNBUFFERED=1
+    PATH=/opt/claude/.local/bin:/opt/uv/bin:/opt/preloop/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    DISABLE_AUTOUPDATER=1
 
-# Claude Code (agent runtime). Installs to $HOME/.local/bin.
+# Claude Code (agent runtime). Its installer writes to $HOME/.local, so it is given /opt/claude as
+# its home for the install: /opt/claude/.local/bin/claude -> /opt/claude/.local/share/claude/versions/<v>.
 # Pinned to the version in use (OPERATIONS.md §3). Unpinned, every rebuild drifts: a candidate
 # build on 2026-09-23 pulled Claude 2.1.280, Conductor 0.1.39 and Preloop CLI 0.16.0.
 ARG CLAUDE_CODE_VERSION=2.1.287
-RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}
+RUN mkdir -p /opt/claude && HOME=/opt/claude bash -c 'curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}' \
+    && test -x /opt/claude/.local/bin/claude && chmod -R a+rX /opt/claude
 
-# uv + Conductor with the extras this PoC needs.
-RUN pip install --no-cache-dir --user uv
+# uv + Conductor with the extras this PoC needs. uv's tool directory and its bin are under /opt
+# too (UV_TOOL_DIR, UV_TOOL_BIN_DIR); the venv it makes is /opt/uv/tools/conductor-cli. HOME is
+# root's for these two steps: whatever they write beside /opt must not land in /home/agent.
+RUN HOME=/root pip install --no-cache-dir --prefix=/opt/uv uv && test -x /opt/uv/bin/uv
 # v0.1.41 (2026-09-29): run bundles, secrets bindings on script steps; OPERATIONS §72, #17
 ARG CONDUCTOR_COMMIT=11dcc41ed3df78f0806127cc901822fe8758294b
-RUN uv tool install "conductor-cli[telemetry,claude-agent-sdk] @ git+https://github.com/microsoft/conductor.git@${CONDUCTOR_COMMIT}"
+RUN HOME=/root UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/opt/uv/bin \
+      uv tool install --no-cache "conductor-cli[telemetry,claude-agent-sdk] @ git+https://github.com/microsoft/conductor.git@${CONDUCTOR_COMMIT}" \
+    && test -x /opt/uv/bin/conductor && test -x /opt/uv/tools/conductor-cli/bin/python && chmod -R a+rX /opt/uv
 
-# Preloop CLI, so onboarding happens INSIDE the container and never touches the host.
+# Preloop CLI, so onboarding happens INSIDE the container and never touches the host. Its installer
+# also onboards the agents it finds under $HOME and writes ~/.preloop/config.yaml there — that is
+# the agent's home, so this step runs as the agent, as it always did; run as root it left the file
+# root-owned and the claim of a fresh instance failed (cold-start run 55, §76). Only the binary's
+# directory is handed to root afterwards.
+RUN mkdir -p /opt/preloop/bin && chown agent:agent /opt/preloop/bin
+USER agent
 ARG PRELOOP_CLI_VERSION=0.15.0
 RUN curl -fsSL https://preloop.ai/install/cli -o /tmp/preloop-cli.sh \
-    && PRELOOP_VERSION=${PRELOOP_CLI_VERSION} INSTALL_DIR=/home/agent/.local/bin \
+    && PRELOOP_VERSION=${PRELOOP_CLI_VERSION} INSTALL_DIR=/opt/preloop/bin \
        sh /tmp/preloop-cli.sh < /dev/null || true
-RUN test -x /home/agent/.local/bin/preloop
+USER root
+RUN test -x /opt/preloop/bin/preloop && chown -R root:root /opt/preloop && chmod -R a+rX /opt/preloop
+# The volume is seeded from /home/agent as it is here, so nothing in it may belong to anyone but
+# the agent — the build says so, rather than a fresh instance finding out.
+RUN test -z "$(find /home/agent ! -user agent)"
+USER agent
 
 # Linux-side virtualenv for the fixture's pytest (the host .venv is a Windows venv).
 # Verification venv lives OUTSIDE $HOME on purpose. $HOME is a named volume, and Docker
