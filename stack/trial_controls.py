@@ -1073,12 +1073,34 @@ def controls_review_findings():
     check("with the collision gone, the loader is itself again",
           "zz-shared" in _pk.workflows(), False)
 
-    # 3. a run may judge without calling a model
-    rec = open("/work/stack/steps/record.py", encoding="utf-8").read()
+    # 3. a run may judge without calling a model — behaviour (§83): record() against an MLflow that
+    #    is a dict, with the recorder's HTTP replaced; what it logs is read back
+    _recm = load("/work/stack/steps/record.py", "record_behaviour", "/tmp")
+    _logged, _put = [], []
+    def _fake_call(path, body=None, method="POST"):
+        if "experiments/get-by-name" in path: return {"experiment": {"experiment_id": "7"}}
+        if path.endswith("/runs/create"): return {"run": {"info": {"run_id": "rid-" + str(len(_logged) + 1)}}}
+        if path.endswith("/runs/search"): return {"runs": []}
+        if path.endswith("/runs/log-batch"): _logged.append(body); return {}
+        return {}
+    _recm.call, _recm.put_artifact = _fake_call, (lambda *a, **k: _put.append(a[3] if len(a) > 3 else "artifact"))
+    _ev = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False); json.dump({"items": [1, 2]}, _ev); _ev.close()
+    _cid_before = os.environ.get("CONDUCTOR_SELF_RUN_ID"); os.environ["CONDUCTOR_SELF_RUN_ID"] = "trial-judge"
+    try:
+        r_decided = _recm.record({"check": {"decision": "PASS", "reason": "lint clean"}, "route": {}, "evidence_file": _ev.name})
+        tags_d = {t["key"]: t["value"] for b in _logged for t in b.get("tags", [])}
+        _logged.clear(); _put.clear()
+        r_hold = _recm.record({"check": {}, "route": {"decision": "HOLD", "reason": "no quota"}, "evidence_file": _ev.name})
+        tags_h = {t["key"]: t["value"] for b in _logged for t in b.get("tags", [])}
+    finally:
+        if _cid_before is None: os.environ.pop("CONDUCTOR_SELF_RUN_ID", None)
+        else: os.environ["CONDUCTOR_SELF_RUN_ID"] = _cid_before
+        os.unlink(_ev.name)
     check("a decision reached without a model call is not recorded as NOT_RUN",
-          'NO_EXECUTION" if decided else "HOLD"' in rec, True)
-    check("and its evidence is kept with it",
-          "attach_evidence(payload, exp_id, rid) if decided" in rec, True)
+          (tags_d.get("status"), tags_d.get("gate.decision"), r_decided.get("executions")), ("NO_EXECUTION", "PASS", 0))
+    check("and its evidence is kept with it", (r_decided.get("evidence_items"), tags_d.get("evidence_items")), (2, "2"))
+    check("a run the router held is recorded as HOLD, with nothing judged",
+          (tags_h.get("status"), tags_h.get("gate.decision"), r_hold.get("evidence_items")), ("HOLD", "NOT_RUN", 0))
 
     # 5. the means a package needs to guard an effect of its own, and to have one at all
     comp = open("/work/docker/compose.poc.yaml", encoding="utf-8").read()
@@ -1349,9 +1371,17 @@ def controls_role_egress():
     at7 = open("/work/stack/steps/agent_task.py", encoding="utf-8").read()
     check("but what a role declares now is what decides the step",
           "if principal in role_egress.declared() else None" in at7, True)
+    # behaviour (§83): plan() on a temporary generated directory leaves no map; write-time assignment does
+    _rem = load("/work/stack/role_egress.py", "role_egress_behaviour", "/tmp")
+    _gen_tmp = tempfile.mkdtemp(prefix="role-uids-")
+    _rem.GEN = _gen_tmp
+    _rem.plan()
+    _map_after_plan = os.path.exists(os.path.join(_gen_tmp, "role-uids.json"))
+    _rem.assignment(persist=True)
+    _map_after_assign = os.path.exists(os.path.join(_gen_tmp, "role-uids.json"))
+    shutil.rmtree(_gen_tmp, ignore_errors=True)
     check("and asking for the plan never writes the map",
-          "assignment(persist=False)" in open("/work/stack/role_egress.py", encoding="utf-8").read(),
-          True)
+          (_map_after_plan, _map_after_assign), (False, bool(_rem.declared())))
 
     # whether a role may run a codex step is a fact about the login it would use, not about the
     # vendor: that CLI sets the mode of its own credential file, and chmod on a file you do not own
@@ -1504,9 +1534,11 @@ def controls_package_sources():
           all("not-a-real-value" not in repr(e) for e in flat)
           and "environ.get(var))" in src4.replace(" ", "").replace("bool(os.", "environ.get(var))"),
           True)
+    # behaviour (§83): the runner's own description of hello-lane carries the needs list
+    _rwm = load("/work/stack/run_workflow.py", "run_workflow_behaviour", "/tmp")
+    _hl = _rwm.described().get("hello-lane") or {}
     check("the panel gets it from the one answer it already asks for",
-          '"needs_env": needs.get(' in open("/work/stack/run_workflow.py", encoding="utf-8").read(),
-          True)
+          isinstance(_hl.get("needs_env"), list) and "command" in _hl, True)
     hub = open("/work/hub/index.html", encoding="utf-8").read()
     check("and the screen shows it without offering a box to type it into",
           ("wf-needs" in hub and "needs.map" in hub
@@ -1642,9 +1674,10 @@ def controls_package_sources():
                   _pk4.installed()["zz-rb"].get("runbook"), "")
         finally:
             _pk4.ROOT, _pk4.DECL = old9, old9d
-    rw9 = open("/work/stack/run_workflow.py", encoding="utf-8").read()
+    # behaviour (§83): the description carries where the runbook is (empty when a package has none)
+    _rwm9 = load("/work/stack/run_workflow.py", "run_workflow_behaviour9", "/tmp")
     check("the panel gets it from the one answer it already asks for",
-          '"runbook": runbooks.get(owner.get(name)' in rw9, True)
+          all("runbook" in row for row in _rwm9.described().values()), True)
     check("and the screen offers a link, not an editor",
           "/runbook" in open("/work/hub/index.html", encoding="utf-8").read(), True)
 
@@ -1821,10 +1854,26 @@ def controls_packages():
     check("admission is the router's answer, not one source's file",
           'json.load(open("/obs/codex.raw.json"' not in capsrc
           and "would take" in capsrc and "admission.evaluate(" in capsrc, True)
+    # behaviour (§83): the loader answers for hello-lane, and the runner refuses a used id as JSON
+    _pkb = load("/work/stack/packages.py", "packages_behaviour", "/tmp")
     check("a package's declared capabilities are read by the runner",
-          "def requires_of(" in pk_src and "packages.requires_of(workflow)" in rw_src, True)
+          (_pkb.requires_of("hello-lane")[0], "packages.requires_of(workflow)" in rw_src), ([], True))
+    _rwb = load("/work/stack/run_workflow.py", "run_workflow_behaviour_b", "/tmp")
+    # the question is the id, not the stack: the capability probe answers "all there" for this call
+    _rwb.capabilities.probe = lambda profile=None: {}
+    _rwb.capabilities.missing = lambda *a, **k: []
+    _runs_tmp = tempfile.mkdtemp(prefix="runs-twice-")
+    _rwb.runstate.RUNS = __import__("pathlib").Path(_runs_tmp)
+    (_rwb.runstate.RUNS / "zz-twice-1" / "tmp" / "conductor").mkdir(parents=True)
+    import io as _io7, contextlib as _ctx7
+    _buf7 = _io7.StringIO()
+    with _ctx7.redirect_stdout(_buf7):
+        _rc7 = _rwb.cmd_start("zz-twice-1", "hello-lane", "research-default", [])
+    shutil.rmtree(_runs_tmp, ignore_errors=True)
+    try: _ans7 = json.loads(_buf7.getvalue().strip().splitlines()[-1])
+    except Exception: _ans7 = {"raw": _buf7.getvalue()[-200:]}
     check("a run id used twice is an answer, not a traceback",
-          "has been used already" in rw_src, True)
+          (_rc7, "has been used already" in str(_ans7.get("error", ""))), (2, True))
 
     # More than one onboarded agent means more than one hook file in the home. Taking whichever
     # sorts first worked and attributed every permission request to the wrong agent.
@@ -1904,9 +1953,13 @@ def controls_packages():
           "PYTHONPATH: /work/stack:/work/stack/steps" in compose, True)
 
     # and the three places that used to keep their own list
-    check("the runner asks the loader", "import packages" in rw and "packages.workflows()" in rw, True)
+    # behaviour (§83): what the runner offers is the loader's list plus the built-ins, built-ins winning
+    _rwk = load("/work/stack/run_workflow.py", "run_workflow_behaviour_k", "/tmp")
+    _pkk = load("/work/stack/packages.py", "packages_behaviour_k", "/tmp")
+    _known = _rwk.known()
+    check("the runner asks the loader", set(_pkk.workflows()) <= set(_known) and "hello-lane" in _known, True)
     check("a package may not take a built-in's name",
-          "{**packages.workflows(), **BUILT_IN}" in rw, True)
+          all(_known[b] == _rwk.BUILT_IN[b] for b in _rwk.BUILT_IN), True)
     check("the panel asks the runner rather than keeping a second list",
           'f"{STACK}/run_workflow.py", "workflows"' in ops_server
           and '"auto", "research-r", "novel-a"' not in ops_server, True)

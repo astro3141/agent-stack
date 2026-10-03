@@ -4615,3 +4615,30 @@ job for the next rounds, one group at a time.
 193, behaviour the majority of review_controls. The bound moves down with each conversion and
 up only with a sentence here. `verify.sh --level static` prints the counts on every run; the cold
 start carried the ratchet on **run 71** (review_controls 187/187 in the agent).
+
+## 83. trial_controls: the first text pins turned into behaviour (2026-10-03)
+
+§82's ratchet, moved for the first time. Eight of trial_controls' source-text pins are behaviour
+checks now, each a function run against a fake of the thing it talks to and its answer read back;
+193 → **185** of 434 (one check added). This host cannot run the suite, so each converted block was
+run here on its own through the suite's own `load()` and `check()`, and the cold start runs the
+whole suite.
+
+| was text | is now |
+|---|---|
+| "a decision reached without a model call is not recorded as NOT_RUN", "its evidence is kept with it" (`'NO_EXECUTION" if decided else "HOLD"' in rec`) | `record.record()` against an MLflow that is a dict — `call` and `put_artifact` replaced — for a payload with a decision and no execution, then for a HOLD: the tags read `NO_EXECUTION`/`PASS` with `evidence_items 2`, then `HOLD`/`NOT_RUN` with none. A third check came with it (the HOLD) |
+| "asking for the plan never writes the map" (`"assignment(persist=False)" in …`) | `role_egress.plan()` on a temporary generated directory leaves no `role-uids.json`; `assignment(persist=True)` writes it when roles are declared |
+| "the panel gets it from the one answer it already asks for" ×2 (`'"needs_env": needs.get(' in …`, `'"runbook": runbooks.get(' in …`) | `run_workflow.described()`: hello-lane's row carries `needs_env` as a list and `command`; every row carries `runbook` |
+| "a package's declared capabilities are read by the runner" | `packages.requires_of("hello-lane")` answers `[]` |
+| "a run id used twice is an answer, not a traceback" (`"has been used already" in rw_src`) | `cmd_start` on a temporary runs directory whose id already has a run, the capability probe answering for this call: exit 2 and the JSON error, no traceback |
+| "the runner asks the loader", "a package may not take a built-in's name" | `run_workflow.known()` ⊇ `packages.workflows()`, carries hello-lane, and every built-in keeps its own entry |
+
+**Left as text in these groups, and why.** The step scripts (`agent_task.py`: `produced`,
+`produced_stale`, the login-owner refusal) run only as a Conductor step with a model; the Dockerfile,
+`up.sh`, `down.sh`, `install.sh`, the gitignore, tinyproxy's config and the hub are not Python; the
+documents are documents. The next groups to take are `controls_approval_boundary` (12) and
+`controls_resume` (12), where `approvals.py` and `runstate.py` have functions.
+
+**Measured.** The eight blocks on this host, 11/11 checks (the HOLD check new); pin_kinds
+review 51/170, trial 185/434; the ratchet bound lowered to 185; review_controls 187/187 and static
+13/13 here; the cold start — run number below.
