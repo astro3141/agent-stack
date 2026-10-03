@@ -4557,8 +4557,16 @@ is what let this check run on the host at all and removed two more copies of a p
 **Measured.** firstuse_controls (5 pins): every offered workflow has a command and each parses as
 a shell would; hello-lane's carries its default with the space intact after parsing; a placeholder
 is quoted and named; the page shows the API's string; the stack level runs it and requires the
-cycle to complete. review_controls 184/184 and static 13/13 here; the first run of the check
-itself is the cold start — run number below.
+cycle to complete. review_controls 184/184 and static 13/13 here.
+
+**Found by the check on its first run (cold-start run 68).** `scripts/cycle.sh hello-lane
+research-default text='hello from a package' → bash: scripts/cycle.sh: Permission denied`. Fifteen
+of the stack's shell scripts — `up.sh`, `down.sh`, `install.sh`, `release.sh`, `cycle.sh` among
+them — were in git as mode 644: every document says `scripts/up.sh`, and on a fresh clone that
+line does not run until someone types `bash` in front of it or `chmod +x`. Every operator so far
+had, which is why nothing said so. The modes are 755 in git now. This is what the check is for:
+a documented command that a person copies has to run as printed, and reading the scripts could
+not have found it.
 
 ## 82. What the controls pin: behaviour, or a file's text (review 3, "검증 체계", 2026-10-03)
 
