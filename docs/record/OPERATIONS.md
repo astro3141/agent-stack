@@ -4401,7 +4401,7 @@ the failure; run ids, paths, timings, token counts, model text and vendor sessio
 volatile. The tools that ran were identical per call on claude and codex; grok tried its native
 write once on each side and was refused both times — the model's behaviour, not the adapter's.
 Model-free in the agent's node: replay 4/4, provider checks 20/20. On this runner: static 13/13,
-review_controls 142/142; cold-start-linux on cd0641e: dispatched, its run number goes here once it ran.
+review_controls 142/142; cold-start-linux **run 60** on cd0641e, green.
 
 **Found on the way, not the branch's (#37).** codex without a principal fails on a fresh install,
 on main as on the branch: `ENOENT ~/.codex/config.toml`. The claim's onboarding runs once, before
