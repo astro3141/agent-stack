@@ -81,8 +81,8 @@ def load(path, name, ws):
     return m
 
 
-def ops_post(path, body, calls=False):
-    """POST to the panel's API handler in-process: no socket, no docker.
+def ops_call(method, path, body=None, calls=False):
+    """Call the panel's API handler in-process: no socket, no docker.
 
     ops/server.py is loaded once; its `jlocal`, `jexec` and `dexec` are replaced by recorders for
     the call, so what a route would run — and where — is read back instead of run."""
@@ -96,16 +96,48 @@ def ops_post(path, body, calls=False):
     srv.jlocal = lambda args, timeout=60: (rec["local"].append(list(args)) or {"ok": True})
     srv.jexec = lambda args, **kw: (rec["exec"].append(list(args)) or {"ok": True})
     srv.dexec = lambda args, **kw: (rec["exec"].append(list(args)) or (0, "", ""))
-    raw = json.dumps(body).encode()
+    raw = json.dumps(body if body is not None else {}).encode()
     h = srv.H.__new__(srv.H)
-    h.path, h.command, h.request_version, h.requestline = path, "POST", "HTTP/1.1", f"POST {path} HTTP/1.1"
+    h.path, h.command, h.request_version, h.requestline = path, method, "HTTP/1.1", f"{method} {path} HTTP/1.1"
     h.client_address, h.headers = ("127.0.0.1", 0), {"Content-Length": str(len(raw))}
     h.rfile, h.wfile, h.log_message = io.BytesIO(raw), io.BytesIO(), (lambda *a, **k: None)
-    h.do_POST()
+    getattr(h, "do_" + method)()
     head, _, out = h.wfile.getvalue().partition(b"\r\n\r\n")
     status = int(head.split(b" ")[1])
-    answer = json.loads(out or b"{}")
+    try: answer = json.loads(out or b"{}")
+    except ValueError: answer = {"raw": out[:200].decode("utf-8", "replace")}
     return (status, answer, rec) if calls else (status, answer)
+
+
+def ops_post(path, body, calls=False):
+    return ops_call("POST", path, body, calls)
+
+
+def fake_preloop(agents, creds=None):
+    """A Preloop that is a dict, in the shape principals.py's api() reads: agents by id, their
+    credentials, their governance config; every call recorded. Returns (state, api)."""
+    state = {"agents": {a["id"]: dict(a) for a in agents}, "creds": dict(creds or {}), "gov": {}, "calls": []}
+    def api(method, path, body=None):
+        state["calls"].append((method, path))
+        if method == "GET" and path == "/api/v1/agents":
+            return list(state["agents"].values())
+        if method == "POST" and path == "/api/v1/agents":
+            aid = "id-" + body["display_name"].split(": ", 1)[-1]
+            state["agents"][aid] = {"id": aid, **body}
+            return {"id": aid}
+        m = re.fullmatch(r"/api/v1/agents/([^/]+)/governance", path)
+        if m and method == "GET":
+            return {"config": state["gov"].get(m.group(1), {})}
+        if m and method == "PUT":
+            state["gov"][m.group(1)] = body; return body
+        m = re.fullmatch(r"/api/v1/agents/([^/]+)/credentials", path)
+        if m and method == "GET":
+            return list(state["creds"].get(m.group(1), []))
+        if m and method == "POST":
+            state["creds"].setdefault(m.group(1), []).append({"name": body["name"], "status": "active"})
+            return {"token": "tok-" + body["name"]}
+        return {"error": 404, "body": path}
+    return state, api
 
 
 # triage — novel's own judgement; pinned by packages/novel/controls.py since 2026-10
@@ -1528,13 +1560,32 @@ def controls_package_sources():
         check("nor given the identities it declares",
               sorted(_pk2.principals()[0]), ["asked-for-writer"])
 
-    # an identity outlives the declaration that asked for it: reported, never deleted
-    pr = open("/work/stack/principals.py", encoding="utf-8").read()
+    # an identity outlives the declaration that asked for it: reported, never deleted.
+    # behaviour (§83): principals.py against a Preloop that is a dict, with one identity the
+    # declaration names and one it does not; apply's answer and list's output are read back
+    _pm = load("/work/stack/principals.py", "principals_behaviour", "/tmp")
+    _pstate, _pm.api = fake_preloop(
+        [{"id": "a1", "display_name": "Role: asked-for-writer"}, {"id": "a2", "display_name": "Role: left-behind"}],
+        {"a1": [{"name": "asked-for-writer-mcp", "status": "active"}]})
+    _pm.declared = lambda: {"asked-for-writer": {"tool_rules": {}}}
+    _penv = tempfile.NamedTemporaryFile("w", suffix=".env", delete=False)
+    _penv.write("PRELOOP_MCP_ASKED_FOR_WRITER=in-the-file" + chr(10)); _penv.close()
+    _pm.ENV_FILE = _penv.name
+    import io as _io5, contextlib as _ctx5
+    _b1, _b2 = _io5.StringIO(), _io5.StringIO()
+    with _ctx5.redirect_stdout(_b1): _prc = _pm.cmd_apply()
+    with _ctx5.redirect_stdout(_b2): _pm.cmd_list()
+    os.unlink(_penv.name)
+    _pout = json.loads(_b1.getvalue().strip().splitlines()[-1])
+    _plines = {l.split()[0]: l for l in _b2.getvalue().splitlines() if l and not l.startswith(" ")}
     check("an identity no declaration names is reported by apply",
-          '"undeclared": orphans' in pr, True)
-    check("and marked in the listing", "UNDECLARED" in pr, True)
+          (_prc, _pout.get("undeclared"), "yours to do" in _pout.get("undeclared_note", "")),
+          (0, ["left-behind"], True))
+    check("and marked in the listing",
+          ("UNDECLARED" in _plines.get("left-behind", ""), "UNDECLARED" in _plines.get("asked-for-writer", "")),
+          (True, False))
     check("but never removed by this stack",
-          ('api("DELETE"' in pr, "yours to do" in pr), (False, True))
+          ([c for c in _pstate["calls"] if c[0] == "DELETE"], sorted(_pstate["agents"])), ([], ["a1", "a2"]))
 
     # what a package needs in the environment: declared, reported by presence, never by value
     import importlib.util as _il4, os as _o4
@@ -1931,15 +1982,50 @@ def controls_packages():
     co_src = open("/work/stack/collect_obs.py", encoding="utf-8").read()
     check("the newest identity is the one presented, not the first listed",
           "Newest first" in mjs and "mtimeMs" in mjs, True)
-    oh2 = open("/work/stack/ops_health.py", encoding="utf-8").read()
+    # behaviour (§83): ops_health.risks() with Preloop's agent list replaced — two of one agent, two
+    # declared role principals; what the report says, and to whom it leaves the deleting
+    _oh = load("/work/stack/ops_health.py", "ops_health_behaviour", "/tmp")
+    _oh.unknowable = lambda profile="research-default": []
+    _oh._agents = lambda: [{"id": "1", "display_name": "Claude Code"}, {"id": "2", "display_name": "Claude Code"},
+                           {"id": "3", "display_name": "Role: hello-writer"}, {"id": "4", "display_name": "Role: hello-writer"}]
+    _rk = [r for r in _oh.risks() if str(r.get("risk", "")).startswith("more than one identity")]
     check("identities that accumulate are reported, not deleted",
-          "more than one identity per agent" in oh2 and "an operator's decision" in oh2, True)
+          (len(_rk), _rk[0]["detail"] if _rk else None, "delete" in (_rk[0].get("what_would_fix_it", "") if _rk else "")),
+          (1, "Claude Code: 2", True))
     check("and a declared role principal is not counted as an accumulation",
-          'name.startswith("Role: ")' in oh2, True)
+          "hello-writer" in (_rk[0]["detail"] if _rk else "hello-writer"), False)
+    # behaviour (§83): collect_obs's Claude reading with a codexbar that is a script printing what
+    # a file holds, and the login directory a temporary one with the account file
+    _co_tmp = tempfile.mkdtemp(prefix="co-")
+    os.makedirs(f"{_co_tmp}/bin"); os.makedirs(f"{_co_tmp}/login")
+    open(f"{_co_tmp}/bin/codexbar", "w").write("#!/bin/sh" + chr(10) + 'cat "$ZZ_CODEXBAR_OUT"' + chr(10))
+    os.chmod(f"{_co_tmp}/bin/codexbar", 0o755)
+    json.dump({"oauthAccount": {"organizationUuid": "org-zz"}}, open(f"{_co_tmp}/login/.claude.json", "w"))
+    _argv_before, _path_before = sys.argv, os.environ["PATH"]
+    try:
+        sys.argv = ["collect_obs.py", f"{_co_tmp}/obs"]
+        _co = load("/work/stack/collect_obs.py", "collect_obs_behaviour", "/tmp")
+        _co.login_dir = lambda provider: f"{_co_tmp}/login"
+        os.environ["PATH"] = f"{_co_tmp}/bin:" + _path_before
+        os.environ["ZZ_CODEXBAR_OUT"] = f"{_co_tmp}/out.json"
+        def _reading(usage):
+            json.dump([{"provider": "claude", "source": "oauth", "usage": usage}], open(f"{_co_tmp}/out.json", "w"))
+            return _co.codexbar_claude_direct()
+        _r_num = _reading({"primary": {"usedPercent": 12, "windowMinutes": 300}})
+        _r_none = _reading({})
+        _r_stamped = _reading({"primary": {"usedPercent": 12, "windowMinutes": 300}, "updatedAt": "2026-10-01T00:00:00Z"})
+    finally:
+        sys.argv, os.environ["PATH"] = _argv_before, _path_before
+        os.environ.pop("ZZ_CODEXBAR_OUT", None)
+        shutil.rmtree(_co_tmp, ignore_errors=True)
     check("a reading with numbers and no vendor timestamp is dated by when it was taken",
-          'u.get("updatedAt") or (taken_at if wins else None)' in co_src, True)
+          (bool(re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", _r_num["observed_at"] or "")),
+           sorted(_r_num["windows"]), _r_num["observed_account"]),
+          (True, ["session"], "route-login:claude:org-zz"))
     check("and a reading with no numbers stays undated",
-          "if wins else None" in co_src, True)
+          (_r_none["observed_at"], _r_none["windows"]), (None, {}))
+    check("and the vendor's own timestamp wins when it gives one",
+          _r_stamped["observed_at"], "2026-10-01T00:00:00Z")
 
     # the market path a workflow asked for: hosts and ports are named, and nothing else opened
     allow = open("/work/docker/egress/allow", encoding="utf-8").read()
@@ -2002,11 +2088,16 @@ def controls_packages():
     check("the runner asks the loader", set(_pkk.workflows()) <= set(_known) and "hello-lane" in _known, True)
     check("a package may not take a built-in's name",
           all(_known[b] == _rwk.BUILT_IN[b] for b in _rwk.BUILT_IN), True)
+    # behaviour (§83): the panel's workflows route, called in-process with the exec recorded
+    _stw, _bw, _cw = ops_call("GET", "/api/workflows", calls=True)
     check("the panel asks the runner rather than keeping a second list",
-          'f"{STACK}/run_workflow.py", "workflows"' in ops_server
-          and '"auto", "research-r", "novel-a"' not in ops_server, True)
+          (_stw, _cw["exec"]), (200, [["/opt/venv/bin/python", "/work/stack/run_workflow.py", "workflows", "--detail"]]))
+    check("and keeps no list of its own", '"auto", "research-r", "novel-a"' not in ops_server, True)
+    # behaviour (§83): what principals.py would apply, read from its own declared()
+    _pm3 = load("/work/stack/principals.py", "principals_behaviour_p", "/tmp")
+    _from_pk = set(_pkk.principals()[0])
     check("and the principals a bring-up applies include the packages'",
-          "packages.principals()" in open("/work/stack/principals.py", encoding="utf-8").read(), True)
+          (_from_pk <= set(_pm3.declared()), "hello-writer" in _from_pk), (True, True))
 
 
 def controls_docs():
@@ -2221,11 +2312,50 @@ def controls_template():
     check("applying it is part of every bring-up", "principals.py apply" in up, True)
     check("and it runs where a write to Preloop is allowed",
           '"$STACK-admin" $PY_IN_AGENT /work/stack/principals.py apply' in up, True)
+    # behaviour (§83): apply against the dict Preloop. The process's own environment carries the
+    # variable and Preloop has no credential: one is minted. Then Preloop has it and the env file
+    # names it, the environment does not: nothing is minted. The first apply runs with os.chmod
+    # failing (the shared module, restored in a finally — §83's rule), and the file is there anyway.
+    _pm2 = load("/work/stack/principals.py", "principals_behaviour_t", "/tmp")
+    _pst2, _pm2.api = fake_preloop([{"id": "a1", "display_name": "Role: zz-writer"}])
+    _pm2.declared = lambda: {"zz-writer": {"tool_rules": {}}}
+    _penv2 = tempfile.NamedTemporaryFile("w", suffix=".env", delete=False); _penv2.close()
+    _pm2.ENV_FILE = _penv2.name
+    import io as _io6, contextlib as _ctx6
+    _new = "/tmp/principals-new.env"
+    _pre = open(_new, encoding="utf-8").read() if os.path.exists(_new) else None
+    _var_before = os.environ.get("PRELOOP_MCP_ZZ_WRITER"); os.environ["PRELOOP_MCP_ZZ_WRITER"] = "present-here"
+    _real_chmod = os.chmod
+    def _no_chmod(*a, **k): raise OSError("read-only here")
+    try:
+        os.chmod = _no_chmod
+        _b = _io6.StringIO()
+        with _ctx6.redirect_stdout(_b): _rc_a = _pm2.cmd_apply()
+    finally:
+        os.chmod = _real_chmod
+    _out_a = json.loads(_b.getvalue().strip().splitlines()[-1])
+    _written = open(_out_a.get("credentials_at") or os.devnull, encoding="utf-8").read() if _out_a.get("credentials_at") else ""
+    if _pre is None:
+        try: os.unlink(_new)
+        except OSError: pass
+    else:
+        open(_new, "w", encoding="utf-8").write(_pre)
+    check("a credential already issued is not lost to a failed chmod",
+          (_rc_a, [c.get("did") for c in _out_a.get("changes", [])], "PRELOOP_MCP_ZZ_WRITER=tok-zz-writer-mcp" in _written),
+          (0, ["credential minted"], True))
+    open(_penv2.name, "w", encoding="utf-8").write("PRELOOP_MCP_ZZ_WRITER=tok-zz-writer-mcp" + chr(10))
+    del os.environ["PRELOOP_MCP_ZZ_WRITER"]
+    _b = _io6.StringIO()
+    with _ctx6.redirect_stdout(_b): _rc_b = _pm2.cmd_apply()
+    if _var_before is not None: os.environ["PRELOOP_MCP_ZZ_WRITER"] = _var_before
+    _out_b = json.loads(_b.getvalue().strip().splitlines()[-1])
+    os.unlink(_penv2.name)
     check("a credential is asked about, never assumed from this process's environment",
-          "def has_credential(" in src and "os.environ.get(env_name" not in
-          src.split("def cmd_apply(")[1].split("def cmd_rules(")[0], True)
+          (_rc_b, _out_b.get("changes"), _out_b.get("restart_needed")), (0, [], False))
+    _pst2["creds"]["a1"] = [{"name": "zz-writer-mcp", "status": "revoked"}]
     check("and a name that Preloop would refuse is not offered twice",
-          "def credential_name(" in src, True)
+          (_pm2.credential_name("a1", "zz-writer"), _pm2.credential_name("id-none", "zz-writer")),
+          ("zz-writer-mcp-2", "zz-writer-mcp"))
 
     # the host, before any of it
     check("the installer checks the compose version the composition needs",
@@ -2258,8 +2388,6 @@ def controls_template():
           "INSTALL_DIR=\"$PRELOOP_DIR\"" in inst, True)
     check("and does not let it create an admin this stack will create itself",
           "PRELOOP_SKIP_ADMIN=1" in inst, True)
-    check("a credential already issued is not lost to a failed chmod",
-          "except OSError" in src and "chmod" in src, True)
     check("and a minted credential reaches the agent in the same bring-up",
           "restart_needed" in up and "force-recreate agent" in up, True)
 

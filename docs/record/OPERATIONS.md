@@ -4673,3 +4673,25 @@ the rule before it was pinned against the function.
 **Measured, second round.** The two groups and `controls_composition` on this host in one process,
 80/80 (the canary for the leak above among them); the run_conductor pair costs ~12 s; pin_kinds
 trial 179/438, review 51/170; the ratchet bound lowered to 179; **cold-start run 76 green**: trial_controls 505/505 in the container, review 187/187, stack 24/24, the first-use and child-run checks among them.
+
+**Third round (the PR after #42): what was left with Python behind it.** 179 → **167** of 440
+(two checks added). Three groups, one idea each.
+
+| was text | is now |
+|---|---|
+| `principals.py` — "an identity no declaration names is reported by apply", "marked in the listing", "never removed" (`'"undeclared": orphans' in pr`, `"UNDECLARED" in pr`, `'api("DELETE"' not in pr`) | `cmd_apply()` and `cmd_list()` against a Preloop that is a dict (`fake_preloop()`: agents, credentials, governance, every call recorded; `api()` replaced), one identity declared and one not: apply answers `undeclared: ["left-behind"]` with "yours to do"; list marks that line `UNDECLARED` and not the other; no `DELETE` was called and both identities are still there |
+| "a credential is asked about, never assumed from this process's environment", "a name Preloop would refuse is not offered twice", "a credential already issued is not lost to a failed chmod" (`"def has_credential(" in src`, `"def credential_name(" in src`, `"except OSError" in src`) | apply with the variable in this process's environment and nothing in Preloop or the env file, `os.chmod` raising (the shared module, restored in a `finally`): exit 0, one `credential minted`, the token line in the file it wrote. Then Preloop has it and the file names it, the environment does not: no change, no restart. `credential_name()` answers `-2` when the base name is taken by a revoked one |
+| `ops_health.py` — "identities that accumulate are reported, not deleted", "a declared role principal is not counted" (strings) | `risks()` with the agent list replaced — two of `Claude Code`, two `Role: hello-writer`: one risk, detail `Claude Code: 2`, the deleting left to the operator |
+| `collect_obs.py` — "a reading with numbers and no vendor timestamp is dated by when it was taken", "no numbers stays undated" (strings) | `codexbar_claude_direct()` with `codexbar` a script on PATH printing a file, the login directory a temporary one: numbers without `updatedAt` → an ISO timestamp and a `session` window; no numbers → `observed_at None`; a vendor timestamp wins (new check) |
+| `ops/server.py` — "the panel asks the runner rather than keeping a second list" (`'run_workflow.py", "workflows"' in ops_server`) | `GET /api/workflows` through `ops_call()` (`ops_post` generalised): 200, one exec recorded — `run_workflow.py workflows --detail` in the agent (the "no list of its own" half stays an absence pin) |
+| "the principals a bring-up applies include the packages'" (`"packages.principals()" in pr`) | `principals.declared()` ⊇ `packages.principals()` names, `hello-writer` among them |
+
+What stays text after this round, across the suite: shell (`up.sh`, `down.sh`, `install.sh`,
+`packages.sh`), the hub, nginx and tinyproxy configs, compose, the Dockerfile, `run-agent.mjs`,
+the documents, and the step scripts that run only under Conductor. That is the floor this method
+reaches without a second kind of harness (a shell harness, a browser), and the count is now a
+number the ratchet holds rather than an estimate.
+
+**Measured, third round.** The three groups and `controls_composition` on this host in one
+process, 145/145; pin_kinds trial 167/440, review 51/170; the ratchet bound lowered to 167;
+review_controls 187/187 and static 13/13 here; **cold-start run 78 green**: trial_controls 507/507 in the container, review 187/187, stack 24/24.
