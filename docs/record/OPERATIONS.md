@@ -4695,3 +4695,71 @@ number the ratchet holds rather than an estimate.
 **Measured, third round.** The three groups and `controls_composition` on this host in one
 process, 145/145; pin_kinds trial 167/440, review 51/170; the ratchet bound lowered to 167;
 review_controls 187/187 and static 13/13 here; **cold-start run 78 green**: trial_controls 507/507 in the container, review 187/187, stack 24/24.
+
+## 84. The live instance after review 3: resume continues, rollback refused by its own check (2026-10-03)
+
+The two measurements §79 could not take on this host, taken by the operator on the live instance
+(55d81da, after `release.sh update --to 55d81da` recorded release `20261003-105047-be4ed57`, ALL
+CHECKS PASSED; a backup `agentstack-backup-20261003-104632`, 985 MB, taken first).
+
+**Resume: it continues from the checkpoint, and only the unfinished step runs again.**
+
+```
+docker exec cadp278-agent /opt/venv/bin/python /work/stack/run_workflow.py stop   r79-resume-195851
+docker exec cadp278-agent /opt/venv/bin/python /work/stack/run_workflow.py resume r79-resume-195851
+```
+
+| | |
+|---|---|
+| stopped when | novel-a in its author step (architect done) — `Stopped workflow 'novel-a' (PID 1801)`, rc 0 |
+| checkpoint | left: `checkpoints/novel-a-20261003-105942-244edb45.json`, `current_agent = author` |
+| after resume | `finished`, `completed_ok: true`, `segment: 2`, `resumed_from` the checkpoint, exit 0, decision PASS |
+| steps run | route roles stage architect author author freeze reviews triage record_pass done_pass |
+| model calls | architect-codex once (before the stop); author-claude (interrupted); **author-claude-r2** (after the resume); then story, history, cold |
+
+The architect did not run again. The second author call carries its own id, `-r2`, and the first
+call's record is intact: §79's evidence-directory fix, measured. `segment: 2` is §79's event-log
+segmentation, measured.
+
+A side finding: `cmd_stop`'s docstring still said a stop leaves no checkpoint (2 of 51 runs, from
+before §23). The runbook said the opposite and the runbook was right — §23's `--web` is what made
+the graceful cancel write one. The docstring now says what was measured.
+
+**Rollback to pre-202610: refused by the check §79 added, with the toolchain present in the archive.**
+
+```
+scripts/release.sh rollback --to pre-202610     # exit 1
+  == rolling back to pre-202610 (workspace 2485a20)
+  the archive has no claude
+  release: the release's toolchain archive does not restore a usable toolchain — nothing was changed
+```
+
+The archive holds claude (`.local/share/claude/versions/2.1.278`), but its `bin/claude` is an
+**absolute symlink**, `-> /home/agent/.local/share/claude/versions/2.1.278` — claude's installer
+writes one. The check unpacks the archive into the volume as `.local.new` and tests
+`[ -e /vol/.local.new/bin/claude ]` in an alpine container; `-e` follows the link to
+`/home/agent/...`, which does not exist in that container, and the tool is called missing. So no
+release from before #34 could be rolled back to — the one case the check exists for. The second
+finding: the refusal said "nothing was changed" and left the 656 MB `.local.new` in the volume
+(the operator removed it). The live instance stayed at 55d81da, 19 containers up.
+
+**Fixed.** The check is a function, `toolchain_usable`, kept as a string in release.sh so the same
+text runs in the container and in a control: a symlink's target is read, an absolute one under
+`/home/agent/.local/` is looked for under the unpacked archive, a relative one next to the link;
+a target that is really missing is still refused, naming the tool. On refusal the unpacked copy is
+removed before the message. review_controls runs the function on a fixture shaped like
+pre-202610's archive (claude an absolute link, dangling on the host; preloop a relative one;
+conductor a file): it verifies, and with the claude or the preloop target removed it is refused
+naming that tool. The "went down and came back" measurement is still to take, on the live
+instance, with this fix — a rollback is the one thing the cold start cannot rehearse (it has no
+pre-#34 release).
+
+**A recurring condition, now an issue.** The resume measurement first held with `claude stale:
+27152s old`: the route login's OAuth token had expired, CodexBar cannot refresh it, and the
+reading aged past the bound — the third time in two days (§73 was the first). Every run that
+needs claude holds until a person signs in again on the panel. #44 holds the mechanism, the
+measurements and the candidate fixes; nothing was changed for it here.
+
+**Measured.** Resume: the table above, on the live instance. Rollback: refused as quoted; the fix's
+function on this host through review_controls (verifies / refuses naming claude / refuses naming
+preloop); review_controls 189/189, static 13/13 here; **cold-start run 80 green** (review 189/189 in the container, among them the two archive-check cases). The rollback itself: the live instance, after this merges.
