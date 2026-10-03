@@ -4615,3 +4615,61 @@ job for the next rounds, one group at a time.
 193, behaviour the majority of review_controls. The bound moves down with each conversion and
 up only with a sentence here. `verify.sh --level static` prints the counts on every run; the cold
 start carried the ratchet on **run 71** (review_controls 187/187 in the agent).
+
+## 83. trial_controls: the first text pins turned into behaviour (2026-10-03)
+
+§82's ratchet, moved for the first time. Eight of trial_controls' source-text pins are behaviour
+checks now, each a function run against a fake of the thing it talks to and its answer read back;
+193 → **185** of 434 (one check added). This host cannot run the suite, so each converted block was
+run here on its own through the suite's own `load()` and `check()`, and the cold start runs the
+whole suite.
+
+| was text | is now |
+|---|---|
+| "a decision reached without a model call is not recorded as NOT_RUN", "its evidence is kept with it" (`'NO_EXECUTION" if decided else "HOLD"' in rec`) | `record.record()` against an MLflow that is a dict — `call` and `put_artifact` replaced — for a payload with a decision and no execution, then for a HOLD: the tags read `NO_EXECUTION`/`PASS` with `evidence_items 2`, then `HOLD`/`NOT_RUN` with none. A third check came with it (the HOLD) |
+| "asking for the plan never writes the map" (`"assignment(persist=False)" in …`) | `role_egress.plan()` on a temporary generated directory leaves no `role-uids.json`; `assignment(persist=True)` writes it when roles are declared |
+| "the panel gets it from the one answer it already asks for" ×2 (`'"needs_env": needs.get(' in …`, `'"runbook": runbooks.get(' in …`) | `run_workflow.described()`: hello-lane's row carries `needs_env` as a list and `command`; every row carries `runbook` |
+| "a package's declared capabilities are read by the runner" | `packages.requires_of("hello-lane")` answers `[]` |
+| "a run id used twice is an answer, not a traceback" (`"has been used already" in rw_src`) | `cmd_start` on a temporary runs directory whose id already has a run, the capability probe answering for this call: exit 2 and the JSON error, no traceback |
+| "the runner asks the loader", "a package may not take a built-in's name" | `run_workflow.known()` ⊇ `packages.workflows()`, carries hello-lane, and every built-in keeps its own entry |
+
+**Left as text in these groups, and why.** The step scripts (`agent_task.py`: `produced`,
+`produced_stale`, the login-owner refusal) run only as a Conductor step with a model; the Dockerfile,
+`up.sh`, `down.sh`, `install.sh`, the gitignore, tinyproxy's config and the hub are not Python; the
+documents are documents. The next groups to take are `controls_approval_boundary` (12) and
+`controls_resume` (12), where `approvals.py` and `runstate.py` have functions.
+
+**Measured.** The eight blocks on this host, 11/11 checks (the HOLD check new); pin_kinds
+review 51/170, trial 185/434; the ratchet bound lowered to 185; review_controls 187/187 and static
+13/13 here; the cold start: run 74 red on the leak below, **run 75 green** with it undone.
+
+**What run 74 found (the first cold start of this section; the fix's commit message says 72 — wrong number, same run).** Three checks in a later group,
+`controls_composition`, answered `[]` where `capabilities.missing()` should have named `record`,
+`tool_rights`, `egress`. The used-id block above replaces `capabilities.probe` and `missing` so the
+runner's question is the id and not the stack — and `capabilities` is one module in `sys.modules`,
+shared by every loader of `run_workflow`, so the replacement outlived its block and the next group
+asked a stub. Running each block alone on this host could not see it; the suite in one process did.
+The replacement is saved and restored in a `finally` now, and the leak reproduces here with the two
+blocks run in one process: three FAIL before, five ok after. A behaviour check that patches a shared
+module is a thing the suite must undo — written down here as the rule for the next conversions.
+
+**Second round, the same PR: `controls_resume` and `controls_approval_boundary`.** 185 → **179**
+of 438 (four checks added). The groups' leftovers are the hub, `up.sh`, `down.sh`, nginx's table,
+compose and `docs/commands.md` — not Python, so text they stay.
+
+| was text | is now |
+|---|---|
+| "a run is started with the dashboard that makes a graceful stop possible", "the reason is written down" (`'"--web", "--web-port", "0"' in src`) | `run_workflow.conductor_argv()` — the argv-building lines of `cmd_start` are a function now — answers `--web --web-port 0 --no-interactive`, the workflow's file, and the profile and inputs as `-i` pairs; the reason is its docstring |
+| "a run comes back when the workflow ends, not when the process does", "our own tidy-up is not reported as the run failing" (`"proc.terminate()" in src`, `"Reporting -15 as the exit" in src`) | `run_conductor()` with a child standing in for Conductor: it appends `workflow_completed` to the run's log and then sleeps, as the dashboard does. The launcher returns 0 within the bound, and the child is gone |
+| "a resume looks only past what was already in the log" (`"from_byte" in src`) | a second child beside the first, writing nothing, on a log that already ends with a stop: the launcher is still waiting when the first has returned; it returns once the child is sent away |
+| "continuing a run is a command" (`"def cmd_resume(" in src`) | `cmd_resume()` on a runs directory of its own: an id that is not there answers `no such run`, exit 1; a finished run with no checkpoint says `no checkpoint`, exit 1 (the doc half of the pin stays text) |
+| "the API has no resume endpoint" (`'/resume", p)' not in ops_server`) | the panel's handler called in-process (`ops_post()`: `ops/server.py` loaded once, `jlocal`/`jexec`/`dexec` replaced by recorders, `do_POST` on a handler built without a socket): `POST /api/runs/<id>/resume` answers 404 `no such route` |
+| "the panel runs the decision itself, not in the agent" (`'jlocal([f"{STACK}/approvals.py", "decide"' in ops_server`) | the same handler on `POST /api/approvals/<uuid>` with `approve` and a comment: 200, one call recorded through `jlocal` — `approvals.py decide <uuid> approve <comment>` — and none through `docker exec`; a decision that is neither `approve` nor `decline` is 400 with no call at all |
+
+One lesson from writing the resume checks: the first draft gave the run a two-letter id and read
+`no such run` back, because the id rule is six characters or more — the check was pinned against
+the rule before it was pinned against the function.
+
+**Measured, second round.** The two groups and `controls_composition` on this host in one process,
+80/80 (the canary for the leak above among them); the run_conductor pair costs ~12 s; pin_kinds
+trial 179/438, review 51/170; the ratchet bound lowered to 179; **cold-start run 76 green**: trial_controls 505/505 in the container, review 187/187, stack 24/24, the first-use and child-run checks among them.
