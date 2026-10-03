@@ -556,13 +556,14 @@ function renderInputs() {
   const name = $("#wf").value, prof = $("#profile") ? $("#profile").value : "";
   // The command is for copying, so it has to run as printed: a default with a space
   // (`text=from the parent`) reached the parser as `text=from`, and a placeholder's angle brackets
-  // are shell syntax (review 3, OPERATIONS §79). Values are quoted; a placeholder is quoted and named.
-  const ph = [];
-  const slot = (what) => { ph.push(what); return `'<${what}>'`; };
-  const parts = [`scripts/cycle.sh`, shq(name || ""), prof ? shq(prof) : slot("profile")]
-    .concat((wf.inputs || []).map((i) => `${i.name}=${i.default ? shq(i.default) : slot(i.name)}`));
-  $("#wf-command").textContent = name
-    ? parts.join(" ") + (ph.length ? `\n# ${ph.map((w) => "<" + w + ">").join(", ")}: 값으로 바꿔 넣습니다` : "")
+  // are shell syntax (review 3, OPERATIONS §79). It is built by the ops API (run_workflow.py
+  // `workflows --detail`, `command`), quoted there, and the stack level runs that very string
+  // (§81); this page only puts the chosen profile in.
+  const tmpl = wf.command || "";
+  const cmd = tmpl.replace("{profile}", prof ? shq(prof) : "'<profile>'");
+  const ph = (cmd.match(/'<[a-z0-9_]+>'/gi) || []).map((m) => m.slice(1, -1));
+  $("#wf-command").textContent = name && tmpl
+    ? cmd + (ph.length ? `\n# ${ph.join(", ")}: 값으로 바꿔 넣습니다` : "")
     : "";
 }
 // a value as the shell takes it: bare when it is only safe characters, single-quoted otherwise

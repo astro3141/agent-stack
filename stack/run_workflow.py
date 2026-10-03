@@ -113,7 +113,7 @@ def described():
                # what its package says it needs of the stack — the panel's start gate reads it
                "capabilities": caps_of(name)}
         try:
-            d = yaml.safe_load(open(f"/work/{rel}", encoding="utf-8")) or {}
+            d = yaml.safe_load(open(settings.ROOT / rel, encoding="utf-8")) or {}
             w = d.get("workflow") or {}
             row["description"] = str(w.get("description") or "")
             for key, spec in (w.get("input") or {}).items():
@@ -125,6 +125,14 @@ def described():
                                       "required": bool(spec.get("required"))})
         except Exception as e:
             row["error"] = f"{type(e).__name__}: {e}"
+        # The command a person copies from the panel, built here and nowhere else (review 3, §81):
+        # every value shell-quoted, a required input with no default a quoted placeholder, and
+        # `{profile}` for the panel's one choice. verify.sh runs this very string at the stack level.
+        import shlex
+        parts = ["scripts/cycle.sh", shlex.quote(name), "{profile}"]
+        for i in row["inputs"]:
+            parts.append(f"{i['name']}={shlex.quote(i['default']) if i['default'] else shlex.quote('<' + i['name'] + '>')}")
+        row["command"] = " ".join(parts)
         out[name] = row
     return out
 

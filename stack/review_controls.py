@@ -286,7 +286,10 @@ def state_controls():
     (root / "state" / "hello-lane").mkdir(parents=True)           # installed, declares no state
     (root / "state" / "hello-lane" / "x").write_bytes(b"x" * 2048)
     (root / "state" / "zz-nobody").mkdir()                         # no such package
-    env = {**os.environ, "AGENTSTACK_ROOT": str(root)}
+    # the temporary root holds the state only; the packages and their declaration are this tree's
+    env = {**os.environ, "AGENTSTACK_ROOT": str(root), "AGENTSTACK_PACKAGES": str(WORK / "packages"),
+           "AGENTSTACK_PACKAGES_YAML": str(WORK / "config" / "packages.yaml"),
+           "AGENTSTACK_PACKAGES_LOCAL": str(WORK / "config" / "packages.local.yaml")}
     r = subprocess.run([sys.executable, str(HERE / "packages.py"), "state", "--json"], env=env,
                        capture_output=True, text=True, timeout=60)
     got = json.loads(r.stdout or "{}").get("packages") or {}
@@ -611,7 +614,7 @@ def panel_controls():
     check("panel: no start and no precheck on the page",
           'id="start"' not in hub and 'id="precheck"' not in hub and 'api("/api/runs", {' not in hub)
     check("panel: the page shows the command instead, and says it does not start",
-          'id="wf-command"' in hub and "`scripts/cycle.sh`, shq(name" in hub and "이 화면은 시작하지 않습니다" in hub)
+          'id="wf-command"' in hub and 'const tmpl = wf.command || "";' in hub and "이 화면은 시작하지 않습니다" in hub)
     check("panel: the ops API has no start endpoint", 'run_workflow.py", "start"' not in srv
           and "POST /api/runs  body" not in srv)
     check("panel: stopping a run that is going is still the panel's", "/stop" in srv and "data-stop" in hub)
@@ -887,8 +890,8 @@ def review3_controls():
 
     # (6) the command a person copies runs as printed; the first-use path in the docs runs
     hub = (WORK / "hub" / "index.html").read_text()
-    check("hub: command values are shell-quoted and a placeholder is quoted and named",
-          "function shq(v)" in hub and "slot(i.name)" in hub and "값으로 바꿔 넣습니다" in hub and '${i.default || "<" + i.name + ">"}' not in hub)
+    check("hub: the command is the API's quoted string, the profile shell-quoted here, a placeholder named",
+          "function shq(v)" in hub and 'tmpl.replace("{profile}", prof ? shq(prof)' in hub and "값으로 바꿔 넣습니다" in hub and '${i.default || "<" + i.name + ">"}' not in hub)
     check("hub: the package login line does not depend on the needs list, and an empty login object is no login",
           "const lg = wf.login && wf.login.package ? wf.login : null;" in hub and 'if (lg && $("#pkg-login"))' in hub)
     check("hub: the consoles' addresses come from the ops API — no fixed MLflow port in the run detail",
@@ -942,6 +945,39 @@ def ease_controls():
     check("paths: the ops API names the stack's mount once", srv.count('"/work/stack') == 1 and 'STACK = "/work/stack"' in srv, srv.count('"/work/stack'))
 
 
+# ---------------------------------------------------------------- 14. the first-use path (§81)
+def firstuse_controls():
+    """The command a person copies is built once (run_workflow.py), parses as a shell would, and
+    the panel shows that string; the stack level runs it (verify.sh)."""
+    import shlex
+    # described() on this checkout, the way verify.sh's static level points packages.py at it
+    env = {**os.environ, "AGENTSTACK_ROOT": str(WORK), "AGENTSTACK_PACKAGES": str(WORK / "packages"),
+           "AGENTSTACK_PACKAGES_YAML": str(WORK / "config" / "packages.yaml"),
+           "AGENTSTACK_PACKAGES_LOCAL": str(WORK / "config" / "packages.local.yaml")}
+    r = subprocess.run([sys.executable, "-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import run_workflow; print(json.dumps(run_workflow.described()))", str(HERE)],
+                       capture_output=True, text=True, env=env, timeout=120)
+    try:
+        rows = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        rows = {}
+    cmds = {k: v.get("command", "") for k, v in rows.items()}
+    check("first use: every workflow the stack offers has a command, and each parses as a shell would",
+          bool(cmds) and all(c.startswith("scripts/cycle.sh ") and "{profile}" in c and shlex.split(c.replace("{profile}", "p")) for c in cmds.values()), cmds)
+    hl = cmds.get("hello-lane", "")
+    toks = shlex.split(hl.replace("{profile}", "research-default"))
+    check("first use: hello-lane's command carries its default with the space intact after shell parsing",
+          toks[:3] == ["scripts/cycle.sh", "hello-lane", "research-default"] and any(t.startswith("text=") and " " in t for t in toks), toks)
+    req = [c for c in cmds.values() if "'<" in c]
+    check("first use: a required input with no default is a quoted, named placeholder — never bare angle brackets",
+          all("<" not in c.replace("'<", "").replace(">'", "") for c in cmds.values()), req)
+    hub = (WORK / "hub" / "index.html").read_text()
+    check("first use: the panel shows the API's command and only puts the profile in",
+          "const tmpl = wf.command || \"\";" in hub and 'tmpl.replace("{profile}"' in hub and "slot(i.name)" not in hub)
+    vs = (WORK / "scripts" / "verify.sh").read_text()
+    check("first use: the stack level runs that string from the checkout and requires the cycle to complete",
+          'FU_CMD="$(in_agent /work/stack/run_workflow.py workflows --detail' in vs and 'bash -c "$FU_CMD"' in vs and '"completed_ok": true' in vs.split("FU_UI=")[1])
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -960,6 +996,7 @@ adapter_controls()
 update_controls()
 review3_controls()
 ease_controls()
+firstuse_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

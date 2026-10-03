@@ -32,13 +32,14 @@ graph, the steps and the meaning stay the package's own.
 """
 import json, os, re, sys
 
-ROOT = os.environ.get("AGENTSTACK_PACKAGES", "/work/packages")
-DECL = os.environ.get("AGENTSTACK_PACKAGES_YAML", "/work/config/packages.yaml")
+STACK_ROOT = os.environ.get("AGENTSTACK_ROOT", "/work")   # the tree, as settings.ROOT names it
+ROOT = os.environ.get("AGENTSTACK_PACKAGES", os.path.join(STACK_ROOT, "packages"))
+DECL = os.environ.get("AGENTSTACK_PACKAGES_YAML", os.path.join(STACK_ROOT, "config", "packages.yaml"))
 # Declarations this instance adds and this repository does not carry: a package in a private
 # repository, a client's workflow, anything a clone of this repository could not fetch. Same shape,
 # git-ignored, merged over the tracked file — so the tracked one stays a declaration a stranger can
 # actually run (docs/packages.md).
-LOCAL_DECL = os.environ.get("AGENTSTACK_PACKAGES_LOCAL", "/work/config/packages.local.yaml")
+LOCAL_DECL = os.environ.get("AGENTSTACK_PACKAGES_LOCAL", os.path.join(STACK_ROOT, "config", "packages.local.yaml"))
 # What the shared proxy actually serves, which since §60 is the generated merge of the tracked
 # baseline and this instance's own additions — not the tracked file. Reading the tracked one made
 # this audit answer "NOT OPEN" about hosts that were open, which is the opposite of its job.
@@ -110,7 +111,7 @@ def _read(directory):
     if rb:
         rbp = os.path.normpath(os.path.join(directory, rb))
         if rbp.startswith(os.path.normpath(directory) + os.sep) and os.path.isfile(rbp):
-            runbook = os.path.relpath(rbp, "/work")
+            runbook = os.path.relpath(rbp, STACK_ROOT)
     out.update(runbook=runbook,
                usable=True, entry=resolved.get(name) or sorted(resolved.values())[0],
                entries=resolved, version=str(m.get("version") or ""),
@@ -207,7 +208,7 @@ def workflows(with_conflicts=False):
             conflicts.append({"workflow": wf_name,
                               "declared_by": [c[0]["name"] for c in carriers]})
             continue
-        out[wf_name] = os.path.relpath(carriers[0][1], "/work")
+        out[wf_name] = os.path.relpath(carriers[0][1], STACK_ROOT)
     return (out, conflicts) if with_conflicts else out
 
 
@@ -377,7 +378,7 @@ def stack_of(name=None):
     it says nothing about the stack's age. Nothing here guesses.
     """
     import subprocess
-    root = os.environ.get("AGENTSTACK_ROOT", "/work")
+    root = os.environ.get("AGENTSTACK_ROOT", STACK_ROOT)   # read when asked: a control points it at a temporary tree
     out = {}
     for pkg, p in sorted(installed().items()):
         if not p["usable"] or (name and pkg != name):

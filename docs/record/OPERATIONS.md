@@ -4521,3 +4521,41 @@ provider list in the Python; no in-network address on a code line outside `setti
 stack/, the adapter and `up.sh`; no interpreter path in a Python module; no module naming another
 by `/work/stack/...`; one `PY_IN_AGENT` per script; one `STACK` in the ops API. review_controls
 179/179 and static 13/13 on this runner; the cold start for what runs — run number below.
+
+## 81. The first-use check: the command a person copies is the one that runs (review 3, 2026-10-03)
+
+The review's third recommendation: a check that the install document and the panel's commands
+actually run, because in a command-first product that is the first-use experience. §79 fixed the
+four commands that did not; this makes the panel's one a measurement rather than a reading.
+
+**One builder.** The command the panel shows was assembled in the page from the API's input
+list, so its quoting was the page's and nothing ran it. It is built once now, in
+`run_workflow.py` (`workflows --detail`, field `command`): `scripts/cycle.sh <workflow> {profile}
+key=value…` with every value `shlex.quote`d, a required input with no default as a quoted,
+named placeholder (`text='<text>'`), and `{profile}` for the panel's one choice. The page puts
+the chosen profile in and shows that string; it keeps no builder of its own.
+
+**One run.** `verify.sh --level stack` asks the API for hello-lane's command, puts
+`research-default` in the way the page does, and runs the string from the checkout exactly as a
+person would paste it — `bash -c` on the host, through `scripts/cycle.sh` into `cycle.py` — then
+requires the cycle it started to complete (`run_workflow.py show <ui>` → `completed_ok`). The
+string carries `text='from the parent'`: the default with a space that reached the parser as
+`text=from` before §79.
+
+**What the check does not cover, said plainly.** `install.md`'s block declares a remote package
+and installs it; on a cold start there is no remote package to fetch and hello-lane, being
+`from: local`, cannot be declared a second time without becoming a contested name. The block's
+commands are pinned to exist (`packages.sh install`, `cycle.sh`, `run_workflow.py start`) and its
+run id to pass the rule (§79); running the block as written needs a package repository the stack
+does not carry. Browser rendering of the page is not measured either: the page's script is parsed
+by node at the static level, and what it renders is the API's string, which the stack level runs.
+
+Along the way: `packages.py` related a workflow's path to the literal `/work` and `described()`
+opened `/work/<rel>`; both read the configured root now (`settings.ROOT`, `AGENTSTACK_ROOT`), which
+is what let this check run on the host at all and removed two more copies of a path (§80).
+
+**Measured.** firstuse_controls (5 pins): every offered workflow has a command and each parses as
+a shell would; hello-lane's carries its default with the space intact after parsing; a placeholder
+is quoted and named; the page shows the API's string; the stack level runs it and requires the
+cycle to complete. review_controls 184/184 and static 13/13 here; the first run of the check
+itself is the cold start — run number below.

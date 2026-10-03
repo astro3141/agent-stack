@@ -284,6 +284,20 @@ if in_agent /work/stack/run_workflow.py start "$RID" hello-lane research-default
   ok "hello-lane ran to completion ($RID) — a package step through Conductor, no model, no login — a fresh install's first run (#26)"
 else bad "hello-lane did not complete ($RID)" "$(tail -3 "$TMP/hello.log" | tr '\n' ';')"; fi
 
+# The first-use check (review 3, §81): the command the panel shows for hello-lane — the string the
+# ops API builds, with the profile put in the way the panel does — is run from this checkout as a
+# person would paste it, and the cycle it starts has to complete. A default with a space is in it
+# (`text='from the parent'`), which is what broke before.
+FU_CMD="$(in_agent /work/stack/run_workflow.py workflows --detail 2>/dev/null | nocr | $PY -c 'import json,sys; d=json.load(sys.stdin); print(d["hello-lane"]["command"].replace("{profile}", "research-default"))' 2>/dev/null)"
+if [ -z "$FU_CMD" ]; then bad "first use: the ops API offers no command for hello-lane" "run_workflow.py workflows --detail"
+else
+  FU_OUT="$( (cd "$HERE" && STACK="$STACK" bash -c "$FU_CMD") 2>"$TMP/firstuse.err" | nocr | tail -1)"
+  FU_UI="$(printf '%s' "$FU_OUT" | $PY -c 'import json,sys; print(json.load(sys.stdin).get("ui",""))' 2>/dev/null)"
+  if [ -n "$FU_UI" ] && in_agent /work/stack/run_workflow.py show "$FU_UI" 2>/dev/null | tail -1 | grep -q '"completed_ok": true'; then
+    ok "first use: the panel's command ran as printed and completed ($FU_UI) — $FU_CMD"
+  else bad "first use: the panel's command did not run as printed" "$FU_CMD → $(printf '%s' "$FU_OUT" | cut -c1-160) $(tail -2 "$TMP/firstuse.err" | tr '\n' ';')"; fi
+fi
+
 # A sub-workflow and a wait, through this stack's door (stack/cases/child-run.yaml, #13). The
 # measurement is which run id the child's step saw; it is printed, and docs/packages.md says what
 # it means once a machine has said it.
