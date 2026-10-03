@@ -37,6 +37,9 @@ if [ -z "${RELEASE_SH_PINNED:-}" ]; then
 fi
 cleanup_all() {
   [ -n "${CAND_DIR:-}" ] && { git -C "$(m "$HERE")" worktree remove --force "$(m "$CAND_DIR")" >/dev/null 2>&1 || true; rm -rf "$CAND_DIR"; }
+  # the candidate image exists for one comparison (what the update will change); the image the
+  # stack runs is compose's own build. Left in place it accumulated one per update (§84).
+  [ -n "${CAND_IMAGE:-}" ] && docker image rm -f "$CAND_IMAGE" >/dev/null 2>&1
   rm -f "${RELEASE_SH_COPY:-}"
 }
 trap cleanup_all EXIT
