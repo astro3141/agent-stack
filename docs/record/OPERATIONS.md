@@ -4366,3 +4366,47 @@ pins move. What this round measured is what mattered: an update with no flag end
 refusal and with the three tools answering from `/opt`.
 
 The old copy is gone; the volume keeps its logins and state. #34 closes with this.
+
+## 77. The adapter's last cut: one module per provider, the call's context instead of globals (#27 step 3, 2026-10-03)
+
+The half of `run-agent.mjs` that §74 left in place — the provider table and the module-level
+`LOGIN`, `PRINCIPAL`, `HOOK_FOR` — was the half only a model call could measure. The operator
+made the measurement and the cut (PR #38, branch `issue27-run-agent-split`, cd0641e).
+
+**Cut.** `stack/adapter/providers/{claude,codex,grok}.mjs`: each a function of one call's context
+(login directory, principal, egress, the MCP url), returning the profile `run-agent.mjs` used to
+hold in its table. The context is built once in `main()` from the request; the hook is a `const`
+there and its token travels to the permission POST. `run-agent.mjs` 430 → 297 lines, naming no
+provider internal. `stack/adapter/providers_check.mjs` (20 checks, no model) pins that a module
+follows the login and principal it was made with, that a second call in one process does not reach
+the first, that the native-tool switches and the downstream rules are unchanged, and that no
+module-level `let` remains; it runs at the static level and in review_controls. Two trial_controls
+pins follow the renamed expressions.
+
+**Measured, on a fresh cold start beside the live instance** (coldthree, a clone of 9cfc516,
+signed in to all three providers; the branch's ten files overlaid on the clone, the live instance
+untouched):
+
+| | main 9cfc516 | branch |
+|---|---|---|
+| verify.sh --level full | 24/24 | 24/24 |
+| trial / review / router controls | 500 / 141 / 26 | 500 / 142 / 26 |
+| auto, novel-a | PASS, PASS | PASS, PASS |
+
+The same seven calls through `agent_task.py` → `run-agent.mjs` on each side — claude ×3 (the
+adapter's own login, a local principal, a brokered principal), codex ×2, grok ×2 (allow, deny) —
+**7/7 the same**: result keys, status, `produced`, provider, principal, route, hook source, the
+permission requests (title, routed, outcome), the MCP denials ("Access denied: Scoped rule 2") and
+the failure; run ids, paths, timings, token counts, model text and vendor session ids left out as
+volatile. The tools that ran were identical per call on claude and codex; grok tried its native
+write once on each side and was refused both times — the model's behaviour, not the adapter's.
+Model-free in the agent's node: replay 4/4, provider checks 20/20. On this runner: static 13/13,
+review_controls 142/142; cold-start-linux on cd0641e: dispatched, its run number goes here once it ran.
+
+**Found on the way, not the branch's (#37).** codex without a principal fails on a fresh install,
+on main as on the branch: `ENOENT ~/.codex/config.toml`. The claim's onboarding runs once, before
+codex is signed in, the Preloop CLI answers `agent "codex" not found`, and nothing retries after
+the login. Roles that name a principal (novel-a's architect and story) do not read that file.
+
+#27 closes with this: the four steps — the cut where a recorded run checks it (§74), the fixtures,
+the provider modules, and this record.
