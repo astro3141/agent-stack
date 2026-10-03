@@ -305,8 +305,23 @@ def state_controls():
     check("cycle: key=value words are the workflow's inputs, not a profile",
           a["inputs"] == {"day": "2026-10-02"} and a["profile"] == "research-default" and a["by"] == "scheduler", a)
     check("cycle: a bare profile still parses without inputs", cy.parse_args(["x"])["inputs"] == {})
-    check("cycle: the inputs reach the run's argv",
-          'argv += [f"{k}={v}" for k, v in sorted((inputs or {}).items())]' in (HERE / "cycle.py").read_text())
+    # behaviour, not text (§82): cycle.run on a temporary ops directory, with the runner it starts
+    # replaced by one that only records the argv it was given
+    cy = importlib.import_module("cycle")
+    with tempfile.TemporaryDirectory() as ops:
+        cy.OPS_DIR, cy.LOCK, cy.RECORD = ops, f"{ops}/.cycle.lock.d", f"{ops}/cycles.jsonl"
+        seen = []
+        class _P:  # what subprocess.run returns
+            returncode = 0; stdout = '{"state": "ok"}'; stderr = ""
+        real_run = cy.subprocess.run
+        cy.subprocess.run = lambda argv, **kw: (seen.append(list(argv)), _P)[1]
+        try:
+            row = cy.run("hello-lane", "research-default", by="control", inputs={"text": "a b", "day": "2026-10-03"})
+        finally:
+            cy.subprocess.run = real_run
+        started = next((a for a in seen if "run_workflow.py" in " ".join(a)), [])
+        check("cycle: the inputs reach the run's argv, each as key=value, a space kept",
+              started[-2:] == ["day=2026-10-03", "text=a b"] and started[2:5] == ["start", row.get("ui"), "hello-lane"], started)
     # state kept with the work, elsewhere: declared as a string, reported as a place, never a directory
     pkgs = root / "packages"; (pkgs / "remote-one").mkdir(parents=True)
     (pkgs / "remote-one" / "manifest.yaml").write_text("name: remote-one\nversion: 0.0.1\nentry: w.yaml\nrequires:\n  state: \"github issue comments\"\n")
@@ -772,8 +787,26 @@ def update_controls():
         cx.write_text("model_provider = 'preloop'\n")
         bp.seed_for("codex", home)
         check("onboarding: a file that exists is left alone", cx.read_text() == "model_provider = 'preloop'\n")
-    check("onboarding: the seed happens for every kind the claim onboards, before the CLI is asked",
-          "for kind in agent_kinds:\n        seed_for(kind, home)" in (HERE / "bootstrap_preloop.py").read_text())
+    # behaviour, not text (§82): onboard() with the Preloop CLI replaced by one that notes, at the
+    # moment it is asked, whether each vendor's file is already there
+    with tempfile.TemporaryDirectory() as home:
+        present_when_asked = {}
+        class _R: returncode = 0; stdout = ""; stderr = ""
+        def fake_run(argv, **kw):
+            if argv[:3] == ["preloop", "agents", "onboard"]:
+                kind = argv[3]
+                rel = bp.SEED.get(kind, ("",))[0]
+                present_when_asked[kind] = bool(rel) and os.path.exists(os.path.join(home, rel))
+            return _R
+        real_run, real_home = bp.subprocess.run, os.environ.get("HOME")
+        bp.subprocess.run = fake_run; os.environ["HOME"] = home
+        try:
+            problem = bp.onboard("http://preloop.test", "key", ["claude-code", "codex"])
+        finally:
+            bp.subprocess.run = real_run
+            if real_home is not None: os.environ["HOME"] = real_home
+        check("onboarding: the seed happens for every kind the claim onboards, before the CLI is asked",
+              problem is None and present_when_asked == {"claude-code": True, "codex": True}, (problem, present_when_asked))
     dr = (WORK / "scripts" / "drift.sh").read_text()
     check("drift: four states, and an unanswered line carries the registry's reason",
           all(w in dr for w in ('state="same"', 'state="newer"', 'state="unasked"', 'state="unanswered"', "UNANSWERED+=", '"reason":"%s"')))
@@ -978,6 +1011,22 @@ def firstuse_controls():
           'FU_CMD="$(in_agent /work/stack/run_workflow.py workflows --detail' in vs and 'bash -c "$FU_CMD"' in vs and '"completed_ok": true' in vs.split("FU_UI=")[1])
 
 
+# ---------------------------------------------------------------- 15. what the controls pin (§82)
+def pinkind_controls():
+    """pin_kinds.py counts the controls that pin a source file's text rather than a behaviour; the
+    count may fall and may not rise. Raise the bound only with a sentence in OPERATIONS."""
+    r = subprocess.run([sys.executable, str(HERE / "pin_kinds.py"), str(HERE / "review_controls.py"), str(HERE / "trial_controls.py")],
+                       capture_output=True, text=True, timeout=60)
+    try:
+        kinds = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        kinds = {}
+    rc = kinds.get(str(HERE / "review_controls.py"), {}); tc = kinds.get(str(HERE / "trial_controls.py"), {})
+    check("pins: review_controls' source-text pins do not grow (≤ 51 at §82)", 0 < rc.get("source-text", 999) <= 51, rc)
+    check("pins: trial_controls' source-text pins do not grow (≤ 193 at §82)", 0 < tc.get("source-text", 999) <= 193, tc)
+    check("pins: behaviour checks are the majority of review_controls", rc.get("behaviour", 0) > rc.get("source-text", 0) + rc.get("absence", 0), rc)
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -997,6 +1046,7 @@ update_controls()
 review3_controls()
 ease_controls()
 firstuse_controls()
+pinkind_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

@@ -4559,3 +4559,43 @@ a shell would; hello-lane's carries its default with the space intact after pars
 is quoted and named; the page shows the API's string; the stack level runs it and requires the
 cycle to complete. review_controls 184/184 and static 13/13 here; the first run of the check
 itself is the cold start — run number below.
+
+## 82. What the controls pin: behaviour, or a file's text (review 3, "검증 체계", 2026-10-03)
+
+The review's remark: "some checks confirm that a string is in the source rather than that the
+behaviour holds." Fair, and until now unmeasured. `stack/pin_kinds.py` reads the two control
+suites and counts, per check, whether its condition reads a file of this repository (a module, a
+script, a page, a document) or exercises a behaviour. A file the control wrote itself under a
+temporary directory is behaviour; a condition made only of `not in` tests is an **absence** pin,
+which is the kind that is right as text (a button that must not exist, an endpoint that is gone).
+
+| suite | checks | behaviour | source-text | absence |
+|---|---|---|---|---|
+| review_controls, before | 167 | 111 | 53 | 3 |
+| review_controls, after | 170 | 116 | **51** | 3 |
+| trial_controls | 433 | 228 | 193 | 12 |
+
+(The first version of the counter was wrong by eight: it treated a variable named `c` or `doc` as
+a file's text wherever the name appeared, because another function had bound the same name to
+one. Scoped per function, the numbers above.)
+
+**Turned into behaviour here**, where a function-level reproduction existed: "the inputs reach
+the run's argv" now runs `cycle.run` on a temporary ops directory with the runner replaced by one
+that records its argv (`text=a b` arrives whole, the id and workflow in their places); "the seed
+happens before the CLI is asked" now runs `onboard()` with the Preloop CLI replaced by one that
+notes, at the moment it is asked, whether each vendor's file is there (both are).
+
+**What stays text, by kind.** Of review_controls' 51: the panel's decisions (no start, no
+precheck, resume and apply as commands — 6), documents and the contract (what update-day.md,
+the runbook, install.md, CONTRACT.md must say — 7), the Dockerfile, release.sh, up.sh, drift.sh
+(what a shell script or an image build does needs Docker or a registry — 16), the hub page
+(what a browser renders — 5), and pins on the shape of Python or JavaScript source where the
+behaviour runs only with a model, a container or a second process (the door's `execv`, the
+broker path, the adapter's retry, a resumed run's environment — 17). trial_controls' 193 are
+of the same kinds and run only inside the agent container; this host cannot run that suite
+(measured: it reaches for the stack and stops), so its conversions are a cold-start-measured
+job for the next rounds, one group at a time.
+
+**The ratchet.** `pinkind_controls`: review_controls' source-text pins ≤ 51, trial_controls' ≤
+193, behaviour the majority of review_controls. The bound moves down with each conversion and
+up only with a sentence here. `verify.sh --level static` prints the counts on every run.

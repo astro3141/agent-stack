@@ -294,7 +294,7 @@ fi
 # install and by nothing since, until a second install ran a Grok lane without it (OPERATIONS
 # §64). Written here on every bring-up for every grok login the profiles name; idempotent.
 if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
-  in_agent '$PY_IN_AGENT /work/stack/grok_posture.py ensure 2>/dev/null' | grep -v '"no login"' | sed 's/^/   grok posture: /' || true
+  in_agent "$PY_IN_AGENT"' /work/stack/grok_posture.py ensure 2>/dev/null' | grep -v '"no login"' | sed 's/^/   grok posture: /' || true
 fi
 
 echo "== isolation"
@@ -347,8 +347,8 @@ check "grok /route login"                yes "$(in_agent 'test -s /route/grok/au
 # tools (stack/grok_posture.py). Without it a Grok lane writes with its native tool, waits for a
 # person, and ends DENIED. Reported for every grok login the profiles name; `--` when none exists.
 if in_agent 'test -s /route/grok/auth.json' >/dev/null 2>&1; then
-  check "grok native tools denied in its config" yes "$(in_agent '$PY_IN_AGENT /work/stack/grok_posture.py check --brief 2>/dev/null')"
-  in_agent '$PY_IN_AGENT /work/stack/grok_posture.py check 2>/dev/null' | grep -v '"ok"' | sed 's/^/        /' || true
+  check "grok native tools denied in its config" yes "$(in_agent "$PY_IN_AGENT"' /work/stack/grok_posture.py check --brief 2>/dev/null')"
+  in_agent "$PY_IN_AGENT"' /work/stack/grok_posture.py check 2>/dev/null' | grep -v '"ok"' | sed 's/^/        /' || true
 else
   printf '  --    %-44s %s\n' "grok native tools denied in its config" "no grok login"
 fi
@@ -366,7 +366,7 @@ echo "== quota observer"
 # A login file can exist while its token is dead: the router then reports the provider as
 # ineligible for an *unknown* reason, and every run that needs it holds. Being at a limit or
 # having a stale observation is ordinary; not being able to tell is not, so only "unknown:" fails.
-check "every provider's state is knowable"  0 "$(in_agent '$PY_IN_AGENT -c "
+check "every provider's state is knowable"  0 "$(in_agent "$PY_IN_AGENT"' -c "
 import sys; sys.path.insert(0, \"/work/stack\")
 import ops_health
 bad = ops_health.unknowable()
@@ -376,7 +376,7 @@ in_agent 'cat /tmp/unknowable 2>/dev/null' | head -4
 # What the run will meet: the router's own answer, not one source's file. The freshness of the
 # observer's file stopped being the model when codex became readable with the login that
 # executes — the router said ROUTE while this said no (OPERATIONS §31).
-check "the router can choose a provider"  yes "$(in_agent '$PY_IN_AGENT -c "
+check "the router can choose a provider"  yes "$(in_agent "$PY_IN_AGENT"' -c "
 import sys; sys.path.insert(0, \"/work/stack\")
 import capabilities
 print(\"yes\" if capabilities.probe()[\"admission\"][\"available\"] else \"no\")"')"
@@ -385,7 +385,7 @@ bash "$HERE/scripts/host-state.sh" >/dev/null 2>&1 || true
 # The allowlist is one file for one proxy, shared by every container on the governed network: a host
 # opened for one package is reachable by all of them. So a bring-up says which open host no installed
 # package asks for any more — the same shape as the identity report above (OPERATIONS §45).
-orphan_hosts="$(in_agent '$PY_IN_AGENT -c "
+orphan_hosts="$(in_agent "$PY_IN_AGENT"' -c "
 import json, subprocess, sys
 out = subprocess.run([sys.executable, \"/work/stack/packages.py\", \"egress\", \"--json\"],
                      capture_output=True, text=True).stdout
@@ -399,7 +399,7 @@ print(\" \".join(json.loads(out or \"{}\").get(\"open_and_undeclared\") or []))"
 # are created (that needs root, so it is done from the host with `docker exec -u 0`), the proxy
 # configurations and credentials are written into the volume the agent and the proxy share, and the
 # proxy is restarted so it serves them.
-roles_json="$(in_agent '$PY_IN_AGENT /work/stack/role_egress.py plan --json' 2>/dev/null)"
+roles_json="$(in_agent "$PY_IN_AGENT"' /work/stack/role_egress.py plan --json' 2>/dev/null)"
 case "$roles_json" in
   *'"uid"'*)
     for r in $(echo "$roles_json" | tr ',' '\n' | grep -o '"[a-z][a-z0-9-]*": {"hosts"' | cut -d'"' -f2); do

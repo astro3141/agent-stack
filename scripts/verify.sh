@@ -216,6 +216,9 @@ else
   bad "egress_gen.sh does not produce the lists compose mounts on a fresh clone"
 fi
 
+# what the controls pin — behaviour, or a source file's text (§82); a number the record keeps
+note "pins: $($PY stack/pin_kinds.py 2>/dev/null | tail -1 | $PY -c 'import json,sys; d=json.load(sys.stdin); print(" · ".join(f"{k.split(chr(47))[-1]} text {v.get(chr(115)+chr(111)+chr(117)+chr(114)+chr(99)+chr(101)+chr(45)+chr(116)+chr(101)+chr(120)+chr(116),0)}/{v[chr(99)+chr(104)+chr(101)+chr(99)+chr(107)+chr(115)]}" for k,v in d.items()))' 2>/dev/null)"
+
 if [ -x scripts/drift.sh ]; then
   drift="$(bash scripts/drift.sh 2>/dev/null)"
   newer="$(awk 'NR>1 && $4=="newer"{print $1}' <<<"$drift" | tr '\n' ' ')"
