@@ -4827,3 +4827,45 @@ ones stop appearing is measured after the next live update (`docker image ls | g
 by the cold start, which has no update path.
 
 **Measured, this addendum.** The rollback and the way back: the operator's outputs above, on the live instance. The printed note and the docs: review_controls 189/189, static 13/13 here; **cold-start run 82 green** on 1d7e042.
+
+## 85. Asking the package authors to move, and the way their findings come back (2026-10-03)
+
+The stack is at ec628d4; the two external packages were last measured at 2485a20 (the package
+matrix, agent-stack-trading#2, agent-stack-devflow#1), and the third review's fourth
+recommendation — run them on the new contract — is theirs to do. Before asking, what an author
+would need was checked against what the documents give.
+
+**What they had.** docs/packages.md is the contract: layout, the six rules a step keeps, the
+execution record, `requires`, binding, state, child runs, retries, credentials, identities,
+controls, the done-checklist. CONTRACT.md is the line between platform and workflow and the
+own-runtime contract. The two issues list, per package, what each still does its own way as of
+2485a20.
+
+**What they did not have, and have now.**
+- *What changed since the revision they were measured against.* The record (§70–§84) is the
+  operator's, 1,500 lines, and not written for an author. docs/packages.md has a section "Moving a
+  package to a newer stack": the four steps (read the changes, change and raise the floor, run,
+  report) and the list of changes for packages by revision, newest first, each naming its §. The
+  entries that change something for a package: the resume contract (§84: a stopped step is
+  re-entered from its start, the repeated call gets `-r2`); evidence-directory suffixes and the
+  two environment variables (§79); tools on the PATH from `/opt`, `~/.local/bin` gone (#34 —
+  trading's harness has a `preloop` fallback there); commands instead of buttons (#24).
+- *A way to report.* No issue template existed. `.github/ISSUE_TEMPLATE/package-feedback.md`:
+  package and commit, stack revision, the command, what happened, what was expected, which
+  document was open, and where the author thinks it belongs (stack, page or package). One
+  finding per issue, label `package-feedback`. The page says what counts: a sentence worked out
+  from the source is a defect of the page; a thing built around is a candidate for the stack.
+- *The resume contract for a step* was not on the contract page at all before §84 measured it.
+
+**Not changed.** The two package issues stand; the comment on each names the current revision,
+the new section and the template. What the authors change in their packages, and whether they
+take `step` and the one door, is theirs (trading#2 and devflow#1 already say what and in which
+order).
+
+**After their findings.** The stack-side issues that wait on what the authors report: #18 (HTTP
+remote mechanics, common to trading and devflow, deferred by size), #44 (the claude token
+expiry hold, which every package with a claude role meets), #48 (which script performs an
+update). #19 waits on CADP, not on them.
+
+**Measured.** The page's examples still parse and load (`doc_examples.py`), review_controls
+189/189 and static 13/13 here; the cold start — run number below.
