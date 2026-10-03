@@ -1859,7 +1859,10 @@ def controls_packages():
     check("a package's declared capabilities are read by the runner",
           (_pkb.requires_of("hello-lane")[0], "packages.requires_of(workflow)" in rw_src), ([], True))
     _rwb = load("/work/stack/run_workflow.py", "run_workflow_behaviour_b", "/tmp")
-    # the question is the id, not the stack: the capability probe answers "all there" for this call
+    # the question is the id, not the stack: the capability probe answers "all there" for this call.
+    # `capabilities` is one module shared by every loader of run_workflow (sys.modules), so the
+    # patch is undone before the next group asks it real questions (CI run 72 saw it leak).
+    _caps_real = (_rwb.capabilities.probe, _rwb.capabilities.missing)
     _rwb.capabilities.probe = lambda profile=None: {}
     _rwb.capabilities.missing = lambda *a, **k: []
     _runs_tmp = tempfile.mkdtemp(prefix="runs-twice-")
@@ -1867,9 +1870,12 @@ def controls_packages():
     (_rwb.runstate.RUNS / "zz-twice-1" / "tmp" / "conductor").mkdir(parents=True)
     import io as _io7, contextlib as _ctx7
     _buf7 = _io7.StringIO()
-    with _ctx7.redirect_stdout(_buf7):
-        _rc7 = _rwb.cmd_start("zz-twice-1", "hello-lane", "research-default", [])
-    shutil.rmtree(_runs_tmp, ignore_errors=True)
+    try:
+        with _ctx7.redirect_stdout(_buf7):
+            _rc7 = _rwb.cmd_start("zz-twice-1", "hello-lane", "research-default", [])
+    finally:
+        _rwb.capabilities.probe, _rwb.capabilities.missing = _caps_real
+        shutil.rmtree(_runs_tmp, ignore_errors=True)
     try: _ans7 = json.loads(_buf7.getvalue().strip().splitlines()[-1])
     except Exception: _ans7 = {"raw": _buf7.getvalue()[-200:]}
     check("a run id used twice is an answer, not a traceback",

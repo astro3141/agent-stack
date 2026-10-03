@@ -4642,3 +4642,13 @@ documents are documents. The next groups to take are `controls_approval_boundary
 **Measured.** The eight blocks on this host, 11/11 checks (the HOLD check new); pin_kinds
 review 51/170, trial 185/434; the ratchet bound lowered to 185; review_controls 187/187 and static
 13/13 here; the cold start — run number below.
+
+**What run 72 found (the first cold start of this section).** Three checks in a later group,
+`controls_composition`, answered `[]` where `capabilities.missing()` should have named `record`,
+`tool_rights`, `egress`. The used-id block above replaces `capabilities.probe` and `missing` so the
+runner's question is the id and not the stack — and `capabilities` is one module in `sys.modules`,
+shared by every loader of `run_workflow`, so the replacement outlived its block and the next group
+asked a stub. Running each block alone on this host could not see it; the suite in one process did.
+The replacement is saved and restored in a `finally` now, and the leak reproduces here with the two
+blocks run in one process: three FAIL before, five ok after. A behaviour check that patches a shared
+module is a thing the suite must undo — written down here as the rule for the next conversions.
