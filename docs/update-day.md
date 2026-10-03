@@ -34,7 +34,7 @@ nothing has been touched yet (§65).
 A `newer` line is a question, not an instruction. Three kinds of answer:
 
 - **a provider CLI** (claude-code, codex, grok, the two acp adapters, acpx) — the read-only posture
-  of a reviewer rests on how that CLI reads its settings (`run-agent.mjs`, `disableNative()`), and
+  of a reviewer rests on how that CLI reads its settings (`stack/adapter/providers/<name>.mjs`, `disableNative()`), and
   a new version is unmeasured until a run shows the native tools are still off. Update one at a
   time, and run the N7 check after each.
 - **an image or a server** (mlflow, server-filesystem, supergateway, docker-cli) — a new

@@ -5,8 +5,8 @@
 // request.json: { run_id, provider, model?, cwd, prompt, timeout_ms?, evidence_dir?,
 //                 mcp_principal? }   mcp_principal: present this role's Preloop credential
 //
-// Everything vendor-specific lives in PROVIDERS below. The caller (Conductor), Preloop and
-// MLflow see the same request and result shape whichever provider runs.
+// Everything vendor-specific lives in stack/adapter/providers/<name>.mjs. The caller (Conductor),
+// Preloop and MLflow see the same request and result shape whichever provider runs.
 //
 // Permission: every ACP permission request goes to Preloop's native-tool permission check.
 // The adapter decides nothing itself — it forwards with no client decision, so Preloop
@@ -18,7 +18,6 @@ import { statSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, globS
 import { homedir } from "node:os";
 import { join } from "node:path";
 import http from "node:http";
-import { createHash } from "node:crypto";
 import { createAcpRuntime, createRuntimeStore } from "/opt/npm-global/lib/node_modules/acpx/dist/runtime.js";
 import { createAgentRegistry } from "/opt/npm-global/lib/node_modules/acpx/dist/agent-registry.js";
 // The model-free halves live beside this file and are replayed against recorded runs
@@ -28,6 +27,12 @@ import { createAgentRegistry } from "/opt/npm-global/lib/node_modules/acpx/dist/
 import { accumulator, take, normalizeStatus, buildResult, exitCodeFor } from "/work/stack/adapter/result.mjs";
 import { NATIVE_ALLOWABLE, permissionBody, permissionEvent, decidedLocally } from "/work/stack/adapter/permissions.mjs";
 import { ledgerLine } from "/work/stack/adapter/ledger.mjs";
+// One module per provider, each a function of the call's context: what a vendor needs (its
+// login directory, its egress, its principal) is handed to it per call, never kept in this
+// module between calls (#27).
+import claude from "/work/stack/adapter/providers/claude.mjs";
+import codex from "/work/stack/adapter/providers/codex.mjs";
+import grok from "/work/stack/adapter/providers/grok.mjs";
 
 // Direct to the api, not through the console proxy: nginx cuts the held-open approval at 300 s
 // with a 504 page, just before Preloop answers `timed_out` (~302 s), turning "approval expired"
@@ -43,9 +48,6 @@ const PRELOOP_URL = process.env.PRELOOP_API_URL ?? RT.preloop?.api_url ?? "http:
 const PRELOOP_MCP_URL = process.env.AGENTSTACK_MCP_URL
   ?? RT.preloop?.mcp_url ?? `${process.env.PRELOOP_URL ?? "http://console"}/mcp/v1`;
 const LOGINS = RT.paths?.logins_root ?? "/route";
-// The login directory for a provider: the profile names it (request `login`), under LOGINS.
-let LOGIN = null;
-const loginDir = (provider) => `${LOGINS}/${LOGIN ?? provider}`;
 
 // ---- per-role Preloop principal (opt-in) ------------------------------------------------
 // A request may name a principal of its own (`mcp_principal`): the call then presents that
@@ -54,7 +56,6 @@ const loginDir = (provider) => `${LOGINS}/${LOGIN ?? provider}`;
 // then managed_agent_id). The token is never stored here and never written to the evidence: the
 // caller supplies it in PRELOOP_MCP_<NAME>. A named principal whose credential is missing is an
 // error, never a silent fall back to the adapter's wider rights.
-let PRINCIPAL = null;
 const principalEnv = (name) => `PRELOOP_MCP_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
 function principalAuth(name) {
   // Brokered (§53): the step holds an opaque per-job token, not the credential. The broker's
@@ -64,9 +65,6 @@ function principalAuth(name) {
   if (!v) throw new Error(`mcp_principal "${name}": ${principalEnv(name)} is not set`);
   return v.startsWith("Bearer ") ? v : `Bearer ${v}`;
 }
-// Every profile's mcpAuth() goes through this, so the override reaches both the server the
-// adapter attaches over ACP and the one it writes into a vendor config in memory.
-const withPrincipal = (own) => (PRINCIPAL ? principalAuth(PRINCIPAL) : own());
 
 // Option B egress: the routing layer's allowlist proxy. Preloop (tools, approvals), MLflow and
 // in-network names stay direct.
@@ -91,152 +89,24 @@ const EGRESS = (() => {
 })();
 
 // ---- vendor-specific: the only place a provider is named -------------------------------
-const PROVIDERS = {
-  claude: {
-    agent: "claude",
-    preloopSource: "claude_code",
-    // acpx does not load user settings, so the gateway route is passed explicitly. The
-    // values are read from the container's own settings at run time and never persisted
-    // (agentProcessEnv is child-only).
-    env() {
-      const s = JSON.parse(readFileSync(join(homedir(), ".claude/settings.json"), "utf8")).env ?? {};
-      const keep = ["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
-        "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL"];
-      return Object.fromEntries(keep.filter((k) => s[k]).map((k) => [k, s[k]]));
-    },
-    // Option B: the routing layer's own Claude login (CLAUDE_CONFIG_DIR=/route/claude, a lineage
-    // separate from the one Preloop custodies) through the allowlist proxy. The gateway variables
-    // from env() are NOT passed on this route (directReplacesEnv), so nothing points at Preloop's
-    // gateway. CLAUDE_CONFIG_DIR also moves Claude's user tier (settings, .claude.json) away from
-    // ~/.claude, where onboarding installed the Preloop hook and MCP entry.
-    directEnv() { return { CLAUDE_CONFIG_DIR: loginDir("claude"), ...EGRESS }; },
-    directReplacesEnv: true,
-    // This principal's Preloop MCP bearer (onboarding wrote it into ~/.claude.json).
-    mcpAuth() {
-      return withPrincipal(() =>
-        JSON.parse(readFileSync(join(homedir(), ".claude.json"), "utf8")).mcpServers.preloop.headers.Authorization);
-    },
-    // Native write/shell removed through the workspace's project settings — acpx loads that
-    // tier, and a deny rule cannot be lifted by another tier. The Preloop policy forbids MCP
-    // writes under .claude/, so the agent cannot rewrite this file.
-    // `allow` is the profile's tools.native_allow — read-only tools a profile lets run without
-    // asking (WebSearch, WebFetch; cfg.py refuses anything else). Where they can reach is still the
-    // egress allowlist's to decide. Without it every web lookup waits for a person, and an
-    // unattended run's lookups expire (measured: devflow preparation, approval_expired).
-    disableNative(cwd, allow = []) {
-      mkdirSync(join(cwd, ".claude"), { recursive: true });
-      const safe = allow.filter((t) => NATIVE_ALLOWABLE.includes(t));
-      writeFileSync(join(cwd, ".claude/settings.json"), JSON.stringify(
-        { permissions: { deny: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
-                         ...(safe.length ? { allow: safe } : {}) } }) + "\n");
-      return {};
-    },
-    // A call to the Preloop MCP server that the adapter itself attached. Its decision is made
-    // by Preloop's rules at the MCP proxy, so it is not sent to human approval as well.
-    // (Measured: an `allow: ["mcp__preloop"]` rule in project settings did not stop Claude
-    // from asking for this ACP-attached, `source: "dynamic"` server.)
-    governedDownstream(raw) {
-      const s = raw.toolCall?._meta?.claudeCode?.mcpServer;
-      return s?.name === "preloop" && s?.source === "dynamic";
-    },
-  },
-  codex: {
-    agent: "codex",
-    preloopSource: "codex_cli",
-    // Gateway route comes from ~/.codex/config.toml (Preloop onboarding), which codex-acp
-    // reads — unlike acpx's Claude profile. The default ACP mode "agent" hands approvals to
-    // Codex's own Guardian reviewer model; "read-only" hands them to the ACP client.
-    env() { return { INITIAL_AGENT_MODE: "read-only" }; },
-    // Option B: the routing layer owns the provider connection. Its own login lineage lives in
-    // /route/codex (not the Preloop-custodied one in ~/.codex); traffic leaves only through the
-    // allowlist proxy. The Preloop gateway is not on this path.
-    directEnv() {
-      return { CODEX_HOME: loginDir("codex"), ...EGRESS };
-    },
-    // Rollouts record no account. The adapter therefore writes a ledger entry per run binding
-    // Codex's session id to the login it ran as, so the quota collector can refuse a rollout
-    // written under another login (A→B re-login in the same CODEX_HOME).
-    accountFingerprint(direct) {
-      const home = direct ? loginDir("codex") : join(homedir(), ".codex");
-      const tok = JSON.parse(readFileSync(join(home, "auth.json"), "utf8")).tokens?.id_token ?? "";
-      const claims = JSON.parse(Buffer.from((tok.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8") || "{}");
-      return claims.email ? "email:" + createHash("sha256").update(claims.email.toLowerCase()).digest("hex").slice(0, 16) : null;
-    },
-    get sessionLedger() { return `${LOGINS}/codex-session-ledger.jsonl`; },
-    mcpAuth() {
-      return withPrincipal(() => {
-        const t = readFileSync(join(homedir(), ".codex/config.toml"), "utf8");
-        const m = t.match(/\[mcp_servers\.preloop\.http_headers\][^[]*?Authorization\s*=\s*'([^']+)'/);
-        if (!m) throw new Error("no Preloop MCP bearer in ~/.codex/config.toml");
-        return m[1];
-      });
-    },
-    // Shell removed by feature flags. apply_patch has no off switch in this Codex; it stays
-    // and, in read-only mode, every use escalates to Preloop approval.
-    disableNative() {
-      // default_tools_approval_mode=approve on the Preloop MCP server: those calls are decided
-      // by Preloop rules downstream. Without it Codex asks the client, and its request names
-      // neither the server nor the tool (`_meta.is_mcp_tool_approval` only).
-      // The server is defined here in full (url, bearer) rather than relying on the entry
-      // Preloop onboarding wrote into ~/.codex/config.toml: with CODEX_HOME=/route/codex that
-      // file is not read, and a bare `default_tools_approval_mode` then attaches to nothing
-      // (measured: the MCP call went back to human approval). Env only — never written to disk.
-      return { CODEX_CONFIG: JSON.stringify({
-        features: { shell_tool: false, unified_exec: false },
-        mcp_servers: { preloop: {
-          url: PRELOOP_MCP_URL,
-          http_headers: { Authorization: this.mcpAuth() },
-          default_tools_approval_mode: "approve",
-        } },
-      }) };
-    },
-    // Codex gets the Preloop MCP server from CODEX_CONFIG above; attaching it over ACP as well
-    // would define it twice.
-    mcpViaConfig: true,
-  },
-  grok: {
-    agent: "grok-build",
-    // xAI's own ACP mode. --no-leader: a fresh backend per run; the shared "leader" process
-    // would let runs (and potentially logins) share one agent backend.
-    argv: process.env.GROK_TAP ? ["sh", "/work/stack/grok-tap.sh"] : ["grok", "agent", "--no-leader", "stdio"],
-    preloopSource: "grok_build",
-    // Direct only: there is no Preloop gateway route for Grok. The routing layer's own login
-    // (GROK_HOME=/route/grok) and the allowlist proxy.
-    env() { return {}; },
-    // HOME is separate too: Grok imports Claude Code's user settings from $HOME (~/.claude,
-    // ~/.claude.json) for compatibility. Measured: it ran the Preloop PreToolUse hook that
-    // onboarding installed for Claude on every Grok tool call — each became a human approval
-    // request labelled `claude_code`, and each stalled the run for the hook's 300 s timeout.
-    directEnv() { return { GROK_HOME: loginDir("grok"), HOME: `${loginDir("grok")}/home`, ...EGRESS }; },
-    directOnly: true,
-    // Grok has a Preloop principal of its own; its credential sits in the `preloop` MCP entry of
-    // /route/grok/config.toml (docs/record/OPERATIONS.md), which is also why `mcp_principal` cannot apply
-    // here: Grok reads the credential from that file, not from what the adapter passes.
-    mcpAuthFromFile: true,
-    // Without a principal this is still true: the server it uses is the one in its config file.
-    // With one, the adapter hands it a server over ACP instead (§49), and this is not reached.
-    mcpAuth() { throw new Error("grok reads its Preloop credential from its own config file"); },
-    disableNative() { return {}; },
-    // Grok did not connect an MCP server handed over ACP (no connection attempt in its log;
-    // its tool search waited ~5 min per call for a server "still connecting"). The same server
-    // registered in its own config (/route/grok/config.toml, `grok mcp add preloop …`) is healthy.
-    mcpViaConfig: true,
-    // A call to a tool of the Preloop MCP server (registered as "preloop" in Grok's own config):
-    // decided by Preloop's rules at the MCP proxy, so not sent to human approval as well.
-    // Normally unreachable: the login's config.toml carries `[permission] allow =
-    // ["MCPTool(preloop__*)"]` and denies Bash/Edit/Write/WebFetch/WebSearch, so Grok neither
-    // asks about Preloop MCP calls nor runs native write/shell tools. Kept as a fallback.
-    // That table is written by stack/grok_posture.py (on login, and on every bring-up) and
-    // checked by `up.sh --check` — it was hand-written once, and a second install ran without
-    // it: the Cold Reader wrote with native Write, waited for a person, and ended DENIED (§64).
-    governedDownstream(raw) {
-      const tc = raw.toolCall ?? {};
-      return tc._meta?.["x.ai/tool"]?.name === "use_tool" && tc.rawInput?.variant === "UseTool"
-        && typeof tc.rawInput?.tool_name === "string" && tc.rawInput.tool_name.startsWith("preloop__");
-    },
-  },
-};
-// -----------------------------------------------------------------------------------------
+const PROVIDERS = { claude, codex, grok };
+
+// What one call is, as every provider module reads it. Built once in main() from the request;
+// two calls in one process would get two of these, and nothing of one reaches the other.
+//   login      the login directory under LOGINS the profile names (request `login`)
+//   principal  the role whose Preloop credential this call presents (request `mcp_principal`)
+function callContext({ login = null, principal = null } = {}) {
+  return {
+    login, principal,
+    loginsRoot: LOGINS,
+    loginDir: (provider) => `${LOGINS}/${login ?? provider}`,
+    // Every profile's mcpAuth() goes through this, so the override reaches both the server the
+    // adapter attaches over ACP and the one it writes into a vendor config in memory.
+    withPrincipal: (own) => (principal ? principalAuth(principal) : own()),
+    egress: EGRESS,
+    mcpUrl: PRELOOP_MCP_URL,
+  };
+}
 
 // The credential of the agent that is actually running, not whichever hook file sorts first.
 // A fresh install now onboards more than one vendor (claude-code and codex), so the home holds
@@ -246,10 +116,10 @@ const PROVIDERS = {
 // permission request to the wrong agent, which is the kind of thing that is discovered later as
 // rights nobody meant. The fallback is the first hook, and the choice is recorded in the run's
 // evidence either way (OPERATIONS §32).
-function preloopHook(provider) {
+function preloopHook(source) {
   const files = globSync(join(homedir(), ".preloop/agents/*/permission_hook.json"));
   if (!files.length) throw new Error("no Preloop permission hook in this home");
-  const want = provider ? PROVIDERS[provider]?.preloopSource : null;
+  const want = source ?? null;
   // Newest first. A home outlives a Preloop database: reinstalling the control plane and claiming
   // it again onboards the agent afresh and leaves the previous identity's hook beside the new one,
   // with the same `source` and a credential of an account that no longer exists. Taking whichever
@@ -266,17 +136,13 @@ function preloopHook(provider) {
   return { hook: JSON.parse(readFileSync(byNewest[0], "utf8")), file: byNewest[0], matched: false };
 }
 
-let HOOK_FOR = null;     // set once per run, in main(), from the provider being run
-function preloopToken() {
-  return (HOOK_FOR ?? preloopHook(null)).hook.token;
-}
-
-function postJson(url, obj, signal) {
+// `token`: the hook credential of the agent this call runs, chosen once in main().
+function postJson(url, obj, signal, token) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(obj);
     const rq = http.request(url, {
       method: "POST", signal,
-      headers: { Authorization: `Bearer ${preloopToken()}`, "Content-Type": "application/json",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(data) },
     }, (res) => {
       let b = "";
@@ -287,7 +153,7 @@ function postJson(url, obj, signal) {
   });
 }
 
-async function askPreloop(req, { provider, runId, cwd, signal, log, mcpOnly, nativeAllow = [] }) {
+async function askPreloop(req, { provider, prof, token, runId, cwd, signal, log, mcpOnly, nativeAllow = [] }) {
   const tc = req.raw.toolCall ?? {};
   // A read-only web tool the profile lets run without asking (tools.native_allow). Where it can
   // reach is the egress allowlist's to decide; nothing that writes or executes is ever let through.
@@ -296,11 +162,11 @@ async function askPreloop(req, { provider, runId, cwd, signal, log, mcpOnly, nat
     log(decidedLocally(tc, req.raw, "profile_native_allow"));
     return { outcome: "allow_once" };
   }
-  if (mcpOnly && PROVIDERS[provider].governedDownstream?.(req.raw)) {
+  if (mcpOnly && prof.governedDownstream?.(req.raw)) {
     log(decidedLocally(tc, req.raw, "preloop_mcp_rules"));
     return { outcome: "allow_once" };
   }
-  const body = permissionBody(tc, req.inferredKind, PROVIDERS[provider].preloopSource, runId, cwd);
+  const body = permissionBody(tc, req.inferredKind, prof.preloopSource, runId, cwd);
   // (agent_reasoning names the adapter and the provider, as before)
   body.agent_reasoning = `run ${runId} via acpx/${provider}`;
   const started = Date.now();
@@ -309,7 +175,7 @@ async function askPreloop(req, { provider, runId, cwd, signal, log, mcpOnly, nat
     // node:http, not fetch: undici's default headersTimeout is 300 s, which cuts the held-open
     // approval just before Preloop answers `timed_out` (~302 s). The run deadline (signal)
     // is the only bound here.
-    const r = await postJson(`${PRELOOP_URL}/api/v1/agents/permission-check`, body, signal);
+    const r = await postJson(`${PRELOOP_URL}/api/v1/agents/permission-check`, body, signal, token);
     if (r.status !== 200) throw new Error(`permission-check http ${r.status}`);
     ans = JSON.parse(r.body);
     if (ans.decision !== "allow" && ans.decision !== "deny") throw new Error(`unexpected decision ${ans.decision}`);
@@ -322,11 +188,18 @@ async function askPreloop(req, { provider, runId, cwd, signal, log, mcpOnly, nat
 
 async function main() {
   const req = JSON.parse(readFileSync(process.argv[2], "utf8"));
-  const prof = PROVIDERS[req.provider];
-  LOGIN = req.login ?? null;
-  if (!prof) throw new Error(`unknown provider ${req.provider}`);
+  const make = PROVIDERS[req.provider];
+  if (!make) throw new Error(`unknown provider ${req.provider}`);
+  // A role may present a principal of its own. A vendor that keeps its Preloop credential in its own
+  // config file cannot have that file rewritten per call — but it can be *handed* a server over ACP
+  // with the principal's credential, which is a different thing and was refused here for three
+  // months on the strength of a measurement that had gone stale (OPERATIONS §49): grok 1.0.40
+  // advertises `mcpCapabilities: {http: true}`, connects to a server handed to it, and completes the
+  // Preloop handshake. So a principal is allowed, and the server travels with the call.
+  const call = callContext({ login: req.login ?? null, principal: req.mcp_principal || null });
+  const prof = make(call);
   // whose credential this run presents to Preloop, decided once, from the provider being run
-  HOOK_FOR = preloopHook(req.provider);
+  const hook = preloopHook(prof.preloopSource);
   const evDir = req.evidence_dir ?? `/tmp/agentstack/runs/${req.run_id}`;
   mkdirSync(evDir, { recursive: true });
   const permissions = [];
@@ -336,14 +209,7 @@ async function main() {
   // Preloop rules decide; the vendor's native write/shell tools are removed where the vendor
   // allows it, and whatever remains still escalates to Preloop approval.
   const mcpOnly = req.native_tools === false;
-  // A role may present a principal of its own. A vendor that keeps its Preloop credential in its own
-  // config file cannot have that file rewritten per call — but it can be *handed* a server over ACP
-  // with the principal's credential, which is a different thing and was refused here for three
-  // months on the strength of a measurement that had gone stale (OPERATIONS §49): grok 1.0.40
-  // advertises `mcpCapabilities: {http: true}`, connects to a server handed to it, and completes the
-  // Preloop handshake. So a principal is allowed, and the server travels with the call.
-  PRINCIPAL = req.mcp_principal || null;
-  if (PRINCIPAL && !mcpOnly) {
+  if (call.principal && !mcpOnly) {
     throw new Error("mcp_principal requires native_tools=false: without it the run does not go through the Preloop MCP server");
   }
   const extraEnv = mcpOnly ? prof.disableNative(req.cwd, req.native_allow || []) : {};
@@ -356,10 +222,10 @@ async function main() {
   // vendor would otherwise read its own file: that is the only way this call's rights differ from
   // the login's. The name is the same one its configuration uses, so a vendor that has both sees one
   // server under one name rather than two answering for the same thing.
-  const handOver = mcpOnly && (!prof.mcpViaConfig || (PRINCIPAL && prof.mcpAuthFromFile));
+  const handOver = mcpOnly && (!prof.mcpViaConfig || (call.principal && prof.mcpAuthFromFile));
   const mcpServers = handOver ? [{
     type: "http", name: "preloop", url: PRELOOP_MCP_URL,
-    headers: [{ name: "Authorization", value: PRINCIPAL ? principalAuth(PRINCIPAL) : prof.mcpAuth() }],
+    headers: [{ name: "Authorization", value: call.principal ? principalAuth(call.principal) : prof.mcpAuth() }],
   }] : undefined;
 
   const runtime = createAcpRuntime({
@@ -387,7 +253,7 @@ async function main() {
     });
     const turn = runtime.startTurn({
       handle, text: req.prompt, mode: "prompt", requestId: `${req.run_id}-1`,
-      onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, runId: req.run_id, cwd: req.cwd, signal, log, mcpOnly, nativeAllow: req.native_allow || [] }),
+      onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, prof, token: hook.hook.token, runId: req.run_id, cwd: req.cwd, signal, log, mcpOnly, nativeAllow: req.native_allow || [] }),
     });
     for await (const ev of turn.events) {
       take(acc, ev);
@@ -416,7 +282,7 @@ async function main() {
   }
 
   const norm = normalizeStatus({ permissions, mcpDenials: acc.mcpDenials, failure, result });
-  const out = buildResult({ req, norm, hook: HOOK_FOR, principal: PRINCIPAL, status, permissions,
+  const out = buildResult({ req, norm, hook, principal: call.principal, status, permissions,
                             mcpDenials: acc.mcpDenials, mcpOnly, direct, result, failure,
                             text: acc.text.join(""), wallMs: Date.now() - t0, evDir, ledgerError });
   writeFileSync(join(evDir, "result.json"), JSON.stringify({ ...out, status_raw: status, usage_events: acc.usage }, null, 1));

@@ -1371,8 +1371,8 @@ def controls_role_egress():
     check("a principal is no longer refused for a vendor that reads its own config file",
           "mcp_principal is not supported for" in ra, False)
     check("its credential is handed over ACP instead, under the same server name",
-          ("PRINCIPAL && prof.mcpAuthFromFile" in ra
-           and "PRINCIPAL ? principalAuth(PRINCIPAL) : prof.mcpAuth()" in ra), True)
+          ("call.principal && prof.mcpAuthFromFile" in ra
+           and "call.principal ? principalAuth(call.principal) : prof.mcpAuth()" in ra), True)
 
     src5 = open("/work/docker/agent.Dockerfile", encoding="utf-8").read()
     check("only one program may change user, and only for the roles group",
@@ -1830,10 +1830,12 @@ def controls_packages():
     # sorts first worked and attributed every permission request to the wrong agent.
     mjs = open("/work/stack/run-agent.mjs", encoding="utf-8").read()
     check("the credential presented is the running agent's",
-          "function preloopHook(provider)" in mjs and "h.source === want" in mjs, True)
+          ("function preloopHook(source)" in mjs and "h.source === want" in mjs
+           and "preloopHook(prof.preloopSource)" in mjs), True)
     # the result shape lives in stack/adapter/result.mjs since §74; the adapter hands it the hook
+    # chosen for this call (#27: a const in main(), no longer a module global)
     check("and which one it was is in the run's own record",
-          "hook: HOOK_FOR" in mjs
+          "buildResult({ req, norm, hook," in mjs
           and "hook: hook ? { principal: hook.hook.runtime_principal" in open("/work/stack/adapter/result.mjs", encoding="utf-8").read(), True)
     co_src = open("/work/stack/collect_obs.py", encoding="utf-8").read()
     check("the newest identity is the one presented, not the first listed",
