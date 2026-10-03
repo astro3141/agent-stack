@@ -451,9 +451,13 @@ def cmd_stop(ui):
     running inside. This only finds the run id — from the event log this run owns — and records
     that a stop was asked for.
 
-    What a stop does **not** leave, measured: a checkpoint. Across 51 runs here only two have one,
-    and both are runs that *failed*; a stopped run's directory has none, so it is started again
-    rather than resumed. The run itself is then read as `interrupted`, which is what it is.
+    What a stop leaves, measured twice. Before §23 a checkpoint existed only when a run *failed*
+    (2 of 51 runs had one), so a stopped run was started again rather than resumed. Since runs
+    start with the dashboard (`--web`, §23) the graceful cancel writes one: on the live instance
+    (2026-10-03, run r79-resume-195851, §84) novel-a stopped in its author step left
+    `checkpoints/novel-a-….json` with `current_agent = author`, and `resume` went on from there
+    without running the architect again. A run killed with its container still leaves none
+    (docs/runbook.md). Until it is continued the run reads as `interrupted`, which is what it is.
     """
     meta = json.loads(meta_path(ui).read_text()) if meta_path(ui).exists() else None
     if not meta:

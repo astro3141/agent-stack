@@ -54,6 +54,32 @@ TOOLS="claude conductor preloop_cli codex grok node"
 say()  { printf '  %-42s %s\n' "$1" "$2"; }
 fail() { echo "release: $*" >&2; exit 1; }
 
+# Whether an unpacked pre-#34 toolchain archive holds the three tools. The archive's bin/ entries
+# can be absolute symlinks into /home/agent/.local (claude's installer writes one: bin/claude ->
+# /home/agent/.local/share/claude/versions/<v>). Before the swap the archive sits somewhere else,
+# so a plain `-e` follows the link to a place that is not there and calls the tool missing — the
+# first live rollback to pre-202610 was refused that way, with the file present in the archive
+# (OPERATIONS §84). The link is read and its target looked for where the archive is now. Kept as
+# a string so the same text runs in the alpine container and in the review control.
+TOOLCHAIN_USABLE='
+toolchain_usable() {  # $1: the unpacked archive; exit 1 naming the first tool that is not there
+  root="$1"
+  for t in claude conductor preloop; do
+    p="$root/bin/$t"
+    if [ -L "$p" ]; then
+      tgt="$(readlink "$p")"
+      case "$tgt" in
+        /home/agent/.local/*) tgt="$root/${tgt#/home/agent/.local/}" ;;
+        /*) ;;
+        *) tgt="$(dirname "$p")/$tgt" ;;
+      esac
+    else
+      tgt="$p"
+    fi
+    [ -e "$tgt" ] || { echo "the archive has no $t (bin/$t -> $tgt is not there)" >&2; return 1; }
+  done
+}'
+
 CMD="${1:-}"; shift || true
 TAG=""; TO=""
 while [ $# -gt 0 ]; do
@@ -299,13 +325,16 @@ cmd_rollback() {
   OLD_TOOLCHAIN=0
   if [ -f "$SRC/toolchain.tar.gz" ]; then
     OLD_TOOLCHAIN=1
-    docker run --rm -v "$STACK-agent-home:/vol" -v "$(m "$SRC"):/in:ro" alpine sh -c '
+    # the unpacked copy is removed again when the check fails: "nothing was changed" must be true
+    # of the volume too (the first live attempt left 656 MB of .local.new behind — §84)
+    docker run --rm -v "$STACK-agent-home:/vol" -v "$(m "$SRC"):/in:ro" alpine sh -c "
       set -e
       rm -rf /vol/.local.new && mkdir -p /vol/.local.new
       tar xzf /in/toolchain.tar.gz -C /vol/.local.new --strip-components=1
-      for t in claude conductor preloop; do
-        [ -e /vol/.local.new/bin/$t ] || { echo "the archive has no $t" >&2; exit 1; }
-      done' || fail "the release's toolchain archive does not restore a usable toolchain — nothing was changed"
+      $TOOLCHAIN_USABLE
+      toolchain_usable /vol/.local.new" \
+      || { docker run --rm -v "$STACK-agent-home:/vol" alpine rm -rf /vol/.local.new
+           fail "the release's toolchain archive does not restore a usable toolchain — nothing was changed"; }
     say "toolchain archive" "from before #34 — unpacked and verified; swapped into /home/agent/.local below"
   fi
   say "verified" "images and the archives"

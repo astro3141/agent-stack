@@ -919,6 +919,32 @@ def review3_controls():
           "mv /vol/.local.new /vol/.local" in rel and ".local.old" in rel
           and rel.index('[ "$OLD_TOOLCHAIN" = 0 ] || docker run --rm -v "$STACK-agent-home:/vol" alpine rm -rf /vol/.local.old')
               > rel.index("reapply_policy || exit 1\n  [ \"$OLD_TOOLCHAIN\""))
+    # behaviour (§84): the archive check itself, the same text the alpine container runs, on an
+    # unpacked archive shaped like pre-202610's — bin/claude an absolute symlink into
+    # /home/agent/.local (dangling here), bin/preloop a relative one, bin/conductor a file
+    import re as _re84, subprocess as _sp84, tempfile as _tf84, os as _os84
+    _fn = _re84.search(r"TOOLCHAIN_USABLE='(.*?)'\n", rel, _re84.S).group(1)
+    def _usable(remove=None):
+        with _tf84.TemporaryDirectory() as d:
+            for sub in ("bin", "share/claude/versions", "share/preloop/bin"):
+                _os84.makedirs(f"{d}/{sub}")
+            open(f"{d}/share/claude/versions/2.1.278", "w").write("#!/bin/sh\n")
+            open(f"{d}/share/preloop/bin/preloop", "w").write("#!/bin/sh\n")
+            open(f"{d}/bin/conductor", "w").write("#!/bin/sh\n")
+            _os84.symlink("/home/agent/.local/share/claude/versions/2.1.278", f"{d}/bin/claude")
+            _os84.symlink("../share/preloop/bin/preloop", f"{d}/bin/preloop")
+            if remove:
+                _os84.unlink(f"{d}/{remove}")
+            r = _sp84.run(["sh", "-c", _fn + f"\ntoolchain_usable {d}"], capture_output=True, text=True)
+            return r.returncode, r.stderr.strip()
+    _ok = _usable()
+    _no_claude = _usable("share/claude/versions/2.1.278")
+    _no_preloop = _usable("share/preloop/bin/preloop")
+    check("rollback: an archive whose bin/claude is an absolute symlink into /home/agent/.local verifies where it is unpacked",
+          _ok == (0, ""), _ok)
+    check("rollback: and a link whose target is really missing is still refused, naming the tool",
+          _no_claude[0] == 1 and "no claude" in _no_claude[1] and _no_preloop[0] == 1 and "no preloop" in _no_preloop[1],
+          (_no_claude, _no_preloop))
     check("rollback: nothing says the archive is left alone any more", "not used; the kept images carry the toolchain" not in rel)
 
     # (6) the command a person copies runs as printed; the first-use path in the docs runs
