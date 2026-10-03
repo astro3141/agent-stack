@@ -4326,9 +4326,15 @@ The two root steps (pip, uv) get `HOME=/root`, and the build now asserts
 `find /home/agent ! -user agent` is empty, so this class of mistake stops at the build.
 
 **Measured.** review_controls 141/141 (the update group rewritten: 14 pins on the Dockerfile,
-compose, release.sh, the docs, up.sh and drift), static on this runner; the image build and the
-stack level on `cold-start-linux` — run number below once it ran. This runner cannot build the
-image: its proxy denies `downloads.claude.ai` and `preloop.ai`, so the cold start is the build's
-first measurement. On the instance, the operator's next `release.sh update` is the first update
-that moves the three without a flag; what it should print is the `will change` lines and no
-refusal, and `up.sh --check` the note about the old copy.
+compose, release.sh, the docs, up.sh and drift) and static 12/12 on this runner, which cannot
+build the image (its proxy denies `downloads.claude.ai` and `preloop.ai`). The cold start is the
+build's measurement — **run 56** (46d18e0), green: the image built with the three under `/opt`
+(`Installed 1 executable: conductor`, `Installed preloop 0.15.0 to /opt/preloop/bin/preloop`, the
+`find /home/agent ! -user agent` assertion passed), the fresh instance was claimed and its agents
+onboarded by the Preloop CLI from `/opt`, `up.sh --check` failed nothing but the logins and did
+not print the old-copy note (a fresh volume has no old copy), and the stack level **22/22**:
+trial_controls 500/500, review_controls 141/141, hello-lane and child-run through Conductor from
+`/opt/uv/tools/conductor-cli` (`same_run: yes`), the adapter with acpx 0.19.4; nothing of the
+instance left after the take-down. On the instance, the operator's next `release.sh update` is
+the first update that moves the three without a flag; what it should print is the `will change`
+lines and no refusal, and `up.sh --check` the note about the old copy. Those numbers go here.
