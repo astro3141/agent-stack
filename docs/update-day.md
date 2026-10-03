@@ -83,6 +83,22 @@ scripts/release.sh rollback --to pre-<yyyymm>   # workspace revision, images (th
 scripts/up.sh --check
 ```
 
+**Coming back from a release recorded before #34** (`pre-202610` and older). The rollback puts
+that release's `scripts/release.sh` into the workspace, and that script does not know the tools
+moved to `/opt`: run as `update`, it refuses ("tools differ"), and with `--replace-toolchain` it
+moves the workspace to the new revision and then fails to find the toolchain, leaving new code on
+old images (measured on the live instance, OPERATIONS §84). Come back with the target revision's
+own script instead, which the rollback prints when it ends:
+
+```
+git -C <workspace> show <rev>:scripts/release.sh > /tmp/release.sh
+RELEASE_SH_HOME=<workspace> bash /tmp/release.sh update --to <rev>
+```
+
+The volume keeps the old toolchain copy the rollback unpacked (`/home/agent/.local`, ~650 MB):
+unused once the tools come from the image again, reported by every `up.sh`, and removed only with
+the stack down (`scripts/down.sh`, then `docker run --rm -v <stack>-agent-home:/vol alpine rm -rf /vol/.local`).
+
 Data survives both directions. What rollback does not undo is a Preloop schema migration; that is
 what the backup from "Before" is for (`scripts/restore.sh` brings it up beside the live instance,
 never over it).

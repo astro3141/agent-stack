@@ -369,6 +369,19 @@ cmd_rollback() {
   for t in $TOOLS; do say "$t" "$(tool_running "$t")"; done
   echo
   echo "rolled back to $TO"
+  if [ "$OLD_TOOLCHAIN" = 1 ]; then
+    # The workspace now holds this release's own scripts/release.sh, from before #34, and that is
+    # the script `update` would run next: it looks for the tools in the new image's /home/agent,
+    # where they no longer are. Measured on the live instance: it refused once, then moved the
+    # workspace and failed, leaving new code on old images (OPERATIONS §84). The way back is the
+    # target revision's own script, run against this workspace.
+    PREFIX="$(git_here rev-parse --show-prefix)"
+    echo
+    echo "this release is from before #34, and so is the scripts/release.sh now in the workspace."
+    echo "To come back to a current revision, run that revision's own script against this workspace:"
+    echo "  git -C '$HERE' show <REV>:${PREFIX}scripts/release.sh > /tmp/release.sh"
+    echo "  RELEASE_SH_HOME='$HERE' bash /tmp/release.sh update --to <REV>"
+  fi
 }
 
 case "$CMD" in
