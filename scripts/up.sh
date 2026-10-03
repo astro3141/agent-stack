@@ -325,6 +325,13 @@ check "runtime may not decide approvals" 403 "$(in_agent 'curl -s -o /dev/null -
 check "runtime may read its tool rights"  200 "$(in_agent 'a=$(curl -s -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" http://api:8000/api/v1/agents | python3 -c "import json,sys;d=json.load(sys.stdin);r=d if isinstance(d,list) else d.get(\"items\") or [];print(r[0][\"id\"])"); curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" http://api:8000/api/v1/agents/$a/governance')"
 check "runtime may not rewrite them"      403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X PUT -H "Content-Type: application/json" -d "{}" http://api:8000/api/v1/agents/00000000-0000-0000-0000-000000000000/governance')"
 check "runtime may not mint credentials"  403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X POST -H "Content-Type: application/json" -d "{\"name\":\"probe\"}" http://api:8000/api/v1/auth/api-keys')"
+# An instance installed before #34 has claude, Conductor and the Preloop CLI in its home volume as
+# well as in the image. The image's are on PATH and run; the volume's copy is dead weight, and
+# removing it is the operator's one-time step — said here, not done (§76).
+if [ "$(in_agent 'test -d /home/agent/.local/share/claude && echo yes || echo no')" = yes ]; then
+  echo "  note  the home volume still carries the pre-#34 toolchain copy (/home/agent/.local), unused:"
+  echo "        docker run --rm -v $STACK-agent-home:/vol alpine rm -rf /vol/.local   # with the stack down"
+fi
 echo "== logins (routing layer)"
 check "claude /route login"              true "$(in_agent 'CLAUDE_CONFIG_DIR=/route/claude claude auth status 2>/dev/null | python3 -c "import json,sys;print(str(json.load(sys.stdin).get(\"loggedIn\")).lower())"')"
 check "codex /route login"               yes "$(in_agent 'CODEX_HOME=/route/codex codex login status 2>&1 | grep -q "Logged in" && echo yes || echo no')"

@@ -4284,3 +4284,41 @@ decisions table's first line had the leftovers of a regex that was meant for the
 itself was never updated); both from the §74 commit.
 
 [#34]: https://github.com/astro3141/agent-stack/issues/34
+
+## 76. The image is the toolchain (#34, decided 2026-10-03)
+
+The operator decided #34 ("옮겨"): claude-code, Conductor and the Preloop CLI move out of the home
+volume and into the image, where every other tool already was.
+
+**What moved, and how.** `docker/agent.Dockerfile` installs the three as root under `/opt`,
+proves each present at build (`test -x`) and makes them world-readable for the role users a step
+runs as: claude's installer writes to `$HOME/.local`, so it is given `/opt/claude` as its home for
+the install (`/opt/claude/.local/bin/claude`); uv goes in with `pip --prefix=/opt/uv` and makes
+Conductor's venv at `/opt/uv/tools/conductor-cli` with its shim in `/opt/uv/bin`
+(`UV_TOOL_DIR`, `UV_TOOL_BIN_DIR`); the Preloop installer takes `INSTALL_DIR=/opt/preloop/bin`.
+`PATH` no longer has `/home/agent/.local/bin`; `DISABLE_AUTOUPDATER=1`, because the pin is the
+version and `/opt` is not the user's to write. The replay service's entrypoint follows the venv.
+`/home/agent` stays a volume for what belongs to an instance — logins, Preloop's agent state — and
+is filled from an image that no longer carries 256 MB of tools.
+
+**What that deleted.** `scripts/release.sh` 437 → 329 lines: the staging, verification, swap and
+keep-or-restore of the volume's toolchain (§65 lessons 2–4, §66 1–3, §67 1–2 were all this
+machinery's), `--replace-toolchain`, the toolchain archive in every record (`format=3`), and the
+refusal of §75. An update now builds the candidate (still: a revision that does not build changes
+nothing), says `will change claude '2.1.278' -> '2.1.287'` for each tool that differs, records,
+moves, rebuilds, recreates, checks. A release is revision + image ids + configuration; the
+runbook and update-day.md say so. A release recorded before this still rolls back: its
+`toolchain.tar.gz` is named and left alone, the kept images carry the same tools.
+
+**An instance from before.** Its volume keeps the old copy under `/home/agent/.local`, off PATH
+and unused. `up.sh --check` notes it with the one-line removal (`rm -rf /vol/.local` on the
+volume, stack down) and does not run it — the operator's one-time step, and the volume still holds
+logins, so nothing here deletes in it.
+
+**Measured.** review_controls 141/141 (the update group rewritten: 14 pins on the Dockerfile,
+compose, release.sh, the docs, up.sh and drift), static on this runner; the image build and the
+stack level on `cold-start-linux` — run number below once it ran. This runner cannot build the
+image: its proxy denies `downloads.claude.ai` and `preloop.ai`, so the cold start is the build's
+first measurement. On the instance, the operator's next `release.sh update` is the first update
+that moves the three without a flag; what it should print is the `will change` lines and no
+refusal, and `up.sh --check` the note about the old copy.

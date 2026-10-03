@@ -444,9 +444,9 @@ Two things worth knowing before you need them:
 - **A restore is verified beside the live instance**, never over it: another name, other ports, its
   own Preloop project. The restored database is checked against the backup's row counts, and a
   mismatch stops the restore rather than starting something that looks fine.
-- **A release is not an image tag.** The toolchain lives in a volume that masks the image's copy, so
-  a release is *code revision + image ids + configuration + the toolchain itself*. Data is not part
-  of it; that is what backup covers.
+- **A release is** *code revision + image ids + configuration*. The toolchain is the image's (every
+  tool under `/opt`, #34), so the image ids say what runs. Data is not part of a release; that is
+  what backup covers.
 
 Losing the backup key means losing the backup. Keep the key and the archive in different places.
 

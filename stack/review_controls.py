@@ -717,31 +717,42 @@ def adapter_controls():
           ex.failure_of({"status": "FAILED", "failure": {"message": "ENOENT: config.toml"}}) == "ENOENT: config.toml")
 
 
-# ---------------------------------------------------------------- 11. update day's two kinds (§75)
+# ---------------------------------------------------------------- 11. the image is the toolchain (#34, §76)
 def update_controls():
-    """release.sh tells the volume's toolchain from the image's, as the Dockerfile installs them;
-    update-day.md names the three that need the flag; drift.sh says why a line has no answer."""
+    """Every tool is installed under /opt in the image and nothing under $HOME; release.sh carries
+    no toolchain and no flag; the docs say so; drift.sh says why a line has no answer (§75)."""
     df = (WORK / "docker" / "agent.Dockerfile").read_text()
     rel = (WORK / "scripts" / "release.sh").read_text()
-    vol = re.search(r'^VOLUME_TOOLS="([^"]+)"', rel, re.M).group(1).split()
-    img = re.search(r'^IMAGE_TOOLS="([^"]+)"', rel, re.M).group(1).split()
-    # what the Dockerfile really puts under $HOME: the three installers that write to /home/agent/.local
-    under_home = {"claude": "claude.ai/install.sh" in df,
-                  "conductor": "uv tool install" in df and "UV_TOOL_DIR" not in df,
-                  "preloop_cli": "INSTALL_DIR=/home/agent/.local/bin" in df}
-    check("update: release.sh's volume tools are the ones the Dockerfile installs under $HOME",
-          sorted(vol) == sorted(t for t, home in under_home.items() if home), (vol, under_home))
-    check("update: the image's tools are under /opt in the Dockerfile and not in the volume list",
-          "NPM_CONFIG_PREFIX=/opt/npm-global" in df and all(t in ("codex", "grok", "node") for t in img)
-          and not set(img) & set(vol), img)
-    check("update: only a volume tool can refuse; an image tool is reported as moving with the recreate",
-          'case " $VOLUME_TOOLS " in' in rel and "move with the recreate" in rel
-          and rel.index('case " $VOLUME_TOOLS " in') < rel.index("refusing an update whose toolchain"))
+    check("image: claude, uv/Conductor and the Preloop CLI install under /opt, each proven present at build",
+          all(x in df for x in ("HOME=/opt/claude bash -c", "test -x /opt/claude/.local/bin/claude",
+                                "--prefix=/opt/uv uv", "UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/opt/uv/bin",
+                                "test -x /opt/uv/bin/conductor", "INSTALL_DIR=/opt/preloop/bin", "test -x /opt/preloop/bin/preloop")))
+    check("image: nothing is installed under /home/agent, and /home/agent/.local/bin is not on PATH",
+          "/home/agent/.local" not in df.replace("Nothing of them is under /home/agent", "") and "PATH=/opt/claude/.local/bin:/opt/uv/bin:/opt/preloop/bin:" in df)
+    check("image: the installs run as root and the first USER agent comes after them",
+          df.index("test -x /opt/preloop/bin/preloop") < df.index("\nUSER agent\n"))
+    check("image: claude's self-update is off — the pin is the version", "DISABLE_AUTOUPDATER=1" in df)
+    check("image: the three are world-readable for the role users a step runs as",
+          all(f"chmod -R a+rX {d}" in df for d in ("/opt/claude", "/opt/uv", "/opt/preloop")))
+    comp = (WORK / "docker" / "compose.poc.yaml").read_text()
+    check("image: the replay service runs Conductor's venv where the image puts it",
+          'entrypoint: ["/opt/uv/tools/conductor-cli/bin/python"]' in comp and "/home/agent/.local" not in comp)
+    check("release: no toolchain archive, no staging, no swap, no flag — a release is revision + images + configuration",
+          all(x not in rel for x in ("toolchain.tar.gz -C", "verify_staged", "swap_staged", "keep_or_restore_toolchain",
+                                     "REPLACE_TOOLCHAIN=1", "VOLUME_TOOLS", "refusing an update whose toolchain"))
+          and "format=3" in rel and 'say "will change $t"' in rel)
+    check("release: a record from before #34 still rolls back — its archive is named and left alone",
+          'toolchain.tar.gz" ] || say "toolchain archive"' in rel)
     ud = (WORK / "docs" / "update-day.md").read_text()
-    para = ud[ud.index("`--replace-toolchain` is needed"):ud.index("4. `verify.sh --level full`")]
-    check("update: update-day.md says the flag is for claude-code, Conductor and the Preloop CLI, and that codex/grok move with the recreate",
-          all(x in para for x in ("claude-code", "Conductor", "Preloop CLI", "move with the recreate"))
-          and "codex, grok, the acp adapters, acpx): the toolchain lives" not in para)
+    check("docs: update-day.md has no flag and says the rebuild changes every tool",
+          "--replace-toolchain]" not in ud and "There is\nno flag" in ud.replace("There is no flag", "There is\nno flag")
+          and "Every tool is the image's" in ud)
+    check("docs: the runbook's release line matches release.sh",
+          "**A release is** *code revision + image ids + configuration*" in (WORK / "docs" / "runbook.md").read_text())
+    up = (WORK / "scripts" / "up.sh").read_text()
+    check("instance: up.sh --check names an unused pre-#34 toolchain copy in the volume, with the command, and does not remove it",
+          "pre-#34 toolchain copy" in up and "alpine rm -rf /vol/.local" in up
+          and up.index("test -d /home/agent/.local/share/claude") < up.index('echo "        docker run --rm'))
     dr = (WORK / "scripts" / "drift.sh").read_text()
     check("drift: four states, and an unanswered line carries the registry's reason",
           all(w in dr for w in ('state="same"', 'state="newer"', 'state="unasked"', 'state="unanswered"', "UNANSWERED+=", '"reason":"%s"')))

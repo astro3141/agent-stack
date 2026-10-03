@@ -271,7 +271,7 @@ services:
   # Where the operator's own commands run. They change what the account enforces — the tool
   # policy, a principal's rules, a credential — so they must not run on the governed side, where
   # the guard refuses exactly those writes. Same image as the agent (it carries the Preloop CLI
-  # and this tree's toolchain), no workspace, no provider logins, and unreachable from the agent.
+  # and the toolchain), no workspace, no provider logins, and unreachable from the agent.
   admin:
     image: ${STACK:-agentstack}/governed-runtime:local
     container_name: ${STACK:-agentstack}-admin
@@ -383,7 +383,7 @@ services:
         read_only: true
     # No published port: a person reaches this through the hub, which is the one address for
     # the panel. That also keeps the container holding the workspace mount off the browser's side.
-    entrypoint: ["/home/agent/.local/share/uv/tools/conductor-cli/bin/python"]
+    entrypoint: ["/opt/uv/tools/conductor-cli/bin/python"]
     command: ["/work/stack/tools/replay_serve.py", "${REPLAY_PORT:-8785}"]
 
   # UX track: the UI. Talks only to the ops API; holds no Docker access and no credentials.
@@ -474,7 +474,8 @@ services:
   # agent — H1's whole point is that the *file* identity does not change. What changes is the
   # network it is born on, and what it is NOT given: no principals.env, no market/package env.
   # The Preloop principal is the trusted adapter's to present, never this environment's (§51).
-  # Every profile agent shares the main agent's home volume (the toolchain lives there, §3). A
+  # Every profile agent shares the main agent's home volume (logins and Preloop's agent state live
+  # there; the toolchain is the image's since #34). A
   # fresh named volume is filled from the image by the first container created on it, and compose
   # creates containers in parallel: four fills at once collided on a symlink ("file exists",
   # measured on the cold-start runner 2026-10-02, after eight runs that happened not to). The

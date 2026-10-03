@@ -54,19 +54,18 @@ A `newer` line is a question, not an instruction. Three kinds of answer:
 3. On the instance:
 
 ```bash
-scripts/release.sh update --to <rev> [--replace-toolchain]
-                                            # records what runs now, moves the workspace, rebuilds, checks
+scripts/release.sh update --to <rev>        # records what runs now, moves the workspace, rebuilds, checks
 scripts/verify.sh --level full              # the checks, the three control suites, package locks,
                                             # controls and floors, then hello-lane, auto and novel-a
 ```
 
-`--replace-toolchain` is needed whenever a pin that lives in the home volume moved: claude-code,
-Conductor and the Preloop CLI install under `/home/agent/.local`, which is the `agent-home` volume,
-so a rebuilt image does not change them, and `update` **refuses** an update whose toolchain would
-silently stay behind — measured, §65: `claude: running '2.1.278', candidate image '2.1.287'`. The
-refusal leaves the instance untouched. The provider CLIs under `/opt` (codex, grok, the two acp
-adapters, acpx, node) are the image's: the recreate every update does is what changes them, and
-`update` lists them as "move with the recreate" rather than refusing (§75).
+Every tool is the image's (`/opt`, #34, §76): the rebuild and the recreate that `update` does are
+what change claude-code, Conductor, the Preloop CLI and the provider CLIs alike, and `update` lists
+what will change before it moves anything (`will change claude '2.1.278' -> '2.1.287'`). There is
+no flag. Until §76 the first three lived in the home volume, which a rebuild did not touch, and
+`update` had to be told to swap them (`--replace-toolchain`, §65 §73); an instance from that time
+still carries that unused copy in its volume, and `up.sh --check` says so with the command that
+removes it.
 
 4. `verify.sh --level full` makes the cheap runs (`hello-lane`, `auto`, `novel-a`). For a provider
    CLI change, add the N7 native-tool check on the vendor that changed (OPERATIONS §7) by hand:
@@ -80,7 +79,7 @@ adapters, acpx, node) are the image's: the recreate every update does is what ch
 
 ```bash
 scripts/release.sh list
-scripts/release.sh rollback --to pre-<yyyymm>   # workspace revision, images, toolchain, configuration
+scripts/release.sh rollback --to pre-<yyyymm>   # workspace revision, images (the toolchain is theirs), configuration
 scripts/up.sh --check
 ```
 
