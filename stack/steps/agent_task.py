@@ -32,8 +32,17 @@ os.makedirs(ws, exist_ok=True)
 # a retry (tasks.py) names itself: its evidence sits beside the first attempt's, not over it
 attempt = os.environ.get("AGENTSTACK_ATTEMPT", "")
 run_id = f"{run}-{label}-{provider}" + (f"-a{attempt}" if attempt and attempt != "1" else "")
-evid = f"{RT['paths']['evidence_root']}/{run_id}"
-os.makedirs(evid, exist_ok=True)
+# A workflow may call the same step again under the same label — novel's repair loop does, and
+# a retry is only one of the ways — and a call made twice is two calls: the second one's evidence
+# sits beside the first's (-r2, -r3 …), never over it. Measured before this: two calls of 100 and
+# 200 tokens left one record of 200 (review 3, OPERATIONS §79). Decided here, after the door below
+# has had its say, so the one process that makes the call is the one that names it.
+def _own_evidence_dir(base):
+    root = RT["paths"]["evidence_root"]
+    rid, n = base, 2
+    while os.path.isdir(f"{root}/{rid}") and os.listdir(f"{root}/{rid}"):
+        rid, n = f"{base}-r{n}", n + 1
+    return rid, f"{root}/{rid}"
 
 
 def shared_with_roles(*paths):
@@ -71,7 +80,9 @@ if principal and not os.environ.get("AGENTSTACK_EGRESS_PROFILE") and not os.envi
     except Exception:
         _profile = ""
     if _profile:
-        os.execv(sys.executable, [sys.executable, "/work/stack/steps/broker_dispatch.py"] + sys.argv[1:])
+        os.execv(sys.executable, [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "broker_dispatch.py")] + sys.argv[1:])
+run_id, evid = _own_evidence_dir(run_id)
+os.makedirs(evid, exist_ok=True)
 
 # Run as the role this step belongs to, when that role has one of its own. Everything after this
 # point is that role: its uid, and its egress. A step whose role declares no hosts is not re-executed
@@ -136,7 +147,7 @@ req = {"run_id": run_id, "provider": provider, "model_route": model_route or "pr
 rp = os.path.join(evid, "request.json")
 json.dump(req, open(rp, "w"), indent=1)
 def run_once():
-    p = subprocess.run(["node", "/work/stack/run-agent.mjs", rp], capture_output=True, text=True,
+    p = subprocess.run(["node", str(settings.STACK / "run-agent.mjs"), rp], capture_output=True, text=True,
                        env={**os.environ, "NODE_NO_WARNINGS": "1"})
     try:
         return json.loads(p.stdout.strip().splitlines()[-1])
@@ -171,12 +182,32 @@ attempts = 1
 # `turn` can be present and null — a vendor result with no turn at all. Reading it as a mapping
 # crashed the step with an AttributeError instead of reporting why the call failed (measured).
 msg = json.dumps((r.get("turn") or {}).get("error") or r.get("failure") or {})
+first = None
 if r.get("status") != "COMPLETED" and "refresh" in msg.lower():
+    # the first attempt is kept, not replaced: its adapter result beside the second's, and what it
+    # cost in the measurements below (review 3: `attempts=2` alone lost the first result and time)
+    first = r
+    try:
+        os.replace(os.path.join(evid, "result.json"), os.path.join(evid, "result.a1.json"))
+    except OSError:
+        pass
     time.sleep(20)
     r = run_once()
     attempts = 2
+
+
+def _cost(res):
+    qq = ((res.get("turn") or {}).get("_meta") or {}).get("quota") or {}
+    return (qq.get("token_count") or {}).get("totalTokens"), res.get("wall_ms")
+
+
 q = ((r.get("turn") or {}).get("_meta") or {}).get("quota") or {}
-meas = {"total_tokens": (q.get("token_count") or {}).get("totalTokens"), "wall_ms": r.get("wall_ms")}
+_tok, _wall = _cost(r)
+if first is not None:
+    t1, w1 = _cost(first)
+    _tok = (t1 or 0) + (_tok or 0) if (t1 is not None or _tok is not None) else None
+    _wall = (w1 or 0) + (_wall or 0) if (w1 is not None or _wall is not None) else None
+meas = {"total_tokens": _tok, "wall_ms": _wall}
 after = stamp()
 # left over from an earlier attempt, untouched by this one: the reader is told, rather than the
 # file being deleted — an artifact someone may want to look at is not this step's to destroy
@@ -203,6 +234,7 @@ rec = execution.record(**{
     "evidence_dir": evid,
     "profile": prof_name,
     "attempts": attempts,
+    **({"attempt_outcomes": [first.get("status", "FAILED"), r.get("status", "FAILED")]} if first is not None else {}),
     # Why it failed, in the line a reader of this step's output sees. Without it a step that died
     # in 0.4 seconds said only FAILED, and finding "ENOENT: ~/.codex/config.toml" meant replaying
     # the request by hand on another machine (reported from the second install).

@@ -26,7 +26,6 @@ import urllib.request
 # caller — never by container name, which carries the instance's name (STACK): the default used to
 # be `cadp278-broker`, one operator's instance, and every other instance's dispatch failed with
 # URLError (measured on the cold-start runner, whose instance is `agentstack`).
-BROKER = os.environ.get("AGENTSTACK_BROKER_URL", "http://broker:8791")
 
 provider, model_route, label, prompt_file, expected = sys.argv[1:6]
 prof_name = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else "research-default"
@@ -45,16 +44,20 @@ except OSError as e:
 # timeout_ms from the same profile (agent_task.py), and a fixed 900 s here cut a call the
 # profile allowed an hour for — the runner killed it mid-work with nothing produced
 # (devflow's research step, measured at 25–33 minutes under long-task's 3600 s).
-sys.path.insert(0, "/work/stack")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import execution  # noqa: E402
 import settings  # noqa: E402
+BROKER = os.environ.get("AGENTSTACK_BROKER_URL") or settings.url("broker", "url")
 timeout_s = int(((settings.profile(prof_name) or {}).get("execution")
                  or {}).get("timeout_ms", 900000)) // 1000
 
 req = {"role": principal, "provider": provider, "model_route": model_route or "direct",
        "label": label, "prompt": prompt, "expected": expected,
        "profile_name": prof_name, "login": login, "run_id": run,
-       "timeout_s": timeout_s}
+       "timeout_s": timeout_s,
+       # a retry's number names the call's evidence (agent_task.py); brokered, it has to travel
+       # with the request or the second attempt overwrites the first (review 3, §79)
+       "attempt": os.environ.get("AGENTSTACK_ATTEMPT", "")}
 try:
     r = urllib.request.Request(BROKER + "/dispatch", data=json.dumps(req).encode(),
                                headers={"content-type": "application/json"})

@@ -225,7 +225,7 @@ if __name__ == "__main__":
     os.umask(0o077)   # login state and output: readable by the agent user only
     action, provider = sys.argv[1], sys.argv[2]
     login = sys.argv[3] if len(sys.argv) > 3 else provider.replace("pkg:", "pkg-")
-    ok_target = provider in ("claude", "codex", "grok") or (
+    ok_target = provider in settings.PROVIDERS or (
         re.fullmatch(r"pkg:[a-z][a-z0-9-]{1,39}", provider) and package_login(provider) is not None)
     if not ok_target or not re.fullmatch(r"[a-z0-9-]{1,40}", login):
         print(json.dumps({"error": "unknown login target",

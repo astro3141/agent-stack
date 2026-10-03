@@ -13,8 +13,8 @@
 # The toolchain is the image's: every tool is installed under /opt (docker/agent.Dockerfile, #34,
 # OPERATIONS §76), so the image ids say what runs. Until §76 claude, Conductor and the Preloop CLI
 # lived in the home volume, which masked the image's copy, and a release had to carry the
-# toolchain itself and swap it in; releases recorded then still hold a toolchain.tar.gz, which a
-# rollback now leaves alone.
+# toolchain itself and swap it in. A release recorded then still holds that toolchain.tar.gz, and
+# a rollback to it restores the archive into the volume: its revision runs nothing without it.
 #
 # Data is not part of a release: logins, the Preloop database, MLflow and run history stay where
 # they are and must survive both directions. scripts/backup.sh covers those. The one exception is
@@ -290,11 +290,32 @@ cmd_rollback() {
   done < "$SRC/images.txt"
   docker run --rm -v "$(m "$SRC"):/in:ro" alpine tar tzf /in/config.tar.gz >/dev/null \
     || fail "the release's configuration archive does not verify — nothing was changed"
-  # a release recorded before #34 carries the toolchain it swapped into the home volume; the
-  # kept images carry the same tools now, so the archive is not used
-  [ ! -f "$SRC/toolchain.tar.gz" ] || say "toolchain archive" "from before #34 — not used; the kept images carry the toolchain"
-  say "verified" "images and the configuration archive"
+  # A release recorded before #34 (format 2) is a revision whose tools lived in the home volume,
+  # and its archive is that toolchain. Its kept image has the same tools under /home/agent — but
+  # the volume masks /home/agent, and on an instance that followed up.sh's note the volume's copy
+  # is gone: restoring the images alone would bring back a revision with no claude, Conductor or
+  # Preloop CLI (review 3, OPERATIONS §79; §76 said the opposite, and was wrong). So the archive is
+  # restored, verified before the swap, and the swap happens only after everything else verified.
+  OLD_TOOLCHAIN=0
+  if [ -f "$SRC/toolchain.tar.gz" ]; then
+    OLD_TOOLCHAIN=1
+    docker run --rm -v "$STACK-agent-home:/vol" -v "$(m "$SRC"):/in:ro" alpine sh -c '
+      set -e
+      rm -rf /vol/.local.new && mkdir -p /vol/.local.new
+      tar xzf /in/toolchain.tar.gz -C /vol/.local.new --strip-components=1
+      for t in claude conductor preloop; do
+        [ -e /vol/.local.new/bin/$t ] || { echo "the archive has no $t" >&2; exit 1; }
+      done' || fail "the release's toolchain archive does not restore a usable toolchain — nothing was changed"
+    say "toolchain archive" "from before #34 — unpacked and verified; swapped into /home/agent/.local below"
+  fi
+  say "verified" "images and the archives"
   docker stop "$AGENT" >/dev/null 2>&1 || true
+  if [ "$OLD_TOOLCHAIN" = 1 ]; then
+    docker run --rm -v "$STACK-agent-home:/vol" alpine sh -c \
+      'rm -rf /vol/.local.old; [ ! -e /vol/.local ] || mv /vol/.local /vol/.local.old; mv /vol/.local.new /vol/.local' \
+      || fail "could not swap the release's toolchain into the home volume"
+    say "toolchain" "/home/agent/.local from the release (a copy that was there is kept as .local.old until the checks pass)"
+  fi
 
   git_here checkout --quiet "$REV" || fail "cannot check out $REV"
   say "workspace" "$(git_here rev-parse --short HEAD)"
@@ -315,6 +336,7 @@ cmd_rollback() {
   [ "$UP_RC" = 0 ] || { echo "the checks did not pass after the rollback" >&2; exit 1; }
   # the account must enforce the policy that was just restored, not the one from before
   reapply_policy || exit 1
+  [ "$OLD_TOOLCHAIN" = 0 ] || docker run --rm -v "$STACK-agent-home:/vol" alpine rm -rf /vol/.local.old
   for t in $TOOLS; do say "$t" "$(tool_running "$t")"; done
   echo
   echo "rolled back to $TO"

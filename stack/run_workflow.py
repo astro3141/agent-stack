@@ -113,7 +113,7 @@ def described():
                # what its package says it needs of the stack — the panel's start gate reads it
                "capabilities": caps_of(name)}
         try:
-            d = yaml.safe_load(open(f"/work/{rel}", encoding="utf-8")) or {}
+            d = yaml.safe_load(open(settings.ROOT / rel, encoding="utf-8")) or {}
             w = d.get("workflow") or {}
             row["description"] = str(w.get("description") or "")
             for key, spec in (w.get("input") or {}).items():
@@ -125,6 +125,14 @@ def described():
                                       "required": bool(spec.get("required"))})
         except Exception as e:
             row["error"] = f"{type(e).__name__}: {e}"
+        # The command a person copies from the panel, built here and nowhere else (review 3, §81):
+        # every value shell-quoted, a required input with no default a quoted placeholder, and
+        # `{profile}` for the panel's one choice. verify.sh runs this very string at the stack level.
+        import shlex
+        parts = ["scripts/cycle.sh", shlex.quote(name), "{profile}"]
+        for i in row["inputs"]:
+            parts.append(f"{i['name']}={shlex.quote(i['default']) if i['default'] else shlex.quote('<' + i['name'] + '>')}")
+        row["command"] = " ".join(parts)
         out[name] = row
     return out
 
@@ -415,7 +423,10 @@ def cmd_resume(ui):
                  "launcher_pid": os.getpid(), "instance": instance_id()})
     meta_path(ui).write_text(json.dumps(meta))
     argv = ["conductor", "--silent", "resume", "--from", str(cps[-1]), "--no-interactive"]
-    env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor")}
+    env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor"),
+           # the parent travels with a resumed run as it did with the first start, so the record
+           # step tags the same parent the panel shows (review 3, §79)
+           "AGENTSTACK_PARENT_RUN": str(meta.get("parent") or "")}
     with open(d / "run.log", "ab") as log:
         rc = run_conductor(ui, argv, env, log)
     meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})

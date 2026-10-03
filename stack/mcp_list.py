@@ -1,5 +1,6 @@
 """List the tools Preloop's MCP endpoint exposes to a given agent principal (token from its own config)."""
 import json, os, sys, tomllib, urllib.request
+import os as _o, sys as _s; _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__))); import settings  # noqa: E402
 who = sys.argv[1]
 if who == "claude":
     tok = json.load(open(os.path.expanduser("~/.claude.json")))["mcpServers"]["preloop"]["headers"]["Authorization"]
@@ -9,7 +10,7 @@ H = {"Content-Type": "application/json", "Accept": "application/json, text/event
 def call(m, p, i, sid=None):
     h = dict(H)
     if sid: h["mcp-session-id"] = sid
-    r = urllib.request.urlopen(urllib.request.Request("http://console/mcp/v1", data=json.dumps(
+    r = urllib.request.urlopen(urllib.request.Request(settings.url("preloop", "mcp_url"), data=json.dumps(
         {"jsonrpc": "2.0", "id": i, "method": m, "params": p}).encode(), headers=h), timeout=20)
     b = r.read().decode()
     return r.headers.get("mcp-session-id"), json.loads(b.split("data: ", 1)[1] if "data: " in b else b)

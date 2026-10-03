@@ -39,15 +39,17 @@ import grok from "/work/stack/adapter/providers/grok.mjs";
 // into "control unavailable".
 // Own variable: the container already sets PRELOOP_URL=http://console for the Preloop CLI.
 // Addresses and paths come from the generated settings (config/generated/runtime.json, from
-// config/environment.yaml via cfg.py); the literals are only the fallback for an unconfigured
-// checkout.
+// config/environment.yaml via cfg.py, written at every bring-up). They are written nowhere else:
+// a checkout without them is told to generate them, rather than run on a second copy of the
+// defaults that could drift from the first (review 3, OPERATIONS §80).
 const RT = (() => {
-  try { return JSON.parse(readFileSync("/work/config/generated/runtime.json", "utf8")); } catch { return {}; }
+  try { return JSON.parse(readFileSync("/work/config/generated/runtime.json", "utf8")); }
+  catch { throw new Error("config/generated/runtime.json is missing — run `cfg.py generate` (scripts/up.sh does)"); }
 })();
-const PRELOOP_URL = process.env.PRELOOP_API_URL ?? RT.preloop?.api_url ?? "http://api:8000";
-const PRELOOP_MCP_URL = process.env.AGENTSTACK_MCP_URL
-  ?? RT.preloop?.mcp_url ?? `${process.env.PRELOOP_URL ?? "http://console"}/mcp/v1`;
-const LOGINS = RT.paths?.logins_root ?? "/route";
+const need = (v, what) => { if (v == null) throw new Error(`runtime.json has no ${what} — run cfg.py generate`); return v; };
+const PRELOOP_URL = process.env.PRELOOP_API_URL ?? need(RT.preloop?.api_url, "preloop.api_url");
+const PRELOOP_MCP_URL = process.env.AGENTSTACK_MCP_URL ?? need(RT.preloop?.mcp_url, "preloop.mcp_url");
+const LOGINS = need(RT.paths?.logins_root, "paths.logins_root");
 
 // ---- per-role Preloop principal (opt-in) ------------------------------------------------
 // A request may name a principal of its own (`mcp_principal`): the call then presents that
@@ -77,8 +79,8 @@ function principalAuth(name) {
 // were open to it. The confinement held for the adapter's own process and nothing it started.
 const EGRESS = (() => {
   const roleProxy = process.env.AGENTSTACK_ROLE ? (process.env.HTTPS_PROXY || process.env.https_proxy) : null;
-  const proxy = roleProxy || RT.egress?.proxy || "http://egress:8888";
-  const npList = RT.egress?.no_proxy ?? ["console", "api", "gateway", "mlflow", "localhost", "127.0.0.1"];
+  const proxy = roleProxy || need(RT.egress?.proxy, "egress.proxy");
+  const npList = [...need(RT.egress?.no_proxy, "egress.no_proxy")];
   // a brokered step's MCP endpoint (§53) is in-network: never sent through the egress proxy,
   // whose list quite rightly has no idea what a "broker" is
   if (process.env.AGENTSTACK_MCP_URL) {

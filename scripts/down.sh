@@ -13,6 +13,7 @@
 # agent home and the role credentials. It prints exactly what it will remove and refuses anything
 # named differently. What a complete take-down is, is measured: the cold-start run checks that
 # nothing named for the instance is left (containers, networks, volumes).
+PY_IN_AGENT=/opt/venv/bin/python   # the agent container's interpreter — named once here (OPERATIONS §80)
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -f "$HERE/config/instance.env" ]; then
@@ -44,9 +45,9 @@ echo "workspace: ${POC_HOST_DIR:-$HERE (compose defaults / docker/.env)}"
 # A run in flight is stopped before the containers are, so it leaves a checkpoint and can be
 # continued after the next bring-up. Asked of the run list, not assumed from a lock file.
 if [ "$NOW" = 0 ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
-  RUNNING="$(docker exec "$STACK-agent" /opt/venv/bin/python -c '
+  RUNNING="$(docker exec "$STACK-agent" $PY_IN_AGENT -c '
 import json, subprocess
-out = subprocess.run(["/opt/venv/bin/python", "/work/stack/run_workflow.py", "list"],
+out = subprocess.run(["$PY_IN_AGENT", "/work/stack/run_workflow.py", "list"],
                      capture_output=True, text=True).stdout
 print(" ".join(r["ui_id"] for r in json.loads(out or "[]") if r.get("state") == "running"))
 ' 2>/dev/null | tr -d '\r')"
@@ -54,7 +55,7 @@ print(" ".join(r["ui_id"] for r in json.loads(out or "[]") if r.get("state") == 
     echo "== runs in flight: $RUNNING"
     for ui in $RUNNING; do
       echo "   stopping $ui (graceful: it keeps its checkpoint)"
-      docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/run_workflow.py stop "$ui" >/dev/null 2>&1 \
+      docker exec "$STACK-agent" $PY_IN_AGENT /work/stack/run_workflow.py stop "$ui" >/dev/null 2>&1 \
         || echo "   WARN  $ui did not accept the stop" >&2
     done
     # give the runs their own cancel path; a run that ignores it is reported, not waited on forever

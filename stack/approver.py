@@ -4,13 +4,14 @@ usage: approver.py <cwd> approve|decline [seconds]
 Plays the human approver over HTTP. Records what it resolved; never auto-runs in real use.
 """
 import glob, json, sys, time, urllib.request
+import os as _o, sys as _s; _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__))); import settings  # noqa: E402
 
 cwd, act = sys.argv[1], sys.argv[2]
 deadline = time.time() + float(sys.argv[3] if len(sys.argv) > 3 else 180)
 tok = json.load(open(glob.glob("/home/agent/.preloop/agents/*/permission_hook.json")[0]))["token"]
 
 def call(path, body=None):
-    r = urllib.request.Request("http://console" + path, headers={"Authorization": "Bearer " + tok,
+    r = urllib.request.Request(settings.url("preloop", "api_url") + path, headers={"Authorization": "Bearer " + tok,
         "Content-Type": "application/json"}, data=None if body is None else json.dumps(body).encode())
     return json.load(urllib.request.urlopen(r, timeout=10))
 

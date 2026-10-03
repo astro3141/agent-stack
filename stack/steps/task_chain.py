@@ -28,7 +28,8 @@ sys.path.insert(0, "/work/stack")
 import execution
 import settings
 
-PY = os.environ.get("POC_PY", "/opt/venv/bin/python")
+PY = os.environ.get("POC_PY") or sys.executable
+STEPS = os.path.dirname(os.path.abspath(__file__))
 RUN = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 WS = f"{settings.runtime()['paths']['workspace_root']}/{RUN}"
 
@@ -43,7 +44,7 @@ for i, st in enumerate(member["steps"], 1):
     if st["kind"] == "model":
         # one door: agent_task.py hands a role that declares an egress profile to the broker
         # itself (§54), so this chain — like the fan-out — never has to know there are two
-        argv = [PY, "/work/stack/steps/agent_task.py", st["provider"], st.get("route", "direct"),
+        argv = [PY, os.path.join(STEPS, "agent_task.py"), st["provider"], st.get("route", "direct"),
                 name, st["prompt"], st["expected"], prof, st.get("login", st["provider"]),
                 st.get("principal", "")]
     else:

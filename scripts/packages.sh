@@ -17,6 +17,7 @@
 # host can put it there. Installing a package is also a trust decision — it brings principals that
 # scripts/up.sh will create and give credentials to — which is why it is pinned and verified rather
 # than followed (OPERATIONS §37).
+PY_IN_AGENT=/opt/venv/bin/python   # the agent container's interpreter — named once here (OPERATIONS §80)
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 command -v cygpath >/dev/null && HERE="$(cygpath -m "$HERE")"
@@ -32,7 +33,7 @@ ONLY="${2:-}"
 # The declaration is read with the same parser everything else uses, and printed as plain lines so
 # this script never guesses at YAML: "<name> <from> <ref>"
 declared() {
-  docker exec -i "$STACK-agent" /opt/venv/bin/python -c '
+  docker exec -i "$STACK-agent" $PY_IN_AGENT -c '
 import os, yaml
 d = {}
 for p in ("/work/config/packages.yaml", "/work/config/packages.local.yaml"):
@@ -72,7 +73,7 @@ run_controls() {   # [name] — 0 when every controls.py passed
       continue
     fi
     echo "== $name: controls"
-    docker exec "$STACK-agent" /opt/venv/bin/python "/work/packages/$name/controls.py" \
+    docker exec "$STACK-agent" $PY_IN_AGENT "/work/packages/$name/controls.py" \
       || { echo "  FAILED   $name — controls.py reported failures" >&2; exit 1; }
   done || rc=1
   return "$rc"

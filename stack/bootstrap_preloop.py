@@ -25,8 +25,9 @@ already claimed and nothing is written.
 """
 REPEATABLE = "guarded"
 import json, os, secrets, subprocess, sys, urllib.error, urllib.request
+import os as _o, sys as _s; _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__))); import settings  # noqa: E402
 
-DEFAULT_API = os.environ.get("AGENTSTACK_PRELOOP_API") or "http://api:8000"
+DEFAULT_API = os.environ.get("AGENTSTACK_PRELOOP_API") or settings.url("preloop", "api_url")
 
 
 def call(api, path, body=None, token=None, method=None):

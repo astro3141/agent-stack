@@ -83,13 +83,26 @@ tree fails on Linux, and the failure once left an account whose password nobody 
 
 ## Installing a workflow
 
+Declaring it is what installs it (packages.md): a directory copied under `packages/` without a
+declaration is listed with that as its reason and offered as nothing.
+
 ```bash
-cp -r <somewhere>/trading-port packages/     # or git clone it into packages/
+# 1. declare it — config/packages.yaml for one this repository carries, config/packages.local.yaml
+#    (git-ignored) for one that is yours alone
+cat >> config/packages.local.yaml <<'EOF'
+packages:
+  trading-port:
+    from: https://github.com/<owner>/trading-port.git
+    ref: main
+EOF
+scripts/packages.sh install trading-port     # fetches it into packages/ and writes the lock
 scripts/up.sh                                # its principals are created with their rights
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/packages.py
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py start r1 trading-port research-default
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/packages.py          # listed, with no reason against it
+scripts/cycle.sh trading-port research-default                                     # or, by hand:
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py start first-port-1 trading-port research-default
 ```
 
+A run id is `[a-z0-9-]`, 6 to 40 characters (`run_workflow.py` refuses a shorter one and says so).
 Nothing in the platform is edited. `packages/hello-lane` is a working example of the shape
 (concepts.md, OPERATIONS §27).
 

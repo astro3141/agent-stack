@@ -1,6 +1,6 @@
 """Settings model: one source of truth, generated per-solution settings, explicit apply state.
 
-usage (inside the agent container, with /opt/venv/bin/python):
+usage (inside the agent container, with its interpreter):
   cfg.py validate            check config/environment.yaml and config/profiles/*.yaml
   cfg.py generate            write config/generated/ (runtime.json, profiles/<name>.json)
   cfg.py apply [--dry-run]   apply what lives in another solution (Preloop tool policy + MCP scan)
@@ -26,13 +26,11 @@ ROOT = Path(os.environ.get("AGENTSTACK_ROOT", "/work"))
 CFG = ROOT / "config"
 GEN = CFG / "generated"
 STATE = GEN / "state.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import settings  # noqa: E402
 
-# What the execution layer (stack/adapter/providers/<name>.mjs) supports: provider → allowed routes.
-KNOWN_PROVIDERS = {
-    "claude": {"direct", "preloop_gateway"},
-    "codex": {"direct", "preloop_gateway"},
-    "grok": {"direct"},
-}
+# What the execution layer supports (provider → routes) is written once, in settings.py.
+KNOWN_PROVIDERS = settings.PROVIDERS
 WINDOWS = {"session", "weekly"}
 
 

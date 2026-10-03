@@ -933,7 +933,7 @@ def controls_approval_boundary():
           "AGENTSTACK_PRELOOP_API: http://preloop-api:8000" in compose, True)
     ops_server = open("/work/ops/server.py", encoding="utf-8").read()
     check("the panel runs the decision itself, not in the agent",
-          'jlocal(["/work/stack/approvals.py", "decide"' in ops_server, True)
+          'jlocal([f"{STACK}/approvals.py", "decide"' in ops_server, True)
     # #24 (decided 2026-10-02): the panel neither generates nor applies configuration — the
     # endpoints went with the start and resume buttons. The split (generate in the agent, apply
     # on the admin side past the guard, §21) is pinned where it lives now: the bring-up.
@@ -942,7 +942,7 @@ def controls_approval_boundary():
     check("applying a policy runs on the admin side, at the bring-up",
           bool(re.search(r'docker exec "\$STACK-admin"[^\n]*cfg\.py apply', up)), True)
     check("generating it does not — the provider logins are in the agent",
-          'docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate' in up, True)
+          'docker exec "$STACK-agent" $PY_IN_AGENT /work/stack/cfg.py generate' in up, True)
     admin_block = compose.split("  admin:")[1].split("  apiguard:")[0]
     check("the operator's container is on the admin network and no other",
           admin_block.split("networks:")[1].split("volumes:")[0].split(), ["-", "adminnet"])
@@ -1908,7 +1908,7 @@ def controls_packages():
     check("a package may not take a built-in's name",
           "{**packages.workflows(), **BUILT_IN}" in rw, True)
     check("the panel asks the runner rather than keeping a second list",
-          '"/work/stack/run_workflow.py", "workflows"' in ops_server
+          'f"{STACK}/run_workflow.py", "workflows"' in ops_server
           and '"auto", "research-r", "novel-a"' not in ops_server, True)
     check("and the principals a bring-up applies include the packages'",
           "packages.principals()" in open("/work/stack/principals.py", encoding="utf-8").read(), True)
@@ -2125,7 +2125,7 @@ def controls_template():
                      .get("principals") or {}) & set(by_package)), [])
     check("applying it is part of every bring-up", "principals.py apply" in up, True)
     check("and it runs where a write to Preloop is allowed",
-          '"$STACK-admin" /opt/venv/bin/python /work/stack/principals.py apply' in up, True)
+          '"$STACK-admin" $PY_IN_AGENT /work/stack/principals.py apply' in up, True)
     check("a credential is asked about, never assumed from this process's environment",
           "def has_credential(" in src and "os.environ.get(env_name" not in
           src.split("def cmd_apply(")[1].split("def cmd_rules(")[0], True)
@@ -2203,8 +2203,8 @@ def controls_bootstrap():
     check("the policy is applied right after the claim",
           "applying this stack's policy to the new instance" in up, True)
     check("generating reads the logins in the agent, applying writes from the admin side",
-          '"$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate' in up
-          and '"$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply' in up, True)
+          '"$STACK-agent" $PY_IN_AGENT /work/stack/cfg.py generate' in up
+          and '"$STACK-admin" $PY_IN_AGENT /work/stack/cfg.py apply' in up, True)
 
 
 def controls_resume():

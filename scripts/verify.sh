@@ -18,9 +18,10 @@
 #
 # Exit 0 when every check at the chosen level passed; 1 otherwise. Changes nothing but
 # evidence/ and the run it starts at `full`.
+PY_IN_AGENT=/opt/venv/bin/python   # the agent container's interpreter — named once here (OPERATIONS §80)
 set -uo pipefail
 # Git Bash rewrites an argument that looks like a POSIX path into a Windows one before docker sees
-# it, so `docker exec … /opt/venv/bin/python` arrived as "C:/Program Files/Git/opt/venv/bin/python"
+# it, so `docker exec … $PY_IN_AGENT` arrived as "C:/Program Files/Git$PY_IN_AGENT"
 # (measured on a Windows host, 2026-10-02; up.sh already carries this line). The host python there
 # is a native Windows one: it reads no MSYS path and ends its lines with CRLF, so what this script
 # hands it is converted with cygpath, and what it prints is read without the CR.
@@ -60,7 +61,7 @@ ok()   { CHECKS=$((CHECKS+1)); printf '  ok    %s\n' "$1"; }
 bad()  { CHECKS=$((CHECKS+1)); FAILS=$((FAILS+1)); printf '  FAIL  %s\n' "$1"; [ -n "${2:-}" ] && printf '        %s\n' "$2"; }
 note() { printf '  note  %s\n' "$1"; }
 sect() { printf '\n== %s\n' "$1"; }
-in_agent() { docker exec "$STACK-agent" /opt/venv/bin/python "$@"; }
+in_agent() { docker exec "$STACK-agent" $PY_IN_AGENT "$@"; }
 
 stack_up() { docker info >/dev/null 2>&1 && docker inspect -f '{{.State.Running}}' "$STACK-agent" 2>/dev/null | grep -q true; }
 
@@ -157,8 +158,8 @@ echo "$out" | grep "note:" | sed 's/^/        /' || true
 if stack_up; then
   CROOT="/tmp/verify-$$"
   docker exec "$STACK-agent" sh -c "mkdir -p $CROOT/config/generated $CROOT/ws && printf '%s' '{\"preloop\":{\"api_url\":\"x\",\"mcp_url\":\"x\"},\"mlflow\":{\"url\":\"x\"},\"egress\":{\"proxy\":\"http://127.0.0.1:1\",\"no_proxy\":[]},\"paths\":{\"workspace_root\":\"$CROOT/ws\",\"evidence_root\":\"$CROOT/ev\",\"observations\":\"$CROOT/obs\",\"logins_root\":\"$CROOT/route\"}}' > $CROOT/config/generated/runtime.json"
-  runpy()  { local id="$1" f="$2"; shift 2; docker exec -e AGENTSTACK_ROOT="$CROOT" -e CONDUCTOR_SELF_RUN_ID="$id" "$STACK-agent" /opt/venv/bin/python "/work/$f" "$@"; }
-  runpyc() { docker exec -e AGENTSTACK_ROOT="$CROOT" "$STACK-agent" /opt/venv/bin/python -c "$@"; }
+  runpy()  { local id="$1" f="$2"; shift 2; docker exec -e AGENTSTACK_ROOT="$CROOT" -e CONDUCTOR_SELF_RUN_ID="$id" "$STACK-agent" $PY_IN_AGENT "/work/$f" "$@"; }
+  runpyc() { docker exec -e AGENTSTACK_ROOT="$CROOT" "$STACK-agent" $PY_IN_AGENT -c "$@"; }
   note "step tests and package controls run in the agent container, with the stack's interpreter"
 else
   runpy()  { local id="$1"; shift; CONDUCTOR_SELF_RUN_ID="$id" $PY "$@"; }
@@ -215,6 +216,9 @@ else
   bad "egress_gen.sh does not produce the lists compose mounts on a fresh clone"
 fi
 
+# what the controls pin — behaviour, or a source file's text (§82); a number the record keeps
+note "pins: $($PY stack/pin_kinds.py 2>/dev/null | tail -1 | $PY -c 'import json,sys; d=json.load(sys.stdin); print(" · ".join(f"{k.split(chr(47))[-1]} text {v.get(chr(115)+chr(111)+chr(117)+chr(114)+chr(99)+chr(101)+chr(45)+chr(116)+chr(101)+chr(120)+chr(116),0)}/{v[chr(99)+chr(104)+chr(101)+chr(99)+chr(107)+chr(115)]}" for k,v in d.items()))' 2>/dev/null)"
+
 if [ -x scripts/drift.sh ]; then
   drift="$(bash scripts/drift.sh 2>/dev/null)"
   newer="$(awk 'NR>1 && $4=="newer"{print $1}' <<<"$drift" | tr '\n' ' ')"
@@ -251,7 +255,7 @@ done
 # the way a run's first step does, and run the controls on that — when the router finds all three
 # providers eligible, since the control cases take that as their starting point.
 RC_OBS="/tmp/verify-obs-$$"
-rc_state="$(docker exec -i "$STACK-agent" sh -c "rm -rf $RC_OBS && mkdir -p $RC_OBS && /opt/venv/bin/python - $RC_OBS" <<'PYRC' 2>/dev/null | nocr
+rc_state="$(docker exec -i "$STACK-agent" sh -c "rm -rf $RC_OBS && mkdir -p $RC_OBS && $PY_IN_AGENT - $RC_OBS" <<'PYRC' 2>/dev/null | nocr
 import json, sys
 sys.path.insert(0, "/work/stack")
 import admission
@@ -282,6 +286,20 @@ if in_agent /work/stack/run_workflow.py start "$RID" hello-lane research-default
    && in_agent /work/stack/run_workflow.py show "$RID" 2>/dev/null | tail -1 | grep -q '"completed_ok": true'; then
   ok "hello-lane ran to completion ($RID) — a package step through Conductor, no model, no login — a fresh install's first run (#26)"
 else bad "hello-lane did not complete ($RID)" "$(tail -3 "$TMP/hello.log" | tr '\n' ';')"; fi
+
+# The first-use check (review 3, §81): the command the panel shows for hello-lane — the string the
+# ops API builds, with the profile put in the way the panel does — is run from this checkout as a
+# person would paste it, and the cycle it starts has to complete. A default with a space is in it
+# (`text='from the parent'`), which is what broke before.
+FU_CMD="$(in_agent /work/stack/run_workflow.py workflows --detail 2>/dev/null | nocr | $PY -c 'import json,sys; d=json.load(sys.stdin); print(d["hello-lane"]["command"].replace("{profile}", "research-default"))' 2>/dev/null)"
+if [ -z "$FU_CMD" ]; then bad "first use: the ops API offers no command for hello-lane" "run_workflow.py workflows --detail"
+else
+  FU_OUT="$( (cd "$HERE" && STACK="$STACK" bash -c "$FU_CMD") 2>"$TMP/firstuse.err" | nocr | tail -1)"
+  FU_UI="$(printf '%s' "$FU_OUT" | $PY -c 'import json,sys; print(json.load(sys.stdin).get("ui",""))' 2>/dev/null)"
+  if [ -n "$FU_UI" ] && in_agent /work/stack/run_workflow.py show "$FU_UI" 2>/dev/null | tail -1 | grep -q '"completed_ok": true'; then
+    ok "first use: the panel's command ran as printed and completed ($FU_UI) — $FU_CMD"
+  else bad "first use: the panel's command did not run as printed" "$FU_CMD → $(printf '%s' "$FU_OUT" | cut -c1-160) $(tail -2 "$TMP/firstuse.err" | tr '\n' ';')"; fi
+fi
 
 # A sub-workflow and a wait, through this stack's door (stack/cases/child-run.yaml, #13). The
 # measurement is which run id the child's step saw; it is printed, and docs/packages.md says what

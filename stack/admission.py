@@ -16,7 +16,7 @@ never turned into a refusal here (CONTRACT.md). A collector that fails is not fa
 then says "unknown: no observation" for the providers it could not read, which is the true state,
 and `collect_error` carries what the collector said.
 """
-import json, os, subprocess, sys, tempfile
+import json, os, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -45,7 +45,17 @@ def collect_env(pol):
 
 
 def collect(pol, obs_dir, timeout=180):
-    """Observations into `obs_dir`, read with this policy's logins. Returns "" or what went wrong."""
+    """Observations into `obs_dir`, read with this policy's logins. Returns "" or what went wrong.
+
+    The directory is emptied first. What the collector may present again is the reading it keeps
+    beside the *login* (collect_obs.py `kept`, within the profile's reuse window); a file left in
+    this directory by an earlier collection is not that — it may be another login's, and a
+    collection that failed would otherwise hand it to the router as if it were this one's
+    (measured: account A's file, account B chosen, a timeout, and the router said ROUTE — review 3,
+    OPERATIONS §79).
+    """
+    if os.path.isdir(obs_dir):
+        shutil.rmtree(obs_dir, ignore_errors=True)
     os.makedirs(obs_dir, exist_ok=True)
     try:
         p = subprocess.run([PY, f"{HERE}/collect_obs.py", obs_dir], capture_output=True, text=True,

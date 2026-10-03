@@ -4464,3 +4464,154 @@ no principal) COMPLETED, produced: true, tools: mcp.preloop.write_file ×1; veri
 The empty file the bootstrap now seeds is what the Preloop CLI needed to see codex; its onboarding
 then wrote the entry the adapter's own-login path reads. #37 is closed by this. The operator's
 logs are in `evidence/issue37/` on their host.
+
+## 79. The third review, verified: the contract across repeat, resume and rollback (2026-10-03)
+
+The third external review, against 0a0536b, read the structure as improved and the remaining
+weakness as one of contract, not of modules: "the meaning of a run id and a state does not match
+between file names, environment variables, logs and HTTP requests." Six findings, two P1. Each was
+read back to the code before anything was changed; all six held.
+
+| # | finding | read | fixed |
+|---|---|---|---|
+| 1 | P1 — a rollback to a release from before #34 ignores its `toolchain.tar.gz`; that revision's tools lived in the volume, and an instance that followed `up.sh`'s note has removed them | **holds.** §76 said "the kept images carry the same tools" — true of the image, false of what runs: the volume masks `/home/agent`. §76 was wrong on this line | `release.sh rollback` unpacks the archive into `.local.new`, verifies claude, conductor and preloop are in it, and only after every other check swaps it into `/home/agent/.local` (a copy that was there is kept as `.local.old` until the checks pass) |
+| 2 | P1 — the call id is `run-label-provider`: the same step called again writes the same `execution.json`; the broker is not told the attempt; the adapter's refresh retry keeps only `attempts=2` | **holds**, all three. Reproduced by the reviewer: 100 and 200 tokens left one record of 200 | `agent_task.py` names a second call of a label `-r2`, `-r3` … (decided after the door, so the process that makes the call names it); `broker_dispatch` → `broker` → `profile_runner` carry `attempt` into the runner's environment; the refresh retry keeps the first attempt's `result.a1.json`, sums both attempts' tokens and wall time, and records `attempt_outcomes` |
+| 3 | P2 — the recorder keeps the first mention of an execution, so a partial `execute` hides the whole evidence record, and a reader meets a `KeyError` | **holds** (`executions_of`, dedupe by first) | one record per id: every source normalized, a later (fuller) source fills what an earlier one left empty, the evidence directory last; measurements merge; the receipt's lane name is kept |
+| 4 | P2 — a resumed run reads as `finished` with the earlier failure; a resume does not restore the parent | **holds** (`runevents.read` never reset; `cmd_resume` env without the parent) | `workflow_started`, or a step starting after the log ended, opens a new segment: end, error, output, termination cleared, `segment` counted; `cmd_resume` sets `AGENTSTACK_PARENT_RUN` from the meta |
+| 5 | P2 — a collection that fails leaves an earlier login's observation for the router | **holds**: `collect()` wrote into a directory it did not empty. The valid reuse is a different thing (`collect_obs.py kept`, beside the login, within the window) and is untouched | `collect()` empties the observation directory first |
+| 6 | P2 — the command the panel shows does not run as printed; an empty login object stops the render; fixed ports; the install example cannot run | **holds**, each: `text=from the parent` unquoted; `login: {}` is true in JavaScript; `127.0.0.1:5000` and `localhost:3000` written in; `r1` is shorter than the rule allows and the package was never declared | values shell-quoted and placeholders quoted and named; the login line stands on its own and `{}` is no login; the consoles' addresses come from the ops API; a failed approvals read is said beside the table, not in its place; the install example declares the package and uses a run id the rule accepts |
+
+**Measured.** Each fix has a model-free reproduction in review_controls (`review3_controls`, 24
+pins): the id sequence `plain → -r2 → -r3` and `-a2 → -a2-r2` on a temporary evidence root; a
+partial `execute` merged with its evidence (300 tokens, `model_served`, every field present); a
+synthetic log with a failure then a new step (not ended, no stale output, `segment` 1) and then
+its own end; a stale observation file gone after a collection that failed; and text pins for the
+rollback, the broker path, the hub and the docs. review_controls 166/166, static on this runner,
+the cold start for the rest: **run 66** (ef49539) green, and **run 71** (acd1f6f) green with every round of
+this branch on it. What this level cannot say: a resumed run on the
+instance reading as going while it goes (a resume with a live process), and a rollback to
+`pre-202610` on an instance whose volume has no `.local` — the second is the operator's to run
+when a rollback is wanted, and the first falls out of the next resume.
+
+**What the review got right about §76.** The sentence "a release recorded before this still
+rolls back: its `toolchain.tar.gz` is named and left alone, the kept images carry the same tools"
+was reasoning from the image and not from the volume that masks it. It is corrected by the fix
+above and stands in §76 as written, with this note.
+
+**Not done here, and why.** The review's fourth recommendation — run the three external packages
+on the new contract (long runs, parent/child and resume, repeat and aggregation) — is the
+packages' authors' measurement (trading#2, devflow#1) and needs their repositories to move; the
+stack's side of it is this section. Its remark that some controls check source text rather than
+behaviour is fair: the reproductions above are behaviour where a behaviour exists without a model,
+and text where the behaviour is a shell script against a Docker volume.
+
+## 80. One fact, one place: providers, addresses, paths (review 3, "변경 용이성", 2026-10-03)
+
+The third review left this axis as "improving", naming three facts written in more than one
+place: the provider list, the default in-network addresses, and the stack's own paths. Counted
+before changing anything:
+
+| fact | where it was written | now |
+|---|---|---|
+| the three providers | `cfg.py KNOWN_PROVIDERS`, `ops/server.py PROVIDERS`, a tuple in `login_helper.py`, and the module list under `stack/adapter/providers/` | `settings.PROVIDERS` (provider → routes); `cfg.py` validates against it, `login_helper.py` reads it, the ops API reads the provider modules that exist; a control holds the table equal to the module list |
+| `http://api:8000`, `console/mcp/v1`, `broker:8791`, `egress:8888`, `mlflow:5000` | `settings.DEFAULT_RUNTIME` and, as fallbacks or literals, `run-agent.mjs` (3), `broker.py` (2), `broker_dispatch.py`, `mcp_list.py`, `mcp_call.py`, `approver.py`, `bootstrap_preloop.py`, `capabilities.py`, `collect_obs.py`, `pcheck.sh`, and nine probes in `up.sh` | `settings.url(section, key)` — the generated settings or the one default table (`broker` added to it); the adapter reads `runtime.json` or refuses with "run cfg.py generate" instead of running on a second copy of the defaults; `up.sh` reads the four addresses it probes once from the agent. `preloop-api:8000` in `up.sh` stays: the admin side's name for Preloop's api on its own network, a different fact |
+| `/opt/venv/bin/python` (93 sites) and `/work/stack/...` (157) | every module that starts another, five scripts, the package workflows | Python: `sys.executable` (or the package's `POC_PY`) and `__file__`/`settings.STACK` — no module names the interpreter or another module by an absolute path; scripts: `PY_IN_AGENT` once each (`up.sh` 17 → 1, `verify.sh` 6 → 1, `down.sh` 3 → 1, `packages.sh` 2 → 1); `ops/server.py` names the stack's mount once. The package workflows keep `${POC_PY:-/opt/venv/bin/python}`: that line is the package contract (docs/packages.md), not a copy |
+
+**Measured as absence.** `ease_controls` (12 pins): the table equals the module list; no second
+provider list in the Python; no in-network address on a code line outside `settings.py` across
+stack/, the adapter and `up.sh`; no interpreter path in a Python module; no module naming another
+by `/work/stack/...`; one `PY_IN_AGENT` per script; one `STACK` in the ops API. review_controls
+179/179 and static 13/13 on this runner; the cold start for what runs: **run 71** (acd1f6f) green — after
+run 67 found seven of `up.sh`'s container commands holding `$PY_IN_AGENT` inside single quotes,
+where it does not expand (the role-egress plan and grok posture answered nothing, trial_controls
+then found no role `.allow` files; spliced in as `"$PY_IN_AGENT"'…'`), and run 69 found four
+trial pins still reading the old text of `ops/server.py` and `up.sh`.
+
+## 81. The first-use check: the command a person copies is the one that runs (review 3, 2026-10-03)
+
+The review's third recommendation: a check that the install document and the panel's commands
+actually run, because in a command-first product that is the first-use experience. §79 fixed the
+four commands that did not; this makes the panel's one a measurement rather than a reading.
+
+**One builder.** The command the panel shows was assembled in the page from the API's input
+list, so its quoting was the page's and nothing ran it. It is built once now, in
+`run_workflow.py` (`workflows --detail`, field `command`): `scripts/cycle.sh <workflow> {profile}
+key=value…` with every value `shlex.quote`d, a required input with no default as a quoted,
+named placeholder (`text='<text>'`), and `{profile}` for the panel's one choice. The page puts
+the chosen profile in and shows that string; it keeps no builder of its own.
+
+**One run.** `verify.sh --level stack` asks the API for hello-lane's command, puts
+`research-default` in the way the page does, and runs the string from the checkout exactly as a
+person would paste it — `bash -c` on the host, through `scripts/cycle.sh` into `cycle.py` — then
+requires the cycle it started to complete (`run_workflow.py show <ui>` → `completed_ok`). The
+string carries `text='from the parent'`: the default with a space that reached the parser as
+`text=from` before §79.
+
+**What the check does not cover, said plainly.** `install.md`'s block declares a remote package
+and installs it; on a cold start there is no remote package to fetch and hello-lane, being
+`from: local`, cannot be declared a second time without becoming a contested name. The block's
+commands are pinned to exist (`packages.sh install`, `cycle.sh`, `run_workflow.py start`) and its
+run id to pass the rule (§79); running the block as written needs a package repository the stack
+does not carry. Browser rendering of the page is not measured either: the page's script is parsed
+by node at the static level, and what it renders is the API's string, which the stack level runs.
+
+Along the way: `packages.py` related a workflow's path to the literal `/work` and `described()`
+opened `/work/<rel>`; both read the configured root now (`settings.ROOT`, `AGENTSTACK_ROOT`), which
+is what let this check run on the host at all and removed two more copies of a path (§80).
+
+**Measured.** firstuse_controls (5 pins): every offered workflow has a command and each parses as
+a shell would; hello-lane's carries its default with the space intact after parsing; a placeholder
+is quoted and named; the page shows the API's string; the stack level runs it and requires the
+cycle to complete. review_controls 184/184 and static 13/13 here; **run 70** (3cc714c) and **run 71** (acd1f6f): the
+panel's command ran as printed and the cycle completed (`cyc-20261003-092442`), stack 24/24 on
+run 71.
+
+**Found by the check on its first run (cold-start run 68).** `scripts/cycle.sh hello-lane
+research-default text='hello from a package' → bash: scripts/cycle.sh: Permission denied`. Fifteen
+of the stack's shell scripts — `up.sh`, `down.sh`, `install.sh`, `release.sh`, `cycle.sh` among
+them — were in git as mode 644: every document says `scripts/up.sh`, and on a fresh clone that
+line does not run until someone types `bash` in front of it or `chmod +x`. Every operator so far
+had, which is why nothing said so. The modes are 755 in git now. This is what the check is for:
+a documented command that a person copies has to run as printed, and reading the scripts could
+not have found it.
+
+## 82. What the controls pin: behaviour, or a file's text (review 3, "검증 체계", 2026-10-03)
+
+The review's remark: "some checks confirm that a string is in the source rather than that the
+behaviour holds." Fair, and until now unmeasured. `stack/pin_kinds.py` reads the two control
+suites and counts, per check, whether its condition reads a file of this repository (a module, a
+script, a page, a document) or exercises a behaviour. A file the control wrote itself under a
+temporary directory is behaviour; a condition made only of `not in` tests is an **absence** pin,
+which is the kind that is right as text (a button that must not exist, an endpoint that is gone).
+
+| suite | checks | behaviour | source-text | absence |
+|---|---|---|---|---|
+| review_controls, before | 167 | 111 | 53 | 3 |
+| review_controls, after | 170 | 116 | **51** | 3 |
+| trial_controls | 433 | 228 | 193 | 12 |
+
+(The first version of the counter was wrong by eight: it treated a variable named `c` or `doc` as
+a file's text wherever the name appeared, because another function had bound the same name to
+one. Scoped per function, the numbers above.)
+
+**Turned into behaviour here**, where a function-level reproduction existed: "the inputs reach
+the run's argv" now runs `cycle.run` on a temporary ops directory with the runner replaced by one
+that records its argv (`text=a b` arrives whole, the id and workflow in their places); "the seed
+happens before the CLI is asked" now runs `onboard()` with the Preloop CLI replaced by one that
+notes, at the moment it is asked, whether each vendor's file is there (both are).
+
+**What stays text, by kind.** Of review_controls' 51: the panel's decisions (no start, no
+precheck, resume and apply as commands — 6), documents and the contract (what update-day.md,
+the runbook, install.md, CONTRACT.md must say — 7), the Dockerfile, release.sh, up.sh, drift.sh
+(what a shell script or an image build does needs Docker or a registry — 16), the hub page
+(what a browser renders — 5), and pins on the shape of Python or JavaScript source where the
+behaviour runs only with a model, a container or a second process (the door's `execv`, the
+broker path, the adapter's retry, a resumed run's environment — 17). trial_controls' 193 are
+of the same kinds and run only inside the agent container; this host cannot run that suite
+(measured: it reaches for the stack and stops), so its conversions are a cold-start-measured
+job for the next rounds, one group at a time.
+
+**The ratchet.** `pinkind_controls`: review_controls' source-text pins ≤ 51, trial_controls' ≤
+193, behaviour the majority of review_controls. The bound moves down with each conversion and
+up only with a sentence here. `verify.sh --level static` prints the counts on every run; the cold
+start carried the ratchet on **run 71** (review_controls 187/187 in the agent).

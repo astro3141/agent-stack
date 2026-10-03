@@ -40,7 +40,7 @@ def _load(path, default=None):
 def _view(ui):
     """The run as run_workflow.py sees it — the same reader the panel uses."""
     import subprocess
-    out = subprocess.run(["/opt/venv/bin/python", "/work/stack/run_workflow.py", "show", ui],
+    out = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_workflow.py"), "show", ui],
                          capture_output=True, text=True, cwd="/work").stdout
     try:
         return json.loads(out)
@@ -146,7 +146,7 @@ def of_run(ui):
         # the adapter's own retries (a login it called transient) and the fan-out's (a member run
         # again, in its own evidence directory, named -a<n>)
         "retries": sum(max(0, (c.get("attempts") or 1) - 1) for c in calls)
-                   + sum(1 for c in calls if re.search(r"-a\d+$", c["call"] or "")),
+                   + sum(1 for c in calls if re.search(r"-a\d+(?:-r\d+)?$", c["call"] or "")),
         "tokens": sum(c["tokens"] or 0 for c in calls) or None,
         "wall_ms": sum(c["wall_ms"] or 0 for c in calls) or None,
         "loop": loop,

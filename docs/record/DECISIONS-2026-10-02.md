@@ -96,6 +96,7 @@ CADP effect client와 CADP-GAP의 큰 갭 1~4는 CADP가 v0.5를 authority로 �
 | [#26](https://github.com/astro3141/agent-stack/issues/26) | 완료(§71, #24로 재해석) | 새 제작자의 첫 성공 측정: 문서 예제 그대로의 패키지가 로그인 없이 패널에서 시작되는지 |
 | [#27](https://github.com/astro3141/agent-stack/issues/27) | **완료**(§74 모델 없는 절반, §77 provider 모듈 — 콜드 스타트 전후 7/7 동일, full 24/24) | run-agent.mjs 분리(공급자 어댑터 / 승인 / 원장 / 결과) — 모델 호출이 있어야 검증되므로 fixture부터 |
 | [#34](https://github.com/astro3141/agent-stack/issues/34) | **결정: 이미지로 옮김**(§76) | toolchain의 자리: claude·Conductor·Preloop CLI도 `/opt`로. release.sh의 toolchain 기계·플래그·256 MB 아카이브 삭제(437→329줄); release = 리비전 + 이미지 id + 설정. 옛 인스턴스의 볼륨 사본은 up.sh가 알려만 준다 |
+| 리뷰 3 (0a0536b) | 6건 모두 코드로 확인·수정(§79) | P1 두 건(옛 release로의 롤백, 반복·재시도·브로커 경로의 호출 id)과 P2 네 건(기록 병합, 재개 상태·부모, 관측 디렉터리, 명령·문서 정확성) |
 
 #22–#26은 PR #21 머지 전 외부 리뷰를 코드로 검증한 결과(OPERATIONS §67)에서 나온 설계 수준 항목이다. 확인된 결함 일곱은 같은 PR에서 고쳤다.
 

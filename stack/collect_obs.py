@@ -387,7 +387,7 @@ else:
                and ((s.get("rate_limit") or {}).get("headers") or {}).get("anthropic-ratelimit-unified-5h-utilization")]
       s = max(snaps, key=lambda s: s["observed_at"]) if snaps else None
       base = (json.load(open(os.path.expanduser("~/.claude/settings.json"))).get("env") or {}).get("ANTHROPIC_BASE_URL", "")
-      executing = ("preloop-custody:anthropic-oauth" if base.startswith("http://console")
+      executing = ("preloop-custody:anthropic-oauth" if urllib.parse.urlparse(base).netloc == urllib.parse.urlparse(settings.url("preloop", "mcp_url")).netloc
                    and ROUTES.get("claude", "preloop_gateway") == "preloop_gateway" else None)
       if s:
           h = s["rate_limit"]["headers"]

@@ -48,7 +48,7 @@ RUN_ID = re.compile(r"^[0-9a-f]{8}")
 def pending_workspaces():
     """Every workspace Preloop is waiting on. A partial answer stops the whole run."""
     try:
-        p = subprocess.run([sys.executable, "/work/stack/approvals.py", "--all"],
+        p = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "approvals.py"), "--all"],
                            capture_output=True, text=True, timeout=120)
     except Exception as e:
         raise SystemExit(f"could not run the approvals reader ({e}); nothing was removed")

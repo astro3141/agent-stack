@@ -49,7 +49,18 @@ def is_record(out):
 def empty():
     return {"steps": [], "current_step": None, "route": None, "terminated_at": None,
             "termination_reason": None, "output": None, "conductor_run": None, "error": None,
-            "mlflow": None, "ended": False, "ended_event_at": None, "completed_ok": False}
+            "mlflow": None, "ended": False, "ended_event_at": None, "completed_ok": False,
+            "segment": 0}
+
+
+def _new_segment(out):
+    """A run that starts again in the same log — a resume after a stop or a failure — is read from
+    here: what the earlier segment ended with (its end, its error, its output, where it terminated)
+    is no longer this run's state. Measured before this: a resumed run whose process was alive read
+    as `finished` with the old failure (review 3, OPERATIONS §79). The steps already taken stay."""
+    out.update({"ended": False, "ended_event_at": None, "completed_ok": False, "error": None,
+                "output": None, "terminated_at": None, "termination_reason": None,
+                "segment": out.get("segment", 0) + 1})
 
 
 def read(path):
@@ -68,6 +79,10 @@ def read(path):
         except ValueError:
             continue
         t, d = e.get("type"), e.get("data") or {}
+        if t == "workflow_started" or (t == "agent_started" and out["ended"]):
+            _new_segment(out)
+        if t == "workflow_started":
+            continue
         if t == "agent_started":
             out["current_step"] = d.get("agent_name")
             out["steps"].append({"step": d.get("agent_name"), "at": e.get("timestamp")})

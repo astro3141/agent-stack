@@ -47,7 +47,8 @@ import execution
 import settings
 import fanout
 
-PY = os.environ.get("POC_PY", "/opt/venv/bin/python")
+PY = os.environ.get("POC_PY") or sys.executable
+STEPS = os.path.dirname(os.path.abspath(__file__))
 RUN = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 WS = f"{settings.runtime()['paths']['workspace_root']}/{RUN}"
 
@@ -86,7 +87,7 @@ if sys.argv[4:5] == ["--plan"]:
                                                   for st in m["steps"] if st["kind"] == "model"})) or "none",
                      "expected": expected, "produces": f"{WS}/{expected}" if expected else "",
                      "steps_planned": len(m["steps"]),
-                     "argv": [PY, os.environ.get("AGENTSTACK_CHAIN_ENTRY", "/work/stack/steps/task_chain.py"), mp]})
+                     "argv": [PY, os.environ.get("AGENTSTACK_CHAIN_ENTRY") or os.path.join(STEPS, "task_chain.py"), mp]})
 else:
     # One door. A member whose role declares an egress profile runs through the broker, in that
     # profile's container (§54) — and agent_task.py makes that swap itself, so this step, a chain
@@ -98,7 +99,7 @@ else:
         principal = parts[6] if len(parts) > 6 else ""
         jobs.append({"key": label, "label": label, "provider": provider, "expected": expected,
                      "produces": f"{WS}/{expected}",
-                     "argv": [PY, "/work/stack/steps/agent_task.py", provider, route, label,
+                     "argv": [PY, os.path.join(STEPS, "agent_task.py"), provider, route, label,
                               prompt, expected, prof, login, principal]})
 
 def outcome_of(res, produced):

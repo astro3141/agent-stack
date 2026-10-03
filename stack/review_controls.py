@@ -286,7 +286,10 @@ def state_controls():
     (root / "state" / "hello-lane").mkdir(parents=True)           # installed, declares no state
     (root / "state" / "hello-lane" / "x").write_bytes(b"x" * 2048)
     (root / "state" / "zz-nobody").mkdir()                         # no such package
-    env = {**os.environ, "AGENTSTACK_ROOT": str(root)}
+    # the temporary root holds the state only; the packages and their declaration are this tree's
+    env = {**os.environ, "AGENTSTACK_ROOT": str(root), "AGENTSTACK_PACKAGES": str(WORK / "packages"),
+           "AGENTSTACK_PACKAGES_YAML": str(WORK / "config" / "packages.yaml"),
+           "AGENTSTACK_PACKAGES_LOCAL": str(WORK / "config" / "packages.local.yaml")}
     r = subprocess.run([sys.executable, str(HERE / "packages.py"), "state", "--json"], env=env,
                        capture_output=True, text=True, timeout=60)
     got = json.loads(r.stdout or "{}").get("packages") or {}
@@ -302,8 +305,23 @@ def state_controls():
     check("cycle: key=value words are the workflow's inputs, not a profile",
           a["inputs"] == {"day": "2026-10-02"} and a["profile"] == "research-default" and a["by"] == "scheduler", a)
     check("cycle: a bare profile still parses without inputs", cy.parse_args(["x"])["inputs"] == {})
-    check("cycle: the inputs reach the run's argv",
-          'argv += [f"{k}={v}" for k, v in sorted((inputs or {}).items())]' in (HERE / "cycle.py").read_text())
+    # behaviour, not text (§82): cycle.run on a temporary ops directory, with the runner it starts
+    # replaced by one that only records the argv it was given
+    cy = importlib.import_module("cycle")
+    with tempfile.TemporaryDirectory() as ops:
+        cy.OPS_DIR, cy.LOCK, cy.RECORD = ops, f"{ops}/.cycle.lock.d", f"{ops}/cycles.jsonl"
+        seen = []
+        class _P:  # what subprocess.run returns
+            returncode = 0; stdout = '{"state": "ok"}'; stderr = ""
+        real_run = cy.subprocess.run
+        cy.subprocess.run = lambda argv, **kw: (seen.append(list(argv)), _P)[1]
+        try:
+            row = cy.run("hello-lane", "research-default", by="control", inputs={"text": "a b", "day": "2026-10-03"})
+        finally:
+            cy.subprocess.run = real_run
+        started = next((a for a in seen if "run_workflow.py" in " ".join(a)), [])
+        check("cycle: the inputs reach the run's argv, each as key=value, a space kept",
+              started[-2:] == ["day=2026-10-03", "text=a b"] and started[2:5] == ["start", row.get("ui"), "hello-lane"], started)
     # state kept with the work, elsewhere: declared as a string, reported as a place, never a directory
     pkgs = root / "packages"; (pkgs / "remote-one").mkdir(parents=True)
     (pkgs / "remote-one" / "manifest.yaml").write_text("name: remote-one\nversion: 0.0.1\nentry: w.yaml\nrequires:\n  state: \"github issue comments\"\n")
@@ -611,7 +629,7 @@ def panel_controls():
     check("panel: no start and no precheck on the page",
           'id="start"' not in hub and 'id="precheck"' not in hub and 'api("/api/runs", {' not in hub)
     check("panel: the page shows the command instead, and says it does not start",
-          'id="wf-command"' in hub and "scripts/cycle.sh ${name}" in hub and "이 화면은 시작하지 않습니다" in hub)
+          'id="wf-command"' in hub and 'const tmpl = wf.command || "";' in hub and "이 화면은 시작하지 않습니다" in hub)
     check("panel: the ops API has no start endpoint", 'run_workflow.py", "start"' not in srv
           and "POST /api/runs  body" not in srv)
     check("panel: stopping a run that is going is still the panel's", "/stop" in srv and "data-stop" in hub)
@@ -742,12 +760,12 @@ def update_controls():
     comp = (WORK / "docker" / "compose.poc.yaml").read_text()
     check("image: the replay service runs Conductor's venv where the image puts it",
           'entrypoint: ["/opt/uv/tools/conductor-cli/bin/python"]' in comp and "/home/agent/.local" not in comp)
-    check("release: no toolchain archive, no staging, no swap, no flag — a release is revision + images + configuration",
-          all(x not in rel for x in ("toolchain.tar.gz -C", "verify_staged", "swap_staged", "keep_or_restore_toolchain",
+    check("release: a record carries no toolchain archive, an update stages and swaps nothing and has no flag — a release is revision + images + configuration",
+          all(x not in rel for x in ("tar czf /out/toolchain.tar.gz", "verify_staged", "swap_staged", "keep_or_restore_toolchain",
                                      "REPLACE_TOOLCHAIN=1", "VOLUME_TOOLS", "refusing an update whose toolchain"))
           and "format=3" in rel and 'say "will change $t"' in rel)
-    check("release: a record from before #34 still rolls back — its archive is named and left alone",
-          'toolchain.tar.gz" ] || say "toolchain archive"' in rel)
+    check("release: a record from before #34 still rolls back — its archive is restored into the volume, verified first (§79)",
+          'if [ -f "$SRC/toolchain.tar.gz" ]; then' in rel and "OLD_TOOLCHAIN=1" in rel)
     ud = (WORK / "docs" / "update-day.md").read_text()
     check("docs: update-day.md has no flag and says the rebuild changes every tool",
           "--replace-toolchain]" not in ud and "There is\nno flag" in ud.replace("There is no flag", "There is\nno flag")
@@ -769,8 +787,26 @@ def update_controls():
         cx.write_text("model_provider = 'preloop'\n")
         bp.seed_for("codex", home)
         check("onboarding: a file that exists is left alone", cx.read_text() == "model_provider = 'preloop'\n")
-    check("onboarding: the seed happens for every kind the claim onboards, before the CLI is asked",
-          "for kind in agent_kinds:\n        seed_for(kind, home)" in (HERE / "bootstrap_preloop.py").read_text())
+    # behaviour, not text (§82): onboard() with the Preloop CLI replaced by one that notes, at the
+    # moment it is asked, whether each vendor's file is already there
+    with tempfile.TemporaryDirectory() as home:
+        present_when_asked = {}
+        class _R: returncode = 0; stdout = ""; stderr = ""
+        def fake_run(argv, **kw):
+            if argv[:3] == ["preloop", "agents", "onboard"]:
+                kind = argv[3]
+                rel = bp.SEED.get(kind, ("",))[0]
+                present_when_asked[kind] = bool(rel) and os.path.exists(os.path.join(home, rel))
+            return _R
+        real_run, real_home = bp.subprocess.run, os.environ.get("HOME")
+        bp.subprocess.run = fake_run; os.environ["HOME"] = home
+        try:
+            problem = bp.onboard("http://preloop.test", "key", ["claude-code", "codex"])
+        finally:
+            bp.subprocess.run = real_run
+            if real_home is not None: os.environ["HOME"] = real_home
+        check("onboarding: the seed happens for every kind the claim onboards, before the CLI is asked",
+              problem is None and present_when_asked == {"claude-code": True, "codex": True}, (problem, present_when_asked))
     dr = (WORK / "scripts" / "drift.sh").read_text()
     check("drift: four states, and an unanswered line carries the registry's reason",
           all(w in dr for w in ('state="same"', 'state="newer"', 'state="unasked"', 'state="unanswered"', "UNANSWERED+=", '"reason":"%s"')))
@@ -785,6 +821,210 @@ def update_controls():
           r.returncode == 0 and len(states) == 14 and states.count("unanswered") == 11 and states.count("unasked") == 3
           and out[-1].startswith("11 of 14 lines unanswered") and "not asked (--offline)" in out[-1],
           (r.returncode, states, out[-1:], r.stderr[-300:]))
+
+
+# ---------------------------------------------------------------- 12. review 3: the contract across repeat, resume, rollback (§79)
+def review3_controls():
+    """The six findings of the third review, each reproduced without a model where it can be."""
+    import tempfile, types
+    # (2) a call made twice is two calls: the second's evidence sits beside the first's
+    at = (HERE / "steps" / "agent_task.py").read_text()
+    src = at[at.index("def _own_evidence_dir(base):"):at.index("    return rid, f\"{root}/{rid}\"") + len("    return rid, f\"{root}/{rid}\"")]
+    with tempfile.TemporaryDirectory() as root:
+        ns = {"os": os, "RT": {"paths": {"evidence_root": root}}}
+        exec(src, ns)
+        own = ns["_own_evidence_dir"]
+        first = own("run-repair-claude")
+        check("calls: the first call of a label takes the plain name", first[0] == "run-repair-claude", first)
+        os.makedirs(first[1]); Path(first[1], "execution.json").write_text("{}")
+        second = own("run-repair-claude")
+        os.makedirs(second[1]); Path(second[1], "result.json").write_text("{}")
+        third = own("run-repair-claude")
+        check("calls: the same label again is -r2, then -r3 — never the same directory",
+              (second[0], third[0]) == ("run-repair-claude-r2", "run-repair-claude-r3"), (second[0], third[0]))
+        os.makedirs(f"{root}/run-x-codex")            # an empty directory is this call's own, not a repeat
+        check("calls: an empty directory left by a door that re-executed is not read as a repeat",
+              own("run-x-codex")[0] == "run-x-codex")
+        retry = own("run-repair-claude-a2")
+        check("calls: a retry's own name (-a2) is kept and repeats under it (-a2-r2)",
+              retry[0] == "run-repair-claude-a2" and (os.makedirs(retry[1]), Path(retry[1], "x").write_text(""), own("run-repair-claude-a2")[0])[2] == "run-repair-claude-a2-r2")
+    check("calls: the name is decided after the door, by the process that makes the call",
+          at.index("\"broker_dispatch.py\")] + sys.argv[1:])") < at.index("run_id, evid = _own_evidence_dir(run_id)") < at.index("os.makedirs(evid, exist_ok=True)"))
+    check("calls: the retry number travels through the broker to the runner's environment",
+          '"attempt": os.environ.get("AGENTSTACK_ATTEMPT", "")' in (HERE / "steps" / "broker_dispatch.py").read_text()
+          and '"attempt": str(req.get("attempt") or "")' in (HERE / "broker.py").read_text()
+          and '"AGENTSTACK_ATTEMPT": str(job["attempt"])' in (HERE / "profile_runner.py").read_text())
+    check("calls: the adapter's own refresh retry keeps the first attempt — its result file, its cost, both outcomes",
+          'os.path.join(evid, "result.a1.json")' in at and "t1, w1 = _cost(first)" in at and '"attempt_outcomes": [first.get("status"' in at)
+    check("calls: the trajectory still counts a retry that was also repeated",
+          r'-a\d+(?:-r\d+)?$' in (HERE / "trajectory.py").read_text())
+
+    # (3) one execution named twice is one record, the evidence whole and the passed fields on it
+    rec_src = (HERE / "steps" / "record.py").read_text()
+    with tempfile.TemporaryDirectory() as root:
+        rt = {"paths": {"evidence_root": root, "workspace_root": root, "logins_root": root}}
+        gen = Path(root) / "config" / "generated"; gen.mkdir(parents=True)
+        (gen / "runtime.json").write_text(json.dumps(rt))
+        ex = importlib.import_module("execution")
+        d = Path(root) / "r1-E1-claude"; d.mkdir()
+        ex.write(str(d), ex.record(run_id="r1-E1-claude", provider="claude", status="COMPLETED", produced=True,
+                                   evidence_dir=str(d), measurements={"total_tokens": 300, "wall_ms": 10}, model_served="m"))
+        env = {**os.environ, "AGENTSTACK_ROOT": root, "CONDUCTOR_SELF_RUN_ID": "r1"}
+        code = ("import json,sys; sys.path.insert(0,'/work/stack'); sys.path.insert(0,'/work/stack/steps'); import record as R; "
+                "ex,err=R.executions_of({'execute': {'run_id':'r1-E1-claude','provider':'claude','status':'COMPLETED'}}, 'r1'); "
+                "print(json.dumps([ex, err]))").replace("/work/stack", str(HERE))
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=60)
+        try:
+            exs, errs = json.loads(r.stdout.strip().splitlines()[-1])
+        except Exception:
+            exs, errs = [], [r.stderr[-300:]]
+        check("record: a partial `execute` and the evidence directory are one record with the evidence's measurements",
+              len(exs) == 1 and exs[0].get("measurements", {}).get("total_tokens") == 300 and exs[0].get("model_served") == "m"
+              and "model_session_reported" in exs[0], (exs, errs))
+
+    # (4) a resumed run is a new segment of the same log; the parent travels with a resume
+    rv = importlib.import_module("runevents")
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+        for e in [{"type": "agent_started", "data": {"agent_name": "a"}, "timestamp": "t1"},
+                  {"type": "workflow_failed", "data": {"output": {"x": 1}}, "timestamp": "t2"},
+                  {"type": "agent_started", "data": {"agent_name": "b"}, "timestamp": "t3"}]:
+            f.write(json.dumps(e) + "\n")
+        path = f.name
+    v = rv.read(path)
+    check("resume: a step that starts after a failure is read as a run that is going again — not ended, no stale output",
+          v["ended"] is False and v["completed_ok"] is False and v["output"] is None and v["current_step"] == "b" and v["segment"] == 1 and len(v["steps"]) == 2,
+          {k: v[k] for k in ("ended", "output", "current_step", "segment")})
+    with open(path, "a") as f:
+        f.write(json.dumps({"type": "workflow_completed", "data": {"output": {"y": 2}}, "timestamp": "t4"}) + "\n")
+    v = rv.read(path)
+    check("resume: the segment's own end is the run's end", v["ended"] and v["completed_ok"] and v["output"] == {"y": 2})
+    os.unlink(path)
+    check("resume: the saved parent is in a resumed run's environment",
+          '"AGENTSTACK_PARENT_RUN": str(meta.get("parent") or "")' in (HERE / "run_workflow.py").read_text())
+
+    # (5) an observation directory holds this collection's files and no other's
+    ad = importlib.import_module("admission")
+    with tempfile.TemporaryDirectory() as root:
+        obs = Path(root) / "obs"; obs.mkdir(); (obs / "claude.json").write_text('{"stale": true}')
+        err = ad.collect({"model_route": {}, "login": {}, "reuse_s": 0}, str(obs), timeout=0.001)
+        check("admission: a collection that failed leaves no earlier file for the router to read",
+              bool(err) and not list(obs.glob("*.json")), (err, [p.name for p in obs.glob("*")]))
+
+    # (1) a rollback to a release from before #34 restores its toolchain archive into the volume
+    rel = (WORK / "scripts" / "release.sh").read_text()
+    check("rollback: a pre-#34 archive is unpacked and verified (claude, conductor, preloop) before anything moves",
+          "tar xzf /in/toolchain.tar.gz -C /vol/.local.new" in rel and "for t in claude conductor preloop; do" in rel
+          and rel.index("for t in claude conductor preloop; do") < rel.index('docker stop "$AGENT" >/dev/null 2>&1 || true\n  if [ "$OLD_TOOLCHAIN" = 1 ]'))
+    check("rollback: the swap into /home/agent/.local happens only after everything verified, keeps what was there, and clears it after the checks pass",
+          "mv /vol/.local.new /vol/.local" in rel and ".local.old" in rel
+          and rel.index('[ "$OLD_TOOLCHAIN" = 0 ] || docker run --rm -v "$STACK-agent-home:/vol" alpine rm -rf /vol/.local.old')
+              > rel.index("reapply_policy || exit 1\n  [ \"$OLD_TOOLCHAIN\""))
+    check("rollback: nothing says the archive is left alone any more", "not used; the kept images carry the toolchain" not in rel)
+
+    # (6) the command a person copies runs as printed; the first-use path in the docs runs
+    hub = (WORK / "hub" / "index.html").read_text()
+    check("hub: the command is the API's quoted string, the profile shell-quoted here, a placeholder named",
+          "function shq(v)" in hub and 'tmpl.replace("{profile}", prof ? shq(prof)' in hub and "값으로 바꿔 넣습니다" in hub and '${i.default || "<" + i.name + ">"}' not in hub)
+    check("hub: the package login line does not depend on the needs list, and an empty login object is no login",
+          "const lg = wf.login && wf.login.package ? wf.login : null;" in hub and 'if (lg && $("#pkg-login"))' in hub)
+    check("hub: the consoles' addresses come from the ops API — no fixed MLflow port in the run detail",
+          "http://127.0.0.1:5000/#/experiments" not in hub and "await ensureLinks();" in hub and 'data-link="preloop"' in hub)
+    check("hub: a failed read of the approvals leaves the table and its drafts in place",
+          "if (!Array.isArray(a)) {" in hub and hub.index("if (!Array.isArray(a)) {") < hub.index("const typed = {}; let focused = null;"))
+    inst = (WORK / "docs" / "install.md").read_text()
+    m = re.search(r"run_workflow\.py start (\S+) ", inst)
+    check("docs: the install example declares the package before running it, and its run id is one run_workflow.py accepts",
+          "packages.local.yaml" in inst and "scripts/packages.sh install" in inst and bool(m) and re.fullmatch(r"[a-z0-9-]{6,40}", m.group(1) or "") is not None,
+          m.group(1) if m else None)
+
+
+# ---------------------------------------------------------------- 13. one fact, one place (§80)
+def ease_controls():
+    """Providers, in-network addresses and the stack's own paths are each written once; the rest
+    reads them. Measured as absence: the literal does not appear a second time."""
+    st = importlib.import_module("settings")
+    mods = sorted(p.stem for p in (HERE / "adapter" / "providers").glob("*.mjs"))
+    check("providers: settings.PROVIDERS is the module list under stack/adapter/providers/", sorted(st.PROVIDERS) == mods, (sorted(st.PROVIDERS), mods))
+    cfg = importlib.import_module("cfg")
+    check("providers: cfg.py validates against the same table", cfg.KNOWN_PROVIDERS is st.PROVIDERS)
+    pyfiles = [p for p in list(HERE.rglob("*.py")) + list((WORK / "ops").glob("*.py")) if not p.name.endswith("_controls.py") and p.name != "settings.py" and "fixtures" not in p.parts]
+    lit = re.compile(r'[\(\[\{]\s*"claude",\s*"codex",\s*"grok"\s*[\)\]\}]')
+    bad = [str(p.relative_to(WORK)) for p in pyfiles if lit.search(p.read_text())]
+    check("providers: no second list of the three in the Python", bad == [], bad)
+    srv = (WORK / "ops" / "server.py").read_text()
+    check("providers: the ops API reads the provider modules that exist, not a set of its own", "def providers():" in srv and 'PROVIDERS = {"claude"' not in srv)
+    hosts = re.compile(r'http://(console|api:8000|broker:8791|egress:8888|mlflow:5000)\b')
+    files = [p for p in list(HERE.rglob("*.py")) + list(HERE.glob("*.mjs")) + list((HERE / "adapter" / "providers").glob("*.mjs")) + list(HERE.glob("*.sh")) + [WORK / "scripts" / "up.sh"]
+             if p.name != "settings.py" and not p.name.endswith("_controls.py") and "fixtures" not in p.parts]
+    bad = sorted({f"{p.relative_to(WORK)}:{i}" for p in files for i, l in enumerate(p.read_text().splitlines(), 1)
+                  if hosts.search(l) and not l.lstrip().startswith("#") and not l.lstrip().startswith("//")})
+    check("addresses: no in-network address is written outside settings.py (code lines of stack/, the adapter, up.sh)", bad == [], bad)
+    check("addresses: the adapter reads the generated settings or says to generate them — no fallback copy",
+          "run `cfg.py generate`" in (HERE / "run-agent.mjs").read_text() and 'need(RT.preloop?.api_url' in (HERE / "run-agent.mjs").read_text())
+    check("addresses: up.sh probes the addresses the settings name, read once from the agent",
+          "read -r RT_API RT_MCP RT_MLFLOW RT_PROXY" in (WORK / "scripts" / "up.sh").read_text())
+    check("addresses: settings.url falls back to the one default table",
+          st.url("broker", "url") == st.DEFAULT_RUNTIME["broker"]["url"] and st.url("preloop", "api_url").startswith("http://"))
+    # ops/server.py runs in another container and names the agent's interpreter to exec into it —
+    # that is not its own interpreter, and it is named there once
+    interp = [str(p.relative_to(WORK)) for p in pyfiles if "/opt/venv/bin/python" in p.read_text() and p.name != "server.py"]
+    check("paths: no Python module of the stack writes its own interpreter's path — sys.executable, or the package's POC_PY", interp == [], interp)
+    check("paths: the ops API names the agent's interpreter once", srv.count("/opt/venv/bin/python") == 1)
+    stackp = [f"{p.relative_to(WORK)}" for p in HERE.rglob("*.py") if not p.name.endswith("_controls.py") and "fixtures" not in p.parts
+              and re.search(r'"/work/stack/[A-Za-z_]+(?:/[A-Za-z_]+)*\.(?:py|mjs)"', p.read_text())]
+    check("paths: no module names another module of the stack by an absolute path — __file__ and settings.STACK", stackp == [], stackp)
+    counts = {f: (WORK / "scripts" / f).read_text().count("/opt/venv/bin/python") for f in ("up.sh", "down.sh", "packages.sh", "verify.sh")}
+    check("paths: each script names the agent's interpreter once (PY_IN_AGENT)", all(v == 1 for v in counts.values()), counts)
+    check("paths: the ops API names the stack's mount once", srv.count('"/work/stack') == 1 and 'STACK = "/work/stack"' in srv, srv.count('"/work/stack'))
+
+
+# ---------------------------------------------------------------- 14. the first-use path (§81)
+def firstuse_controls():
+    """The command a person copies is built once (run_workflow.py), parses as a shell would, and
+    the panel shows that string; the stack level runs it (verify.sh)."""
+    import shlex
+    # described() on this checkout, the way verify.sh's static level points packages.py at it
+    env = {**os.environ, "AGENTSTACK_ROOT": str(WORK), "AGENTSTACK_PACKAGES": str(WORK / "packages"),
+           "AGENTSTACK_PACKAGES_YAML": str(WORK / "config" / "packages.yaml"),
+           "AGENTSTACK_PACKAGES_LOCAL": str(WORK / "config" / "packages.local.yaml")}
+    r = subprocess.run([sys.executable, "-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import run_workflow; print(json.dumps(run_workflow.described()))", str(HERE)],
+                       capture_output=True, text=True, env=env, timeout=120)
+    try:
+        rows = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        rows = {}
+    cmds = {k: v.get("command", "") for k, v in rows.items()}
+    check("first use: every workflow the stack offers has a command, and each parses as a shell would",
+          bool(cmds) and all(c.startswith("scripts/cycle.sh ") and "{profile}" in c and shlex.split(c.replace("{profile}", "p")) for c in cmds.values()), cmds)
+    hl = cmds.get("hello-lane", "")
+    toks = shlex.split(hl.replace("{profile}", "research-default"))
+    check("first use: hello-lane's command carries its default with the space intact after shell parsing",
+          toks[:3] == ["scripts/cycle.sh", "hello-lane", "research-default"] and any(t.startswith("text=") and " " in t for t in toks), toks)
+    req = [c for c in cmds.values() if "'<" in c]
+    check("first use: a required input with no default is a quoted, named placeholder — never bare angle brackets",
+          all("<" not in c.replace("'<", "").replace(">'", "") for c in cmds.values()), req)
+    hub = (WORK / "hub" / "index.html").read_text()
+    check("first use: the panel shows the API's command and only puts the profile in",
+          "const tmpl = wf.command || \"\";" in hub and 'tmpl.replace("{profile}"' in hub and "slot(i.name)" not in hub)
+    vs = (WORK / "scripts" / "verify.sh").read_text()
+    check("first use: the stack level runs that string from the checkout and requires the cycle to complete",
+          'FU_CMD="$(in_agent /work/stack/run_workflow.py workflows --detail' in vs and 'bash -c "$FU_CMD"' in vs and '"completed_ok": true' in vs.split("FU_UI=")[1])
+
+
+# ---------------------------------------------------------------- 15. what the controls pin (§82)
+def pinkind_controls():
+    """pin_kinds.py counts the controls that pin a source file's text rather than a behaviour; the
+    count may fall and may not rise. Raise the bound only with a sentence in OPERATIONS."""
+    r = subprocess.run([sys.executable, str(HERE / "pin_kinds.py"), str(HERE / "review_controls.py"), str(HERE / "trial_controls.py")],
+                       capture_output=True, text=True, timeout=60)
+    try:
+        kinds = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        kinds = {}
+    rc = kinds.get(str(HERE / "review_controls.py"), {}); tc = kinds.get(str(HERE / "trial_controls.py"), {})
+    check("pins: review_controls' source-text pins do not grow (≤ 51 at §82)", 0 < rc.get("source-text", 999) <= 51, rc)
+    check("pins: trial_controls' source-text pins do not grow (≤ 193 at §82)", 0 < tc.get("source-text", 999) <= 193, tc)
+    check("pins: behaviour checks are the majority of review_controls", rc.get("behaviour", 0) > rc.get("source-text", 0) + rc.get("absence", 0), rc)
 
 
 policy_controls()
@@ -803,6 +1043,10 @@ panel_controls()
 next_controls()
 adapter_controls()
 update_controls()
+review3_controls()
+ease_controls()
+firstuse_controls()
+pinkind_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)
