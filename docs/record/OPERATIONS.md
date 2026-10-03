@@ -4487,7 +4487,8 @@ partial `execute` merged with its evidence (300 tokens, `model_served`, every fi
 synthetic log with a failure then a new step (not ended, no stale output, `segment` 1) and then
 its own end; a stale observation file gone after a collection that failed; and text pins for the
 rollback, the broker path, the hub and the docs. review_controls 166/166, static on this runner,
-the cold start for the rest — run number below. What this level cannot say: a resumed run on the
+the cold start for the rest: **run 66** (ef49539) green, and **run 71** (acd1f6f) green with every round of
+this branch on it. What this level cannot say: a resumed run on the
 instance reading as going while it goes (a resume with a live process), and a rollback to
 `pre-202610` on an instance whose volume has no `.local` — the second is the operator's to run
 when a rollback is wanted, and the first falls out of the next resume.
@@ -4520,7 +4521,11 @@ before changing anything:
 provider list in the Python; no in-network address on a code line outside `settings.py` across
 stack/, the adapter and `up.sh`; no interpreter path in a Python module; no module naming another
 by `/work/stack/...`; one `PY_IN_AGENT` per script; one `STACK` in the ops API. review_controls
-179/179 and static 13/13 on this runner; the cold start for what runs — run number below.
+179/179 and static 13/13 on this runner; the cold start for what runs: **run 71** (acd1f6f) green — after
+run 67 found seven of `up.sh`'s container commands holding `$PY_IN_AGENT` inside single quotes,
+where it does not expand (the role-egress plan and grok posture answered nothing, trial_controls
+then found no role `.allow` files; spliced in as `"$PY_IN_AGENT"'…'`), and run 69 found four
+trial pins still reading the old text of `ops/server.py` and `up.sh`.
 
 ## 81. The first-use check: the command a person copies is the one that runs (review 3, 2026-10-03)
 
@@ -4557,7 +4562,9 @@ is what let this check run on the host at all and removed two more copies of a p
 **Measured.** firstuse_controls (5 pins): every offered workflow has a command and each parses as
 a shell would; hello-lane's carries its default with the space intact after parsing; a placeholder
 is quoted and named; the page shows the API's string; the stack level runs it and requires the
-cycle to complete. review_controls 184/184 and static 13/13 here.
+cycle to complete. review_controls 184/184 and static 13/13 here; **run 70** (3cc714c) and **run 71** (acd1f6f): the
+panel's command ran as printed and the cycle completed (`cyc-20261003-092442`), stack 24/24 on
+run 71.
 
 **Found by the check on its first run (cold-start run 68).** `scripts/cycle.sh hello-lane
 research-default text='hello from a package' → bash: scripts/cycle.sh: Permission denied`. Fifteen
@@ -4606,4 +4613,5 @@ job for the next rounds, one group at a time.
 
 **The ratchet.** `pinkind_controls`: review_controls' source-text pins ≤ 51, trial_controls' ≤
 193, behaviour the majority of review_controls. The bound moves down with each conversion and
-up only with a sentence here. `verify.sh --level static` prints the counts on every run.
+up only with a sentence here. `verify.sh --level static` prints the counts on every run; the cold
+start carried the ratchet on **run 71** (review_controls 187/187 in the agent).
