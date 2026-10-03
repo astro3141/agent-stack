@@ -83,6 +83,32 @@ def problems(d):
     return out
 
 
+def failure_of(r):
+    """Why a call did not complete, in the one line a reader of the step's output sees.
+
+    From the adapter's result: its own `failure.message`, else the vendor turn's error, else —
+    for a DENIED — what refused it: the first MCP rule denial's text ("Access denied: …") or
+    the first permission denial's kind. "" for a completed call. Measured on the recorded runs
+    (stack/fixtures/run-agent): a DENIED used to read `"{}"` here, the JSON of nothing (#27).
+    """
+    if not isinstance(r, dict):
+        return ""
+    if r.get("status") == "COMPLETED":
+        return ""
+    msg = ((r.get("failure") or {}).get("message") if isinstance(r.get("failure"), dict) else r.get("failure")) \
+        or ((r.get("turn") or {}).get("error") or {}).get("message")
+    if msg:
+        return str(msg)[:300]
+    for d in r.get("mcp_denials") or []:
+        if isinstance(d, dict) and d.get("text"):
+            return str(d["text"])[:300]
+    for p in r.get("permissions") or []:
+        if isinstance(p, dict) and p.get("outcome") != "allow_once":
+            return f"permission {p.get('denial') or 'refused'}: {p.get('title') or p.get('acp_kind') or 'tool'}"[:300]
+    rest = (r.get("turn") or {}).get("error") or r.get("failure") or {}
+    return (json.dumps(rest, ensure_ascii=False)[:300] if rest else "")
+
+
 def write(evidence_dir, rec):
     """The platform's own copy of the record, beside the adapter's raw result.json."""
     if not evidence_dir:

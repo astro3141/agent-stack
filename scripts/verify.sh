@@ -181,6 +181,14 @@ case "$out" in
   *"examples ok"*) if echo "$out" | grep -q "^  FAIL"; then bad "an example in docs/packages.md is wrong" "$(echo "$out" | grep '^  FAIL' | head -3 | tr '\n' ';')"; else ok "docs/packages.md: $(echo "$out" | tail -1)"; fi;;
   *) bad "the documented examples could not be checked" "$(echo "$out" | tail -2 | tr '\n' ';')";;
 esac
+# the adapter's model-free halves, replayed against four runs recorded on the instance (#27):
+# no model, no network — node on the host is enough
+if command -v node >/dev/null 2>&1; then
+  out="$(node stack/adapter/replay.mjs 2>&1 | nocr)"
+  case "$out" in *"4/4 recorded runs replayed"*) ok "the adapter replays its recorded runs: $(echo "$out" | tail -1)";; *) bad "the adapter does not reproduce a recorded run" "$(echo "$out" | grep -A2 FAIL | head -4 | tr '\n' ';')";; esac
+else
+  note "adapter replay skipped: no node on this host (the stack level runs it in the agent)"
+fi
 
 for c in packages/*/controls.py; do
   [ -f "$c" ] || continue

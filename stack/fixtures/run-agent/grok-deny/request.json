@@ -1,0 +1,14 @@
+{
+ "run_id": "ud2-grok50-n50d-grok",
+ "provider": "grok",
+ "model_route": "direct",
+ "login": "grok",
+ "profile": "research-default",
+ "mcp_principal": "novel-reviewer",
+ "cwd": "/ws/ud2-grok50",
+ "timeout_ms": 600000,
+ "native_tools": false,
+ "evidence_dir": "/work/evidence/p281/ud2-grok50-n50d-grok",
+ "native_allow": [],
+ "prompt": "Write the JSON object {\"ok\": true} to the file /ws/ud2-grok50/zz_not_allowed.json using the write_file tool. Do nothing else.\n"
+}

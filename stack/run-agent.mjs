@@ -21,6 +21,13 @@ import http from "node:http";
 import { createHash } from "node:crypto";
 import { createAcpRuntime, createRuntimeStore } from "/opt/npm-global/lib/node_modules/acpx/dist/runtime.js";
 import { createAgentRegistry } from "/opt/npm-global/lib/node_modules/acpx/dist/agent-registry.js";
+// The model-free halves live beside this file and are replayed against recorded runs
+// (stack/adapter/replay.mjs, stack/fixtures/run-agent/, #27): what a turn's events fold into,
+// how the status is decided, the one result shape; what a permission request says to Preloop and
+// how the answer becomes an outcome; the codex ledger line.
+import { accumulator, take, normalizeStatus, buildResult, exitCodeFor } from "/work/stack/adapter/result.mjs";
+import { NATIVE_ALLOWABLE, permissionBody, permissionEvent, decidedLocally } from "/work/stack/adapter/permissions.mjs";
+import { ledgerLine } from "/work/stack/adapter/ledger.mjs";
 
 // Direct to the api, not through the console proxy: nginx cuts the held-open approval at 300 s
 // with a 504 page, just before Preloop answers `timed_out` (~302 s), turning "approval expired"
@@ -48,8 +55,6 @@ const loginDir = (provider) => `${LOGINS}/${LOGIN ?? provider}`;
 // caller supplies it in PRELOOP_MCP_<NAME>. A named principal whose credential is missing is an
 // error, never a silent fall back to the adapter's wider rights.
 let PRINCIPAL = null;
-// Native tools a profile may let run without asking: read-only, and bounded by the egress allowlist.
-const NATIVE_ALLOWABLE = ["WebSearch", "WebFetch"];
 const principalEnv = (name) => `PRELOOP_MCP_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
 function principalAuth(name) {
   // Brokered (§53): the step holds an opaque per-job token, not the credential. The broker's
@@ -288,35 +293,16 @@ async function askPreloop(req, { provider, runId, cwd, signal, log, mcpOnly, nat
   // reach is the egress allowlist's to decide; nothing that writes or executes is ever let through.
   const nativeName = tc._meta?.claudeCode?.toolName ?? tc.name;
   if (mcpOnly && nativeName && NATIVE_ALLOWABLE.includes(nativeName) && nativeAllow.includes(nativeName)) {
-    log({ at: new Date().toISOString(), acp_kind: tc.kind ?? null, title: tc.title ?? null,
-      raw: req.raw, outcome: "allow_once", denial: null, preloop: null, error: null,
-      routed: "profile_native_allow" });
+    log(decidedLocally(tc, req.raw, "profile_native_allow"));
     return { outcome: "allow_once" };
   }
   if (mcpOnly && PROVIDERS[provider].governedDownstream?.(req.raw)) {
-    log({ at: new Date().toISOString(), acp_kind: tc.kind ?? null, title: tc.title ?? null,
-      raw: req.raw, outcome: "allow_once", denial: null, preloop: null, error: null,
-      routed: "preloop_mcp_rules" });
+    log(decidedLocally(tc, req.raw, "preloop_mcp_rules"));
     return { outcome: "allow_once" };
   }
-  const body = {
-    tool_name: tc.title?.split(" ")[0] || tc.kind || "unknown",
-    // What the approver sees. Claude puts the target in rawInput; Codex sends rawInput null
-    // and carries the edit as ACP diff content + locations. Forward both, so an approver is
-    // never asked to approve "Edit files" with no file named.
-    tool_input: {
-      ...(tc.rawInput ?? {}),
-      _acp_kind: tc.kind ?? req.inferredKind, _acp_title: tc.title,
-      _acp_locations: (tc.locations ?? []).map((l) => l.path),
-      _acp_diffs: (tc.content ?? []).filter((c) => c.type === "diff")
-        .map((c) => ({ path: c.path, new_text: (c.newText ?? "").slice(0, 4000), is_new: c.oldText == null })),
-    },
-    source: PROVIDERS[provider].preloopSource,
-    session_id: runId,
-    cwd,
-    agent_reasoning: `run ${runId} via acpx/${provider}`,
-    // client_decision deliberately omitted: the adapter holds no policy of its own.
-  };
+  const body = permissionBody(tc, req.inferredKind, PROVIDERS[provider].preloopSource, runId, cwd);
+  // (agent_reasoning names the adapter and the provider, as before)
+  body.agent_reasoning = `run ${runId} via acpx/${provider}`;
   const started = Date.now();
   let ans, err;
   try {
@@ -328,16 +314,8 @@ async function askPreloop(req, { provider, runId, cwd, signal, log, mcpOnly, nat
     ans = JSON.parse(r.body);
     if (ans.decision !== "allow" && ans.decision !== "deny") throw new Error(`unexpected decision ${ans.decision}`);
   } catch (e) { err = String(e?.message ?? e); }
-  const ev = {
-    at: new Date().toISOString(), ms: Date.now() - started,
-    acp_kind: tc.kind ?? req.inferredKind ?? null, title: tc.title ?? null, input: body.tool_input,
-    raw: req.raw,   // local evidence only; never sent anywhere
-    preloop: ans ?? null, error: err ?? null,
-    outcome: ans?.decision === "allow" ? "allow_once" : "reject_once",
-    denial: ans?.decision === "allow" ? null
-      : signal?.aborted ? "run_ended_awaiting_approval"
-      : err ? "control_unavailable" : ans.timed_out ? "approval_expired" : "denied",
-  };
+  const ev = permissionEvent({ tc, inferredKind: req.inferredKind, raw: req.raw, body, ans, err,
+                               aborted: !!signal?.aborted, started });
   log(ev);
   return { outcome: ev.outcome };
 }
@@ -398,7 +376,7 @@ async function main() {
   let accountAtStart = null;
   try { accountAtStart = prof.accountFingerprint?.(direct) ?? null; } catch { accountAtStart = null; }
   const t0 = Date.now();
-  const text = [], usage = [], mcpDenials = [];
+  const acc = accumulator();                 // text, usage, mcpDenials — folded in result.mjs
   let result, handle, failure;
   try {
     // A fresh session key per run: acpx keys sessions on (agent, cwd, name) with no account
@@ -412,14 +390,7 @@ async function main() {
       onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, runId: req.run_id, cwd: req.cwd, signal, log, mcpOnly, nativeAllow: req.native_allow || [] }),
     });
     for await (const ev of turn.events) {
-      if (ev.type === "text_delta" && ev.stream !== "thought") text.push(ev.text);
-      if (ev.type === "status" && ev.tag === "usage_update") usage.push(ev);
-      // Preloop's MCP proxy returns a rule denial as an ordinary result (isError: false)
-      // whose text starts "Access denied:". Matching that text is the only signal available;
-      // it is fragile and would break silently if Preloop rewords it.
-      if (ev.type === "tool_call" && /Access denied:/.test(JSON.stringify(ev.rawOutput ?? ev.content ?? ev.text ?? "")))
-        mcpDenials.push({ title: ev.title ?? null, toolCallId: ev.toolCallId ?? null,
-          text: JSON.stringify(ev.rawOutput ?? ev.content ?? ev.text).match(/Access denied:[^"\\]*/)?.[0] ?? null });
+      take(acc, ev);
       appendFileSync(join(evDir, "events.jsonl"), JSON.stringify(ev) + "\n");
     }
     result = await turn.result;
@@ -437,58 +408,20 @@ async function main() {
     try {
       let accountAtEnd = null;
       try { accountAtEnd = prof.accountFingerprint(direct); } catch { accountAtEnd = null; }
-      appendFileSync(process.env.AGENTSTACK_CODEX_LEDGER ?? prof.sessionLedger, JSON.stringify({
-        session_id: status.backendSessionId, run_id: req.run_id, at: new Date().toISOString(),
-        // a login that changed during the run binds the session to no account
-        account: accountAtStart && accountAtStart === accountAtEnd ? accountAtStart : null,
-        account_at_start: accountAtStart, account_at_end: accountAtEnd }) + "\n");
+      appendFileSync(process.env.AGENTSTACK_CODEX_LEDGER ?? prof.sessionLedger, JSON.stringify(ledgerLine({
+        sessionId: status.backendSessionId, runId: req.run_id, accountAtStart, accountAtEnd })) + "\n");
     } catch (e) {
       ledgerError = String(e?.message ?? e);
     }
   }
 
-  // Normalized status. TIMED_OUT = the run deadline passed while an approval was still open;
-  // the run deadline must exceed the approval window or every unanswered approval ends here.
-  // A denial is never a generic failure: it must not be retried on
-  // another provider, because that would turn "not approved" into "try someone else".
-  const denials = permissions.filter((p) => p.outcome !== "allow_once");
-  const norm =
-    denials.some((d) => d.denial === "run_ended_awaiting_approval") ? "TIMED_OUT"
-    : denials.some((d) => d.denial === "control_unavailable") ? "CONTROL_UNAVAILABLE"
-    : denials.length || mcpDenials.length ? "DENIED"
-    : failure || result?.status === "failed" ? "FAILED"
-    : result?.status === "cancelled" ? "CANCELLED"
-    : "COMPLETED";
-
-  const out = {
-    run_id: req.run_id,
-    status: norm,
-    // which onboarded agent's credential was presented, and whether it was the matching one
-    hook: HOOK_FOR ? { principal: HOOK_FOR.hook.runtime_principal ?? null,
-                       source: HOOK_FOR.hook.source ?? null, matched: HOOK_FOR.matched } : null,
-    retryable_elsewhere: norm === "FAILED" && (result?.error?.retryable ?? false),
-    provider: req.provider,
-    mcp_principal: PRINCIPAL ?? "",
-    model: {
-      requested: req.model ?? null,
-      session_reported: status?.models?.currentModelId ?? status?.model ?? null,
-      served: "unknown",   // nothing on this path reports the served model; do not infer it
-    },
-    permissions: permissions.map(({ acp_kind, title, outcome, denial, preloop, error, routed }) =>
-      ({ acp_kind, title, outcome, denial, request_id: preloop?.request_id ?? null, error, routed: routed ?? "preloop_approval" })),
-    mcp_denials: mcpDenials,
-    native_tools: !mcpOnly,
-    model_route: direct ? "direct" : "preloop_gateway",
-    turn: result ?? null,
-    failure: failure ?? null,
-    text: text.join(""),
-    wall_ms: Date.now() - t0,
-    evidence_dir: evDir,
-    ledger_error: ledgerError,
-  };
-  writeFileSync(join(evDir, "result.json"), JSON.stringify({ ...out, status_raw: status, usage_events: usage }, null, 1));
+  const norm = normalizeStatus({ permissions, mcpDenials: acc.mcpDenials, failure, result });
+  const out = buildResult({ req, norm, hook: HOOK_FOR, principal: PRINCIPAL, status, permissions,
+                            mcpDenials: acc.mcpDenials, mcpOnly, direct, result, failure,
+                            text: acc.text.join(""), wallMs: Date.now() - t0, evDir, ledgerError });
+  writeFileSync(join(evDir, "result.json"), JSON.stringify({ ...out, status_raw: status, usage_events: acc.usage }, null, 1));
   process.stdout.write(JSON.stringify(out) + "\n");
-  process.exitCode = norm === "COMPLETED" ? 0 : norm === "DENIED" ? 3 : 1;
+  process.exitCode = exitCodeFor(norm);
 }
 
 main().catch((e) => {

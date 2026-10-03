@@ -1812,7 +1812,7 @@ def controls_packages():
     boot = open("/work/stack/bootstrap_preloop.py", encoding="utf-8").read()
     capsrc = open("/work/stack/capabilities.py", encoding="utf-8").read()
     pk_src = open("/work/stack/packages.py", encoding="utf-8").read()
-    check("a failed step carries the reason it failed", '"failure": ((r.get("failure")' in at_src, True)
+    check("a failed step carries the reason it failed", '"failure": execution.failure_of(r)' in at_src, True)
     check("the approval path is not cut before Preloop answers",
           "location = /api/v1/agents/permission-check" in guard
           and "proxy_read_timeout 900s" in guard, True)
@@ -1831,8 +1831,10 @@ def controls_packages():
     mjs = open("/work/stack/run-agent.mjs", encoding="utf-8").read()
     check("the credential presented is the running agent's",
           "function preloopHook(provider)" in mjs and "h.source === want" in mjs, True)
+    # the result shape lives in stack/adapter/result.mjs since §74; the adapter hands it the hook
     check("and which one it was is in the run's own record",
-          '"hook":' in mjs.split("const out = {")[1][:400] or "hook: HOOK_FOR" in mjs, True)
+          "hook: HOOK_FOR" in mjs
+          and "hook: hook ? { principal: hook.hook.runtime_principal" in open("/work/stack/adapter/result.mjs", encoding="utf-8").read(), True)
     co_src = open("/work/stack/collect_obs.py", encoding="utf-8").read()
     check("the newest identity is the one presented, not the first listed",
           "Newest first" in mjs and "mtimeMs" in mjs, True)

@@ -1,0 +1,12 @@
+{
+ "run_id": "8a733846-codex",
+ "provider": "codex",
+ "cwd": "/ws/8a733846",
+ "login": "codex",
+ "profile": "research-default",
+ "timeout_ms": 600000,
+ "native_tools": false,
+ "evidence_dir": "/work/evidence/p281/8a733846-codex",
+ "model_route": "direct",
+ "prompt": "Create a file named verify.txt in the directory /ws/8a733846 containing exactly: V1. Use the write_file tool from the preloop MCP server with the absolute path. Do not do anything else."
+}
