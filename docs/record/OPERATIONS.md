@@ -4440,3 +4440,27 @@ cold start since §31 whose claim line carries no partial; stack 23/23 (trial 50
 145/145, the provider modules' line new since #38). What this level cannot say: that codex
 without a principal now completes a call on a fresh install (§77's x0). That takes a cold start
 with a codex login, the operator's, and its line goes here.
+
+### §78 addendum: the call CI could not make (operator-run, 2026-10-03)
+
+What §78 left to a cold start with a codex login, measured on one (coldfour, a fresh install of
+4f1cdc1, signed in to all three providers), against §77's coldthree from before the fix:
+
+| | coldthree (before #39) | coldfour (4f1cdc1) |
+|---|---|---|
+| claim line | partial: `codex not found` | `"onboarded": true`, no partial |
+| `~/.codex/config.toml` | absent | present, 184 B, with the Preloop MCP entry |
+| x0 — codex, no principal | FAILED, `ENOENT` | **COMPLETED**, `produced: true` |
+| tools x0 ran | — | `mcp.preloop.write_file` ×1, no native write |
+| verify stack / full | 21/21 / 24/24 | 21/21 / 24/24 |
+
+```
+fresh cold start on 4f1cdc1 (coldfour), signed in to all three: claim line {"onboarded": true} with no
+onboarded_partially; /home/agent/.codex/config.toml present (184 B, Preloop MCP entry); x0 (codex,
+no principal) COMPLETED, produced: true, tools: mcp.preloop.write_file ×1; verify full 24/24
+(review_controls 145/145, trial_controls 500/500, router_controls 26/26, auto PASS, novel-a PASS)
+```
+
+The empty file the bootstrap now seeds is what the Preloop CLI needed to see codex; its onboarding
+then wrote the entry the adapter's own-login path reads. #37 is closed by this. The operator's
+logs are in `evidence/issue37/` on their host.
