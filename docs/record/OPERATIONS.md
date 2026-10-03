@@ -4338,3 +4338,31 @@ trial_controls 500/500, review_controls 141/141, hello-lane and child-run throug
 instance left after the take-down. On the instance, the operator's next `release.sh update` is
 the first update that moves the three without a flag; what it should print is the `will change`
 lines and no refusal, and `up.sh --check` the note about the old copy. Those numbers go here.
+
+### §76 addendum: on the instance (operator-run, 2026-10-03)
+
+```
+scripts/release.sh update --to be4ed57           no flag. ALL CHECKS PASSED, exit 0; rollback point
+                                                 20261003-031632-911dc67 recorded first; no refusal
+scripts/up.sh --check                            "note  the home volume still carries the pre-#34 toolchain
+                                                 copy (/home/agent/.local), unused" + the command
+scripts/down.sh                                  volumes kept
+docker run --rm -v <stack>-agent-home:/vol alpine rm -rf /vol/.local
+                                                 675 MB gone; .claude .codex .grok .preloop untouched
+scripts/up.sh                                    ALL CHECKS PASSED, 19 containers, the note gone
+tools                                            claude 2.1.287 /opt/claude/.local/bin · conductor 0.1.41
+                                                 /opt/uv/bin · preloop 0.15.0 /opt/preloop/bin;
+                                                 PATH without /home/agent/.local
+```
+
+**No `will change` line, for two reasons, both read from the log.** First, nothing changed: update
+day 2 had already put claude 2.1.287 and Conductor 0.1.41 in the volume, and the new image carries
+the same versions. Second, the script that ran was the *previous* revision's: `release.sh` copies
+itself before it moves the workspace (its own guard against being rewritten mid-run, §66), so an
+update is always run by the `release.sh` of the revision being left, and the log carried that
+script's line, "toolchain — unchanged, the new revision builds the same tool versions". The new
+script's path — the `will change` lines, no refusal — is first measured by the next update whose
+pins move. What this round measured is what mattered: an update with no flag ended without a
+refusal and with the three tools answering from `/opt`.
+
+The old copy is gone; the volume keeps its logins and state. #34 closes with this.
