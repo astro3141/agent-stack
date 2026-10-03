@@ -27,7 +27,7 @@ CFG = ROOT / "config"
 GEN = CFG / "generated"
 STATE = GEN / "state.json"
 
-# What the execution layer (run-agent.mjs PROVIDERS) supports: provider → allowed routes.
+# What the execution layer (stack/adapter/providers/<name>.mjs) supports: provider → allowed routes.
 KNOWN_PROVIDERS = {
     "claude": {"direct", "preloop_gateway"},
     "codex": {"direct", "preloop_gateway"},

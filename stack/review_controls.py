@@ -701,6 +701,9 @@ def adapter_controls():
     r = subprocess.run(["node", str(WORK / "stack" / "adapter" / "replay.mjs")], capture_output=True, text=True, timeout=120)
     check("adapter: four recorded runs replay through result.mjs — text, usage, denials, status, the whole result",
           r.returncode == 0 and "4/4 recorded runs replayed" in r.stdout, (r.stdout + r.stderr)[-600:])
+    r = subprocess.run(["node", str(WORK / "stack" / "adapter" / "providers_check.mjs")], capture_output=True, text=True, timeout=120)
+    check("adapter: each provider module is a function of one call's context — login, principal, egress travel with it",
+          r.returncode == 0 and "provider checks passed" in r.stdout, (r.stdout + r.stderr)[-600:])
     ra = (WORK / "stack" / "run-agent.mjs").read_text()
     check("adapter: run-agent.mjs uses the modules and keeps no copy of the folded logic",
           all(x in ra for x in ("from \"/work/stack/adapter/result.mjs\"", "take(acc, ev)", "normalizeStatus(", "buildResult(", "permissionBody(", "ledgerLine("))

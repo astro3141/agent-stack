@@ -186,8 +186,12 @@ esac
 if command -v node >/dev/null 2>&1; then
   out="$(node stack/adapter/replay.mjs 2>&1 | nocr)"
   case "$out" in *"4/4 recorded runs replayed"*) ok "the adapter replays its recorded runs: $(echo "$out" | tail -1)";; *) bad "the adapter does not reproduce a recorded run" "$(echo "$out" | grep -A2 FAIL | head -4 | tr '\n' ';')";; esac
+  # and each provider module is a function of one call's context: login and principal travel with it
+  out="$(node stack/adapter/providers_check.mjs 2>&1 | nocr)"
+  case "$out" in *"provider checks passed"*) if echo "$out" | grep -q "^FAIL"; then bad "a provider module does not follow the call's context" "$(echo "$out" | grep '^FAIL' | head -3 | tr '\n' ';')"; else ok "the provider modules: $(echo "$out" | tail -1)"; fi;;
+    *) bad "the provider modules could not be checked" "$(echo "$out" | tail -2 | tr '\n' ';')";; esac
 else
-  note "adapter replay skipped: no node on this host (the stack level runs it in the agent)"
+  note "adapter replay and provider checks skipped: no node on this host (the stack level runs them in the agent)"
 fi
 
 for c in packages/*/controls.py; do
