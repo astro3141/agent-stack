@@ -4816,3 +4816,5 @@ The instance is at 7a57911, ALL CHECKS PASSED, tools from `/opt`. `verify --leve
 trial_controls 511/511, review_controls 189/189, auto PASS; novel-a held on claude's session
 window at 81 % ≥ 80 % — the day's measurements used it — and router_controls skipped for the same
 reason. That hold is the router doing its job, not a defect.
+
+**Measured, this addendum.** The rollback and the way back: the operator's outputs above, on the live instance. The printed note and the docs: review_controls 189/189, static 13/13 here; **cold-start run 82 green** on 1d7e042.
