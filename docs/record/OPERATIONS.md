@@ -4151,6 +4151,10 @@ scripts/release.sh record --tag pre-202610        claude 2.1.278 · conductor 0.
 scripts/drift.sh                                  every line `unknown`: no registry answered from this host
 ```
 
+This instance is the first install, on the first machine, and it had not had update day 1 —
+§65 was run on the second install — so `pre-202610` reads day 0's toolchain, and this update
+moved claude 2.1.278 → 2.1.287 as well as the five pins of day 2: two update days in one.
+
 **The update.**
 
 ```
