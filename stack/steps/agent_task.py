@@ -80,7 +80,7 @@ if principal and not os.environ.get("AGENTSTACK_EGRESS_PROFILE") and not os.envi
     except Exception:
         _profile = ""
     if _profile:
-        os.execv(sys.executable, [sys.executable, "/work/stack/steps/broker_dispatch.py"] + sys.argv[1:])
+        os.execv(sys.executable, [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "broker_dispatch.py")] + sys.argv[1:])
 run_id, evid = _own_evidence_dir(run_id)
 os.makedirs(evid, exist_ok=True)
 
@@ -147,7 +147,7 @@ req = {"run_id": run_id, "provider": provider, "model_route": model_route or "pr
 rp = os.path.join(evid, "request.json")
 json.dump(req, open(rp, "w"), indent=1)
 def run_once():
-    p = subprocess.run(["node", "/work/stack/run-agent.mjs", rp], capture_output=True, text=True,
+    p = subprocess.run(["node", str(settings.STACK / "run-agent.mjs"), rp], capture_output=True, text=True,
                        env={**os.environ, "NODE_NO_WARNINGS": "1"})
     try:
         return json.loads(p.stdout.strip().splitlines()[-1])

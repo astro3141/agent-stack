@@ -22,6 +22,7 @@
 # No manual step afterwards: Preloop joins the PoC networks through docker/preloop.agentstack.yaml,
 # every PoC container restarts on its own, the observer's loop (when on) is its container process,
 # and logins / Preloop's database / MLflow live in volumes or bind mounts.
+PY_IN_AGENT=/opt/venv/bin/python   # the agent container's interpreter — named once here (OPERATIONS §80)
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 # A workspace that is a restored copy says so in config/instance.env (written by scripts/
@@ -92,9 +93,9 @@ FORCE=""; [ "$MODE" = "--recreate" ] && FORCE="--force-recreate"
 # ("apply failed") sent a reader to the admin container's state file; the cold-start runner failed
 # three times before the reason was read from there (a value Preloop 0.15.0 does not accept, §63).
 apply_policy() {   # <indent>
-  docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py apply | grep -o '"preloop-policy[^,]*' | sed "s/^/$1/" || true
-  docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py status 2>/dev/null \
-    | docker exec -i "$STACK-admin" /opt/venv/bin/python -c 'import json,sys
+  docker exec "$STACK-admin" $PY_IN_AGENT /work/stack/cfg.py apply | grep -o '"preloop-policy[^,]*' | sed "s/^/$1/" || true
+  docker exec "$STACK-admin" $PY_IN_AGENT /work/stack/cfg.py status 2>/dev/null \
+    | docker exec -i "$STACK-admin" $PY_IN_AGENT -c 'import json,sys
 for t in json.load(sys.stdin).get("targets", []):
     if t.get("error"): print("why:", t["target"], "—", t["error"])' | sed "s/^/$1/" || true
 }
@@ -137,7 +138,7 @@ if [ "$MODE" != "--check" ]; then
   # no profile, the router could not read research-default, and admission failed with
   # FileNotFoundError (measured on a Windows host, 2026-10-02). Generated here, every time, like
   # the egress lists above; the claim branch below generates again, harmlessly.
-  docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate >/dev/null 2>&1 \
+  docker exec "$STACK-agent" $PY_IN_AGENT /work/stack/cfg.py generate >/dev/null 2>&1 \
     || echo "  WARN  config/generated could not be written (cfg.py generate) — profiles may be missing" >&2
   echo "== Preloop (+ PoC network attachment)"
   docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
@@ -175,7 +176,7 @@ if [ "$MODE" != "--check" ]; then
 ')"
   if [ "$users" = "0" ]; then
     echo "== Preloop has no user yet — claiming it"
-    preloop_exec api printenv PRELOOP_BOOTSTRAP_TOKEN       | docker exec -i "$STACK-admin" /opt/venv/bin/python /work/stack/bootstrap_preloop.py           --unclaimed --api http://preloop-api:8000       || { echo "  the instance could not be claimed — nothing below will be governed" >&2; exit 1; }
+    preloop_exec api printenv PRELOOP_BOOTSTRAP_TOKEN       | docker exec -i "$STACK-admin" $PY_IN_AGENT /work/stack/bootstrap_preloop.py           --unclaimed --api http://preloop-api:8000       || { echo "  the instance could not be claimed — nothing below will be governed" >&2; exit 1; }
     # The container wrote the owner's password inside itself, because this tree is a bind mount
     # owned by the host user and a container cannot write into it on Linux. Moving it here means
     # the file ends up with the host's ownership and mode, and the password never passes through
@@ -190,7 +191,7 @@ if [ "$MODE" != "--check" ]; then
     # servers, the tools and the approval workflow all come from policy/. Generating reads the
     # provider logins (agent); applying writes to Preloop (admin) — OPERATIONS.md §21.
     echo "== applying this stack's policy to the new instance"
-    docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate >/dev/null 2>&1 || true
+    docker exec "$STACK-agent" $PY_IN_AGENT /work/stack/cfg.py generate >/dev/null 2>&1 || true
     apply_policy "  "
   fi
 fi
@@ -216,7 +217,7 @@ fi
 # every bring-up is what keeps a second machine governed the same way as this one; it writes to
 # Preloop, so it runs on the admin side (OPERATIONS.md §21, §25).
 if docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
-  out="$(docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/principals.py apply 2>&1 | tail -1)"
+  out="$(docker exec "$STACK-admin" $PY_IN_AGENT /work/stack/principals.py apply 2>&1 | tail -1)"
   case "$out" in
     *'"ok": true'*) echo "$out" | grep -q '"changes": \[\]' || echo "== principals: $out";;
     *) echo "  WARN  the declared principals could not be applied: $out" >&2;;
@@ -268,7 +269,7 @@ if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STAC
     # another machine hit — `GET /mcp-servers` answered `[]` while our record said the work was
     # done. `apply` now checks the account rather than the record, so it repairs both.
     apply_policy "   "
-    docker exec "$STACK-admin" /opt/venv/bin/python /work/stack/cfg.py rescan | sed 's/^/   /' || true
+    docker exec "$STACK-admin" $PY_IN_AGENT /work/stack/cfg.py rescan | sed 's/^/   /' || true
     sleep 3
     # A server that was recreated has a new id, and Preloop's api keeps the old one in its own
     # cache: the listing stays right and every call fails. Restarting that one container is what
@@ -293,18 +294,24 @@ fi
 # install and by nothing since, until a second install ran a Grok lane without it (OPERATIONS
 # §64). Written here on every bring-up for every grok login the profiles name; idempotent.
 if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-agent"; then
-  in_agent '/opt/venv/bin/python /work/stack/grok_posture.py ensure 2>/dev/null' | grep -v '"no login"' | sed 's/^/   grok posture: /' || true
+  in_agent '$PY_IN_AGENT /work/stack/grok_posture.py ensure 2>/dev/null' | grep -v '"no login"' | sed 's/^/   grok posture: /' || true
 fi
 
 echo "== isolation"
+# The addresses the checks below probe are the generated settings' (config/generated/runtime.json,
+# generated above), read once here — the same ones every step reads, written in environment.yaml
+# and nowhere else (OPERATIONS §80). preloop-api:8000 above is a different fact: the admin side's
+# name for Preloop's api on its own network.
+read -r RT_API RT_MCP RT_MLFLOW RT_PROXY <<<"$(in_agent "$PY_IN_AGENT -c 'import json;d=json.load(open(\"/work/config/generated/runtime.json\"));print(d[\"preloop\"][\"api_url\"],d[\"preloop\"][\"mcp_url\"],d[\"mlflow\"][\"url\"],d[\"egress\"][\"proxy\"])'")"
+[ -n "${RT_PROXY:-}" ] || echo "  WARN  could not read config/generated/runtime.json from the agent — the address checks below will fail for that reason" >&2
 check "agent default routes"            0   "$(in_agent 'ip route | grep -c default')"
 check "agent direct egress"             000 "$(in_agent 'curl -s -o /dev/null -w %{http_code} --max-time 5 https://pypi.org')"
-check "egress proxy refuses non-provider" 000 "$(in_agent 'curl -s -o /dev/null -w %{http_code} --max-time 8 -x http://egress:8888 https://example.com')"
+check "egress proxy refuses non-provider" 000 "$(in_agent 'curl -s -o /dev/null -w %{http_code} --max-time 8 -x '"$RT_PROXY"' https://example.com')"
 echo "== services"
-check "Preloop MCP (auth required)"      401 "$(in_agent 'curl -s -o /dev/null -w %{http_code} http://console/mcp/v1')"
-check "Preloop api"                      200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} http://api:8000/api/v1/openapi.json')"
+check "Preloop MCP (auth required)"      401 "$(in_agent 'curl -s -o /dev/null -w %{http_code} '"$RT_MCP"'')"
+check "Preloop api"                      200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} '"$RT_API"'/api/v1/openapi.json')"
 case ",$COMPOSE_PROFILES," in *,record,*)
-  check "MLflow"                         200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} http://mlflow:5000/health')";;
+  check "MLflow"                         200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} '"$RT_MLFLOW"'/health')";;
   *) printf '  --    %-44s %s
 ' "MLflow" "not in the $COMPOSITION composition";; esac
 case ",$COMPOSE_PROFILES," in *,ui,*)
@@ -313,18 +320,18 @@ case ",$COMPOSE_PROFILES," in *,ui,*)
   check "hub has no Docker access"        none "$(docker inspect "$STACK-hub" --format '{{if .Mounts}}mounted{{else}}none{{end}}' 2>/dev/null)";;
   *) printf '  --    %-44s %s
 ' "ops API / hub UI" "not in the $COMPOSITION composition";; esac
-check "provider host via proxy (TLS up)" yes "$(in_agent 'c=$(curl -s -o /dev/null -w %{http_code} --max-time 10 -x http://egress:8888 https://api.anthropic.com); [ "$c" != 000 ] && echo yes || echo no')"
+check "provider host via proxy (TLS up)" yes "$(in_agent 'c=$(curl -s -o /dev/null -w %{http_code} --max-time 10 -x '"$RT_PROXY"' https://api.anthropic.com); [ "$c" != 000 ] && echo yes || echo no')"
 # Not "are the tools listed" but "does a call reach the server": a tool server deleted and
 # recreated keeps its listing while every call answers "MCP server <old id> not found"
 # (OPERATIONS §28). The probe calls a read-only tool.
 check "fsmcp tools work through Preloop"  yes "$(in_agent 'python3 /work/stack/mcp_list.py claude --probe | grep -q "PROBE OK" && echo yes || echo no')"
 # The approval boundary is a route, so it is checked from the position it constrains: the agent
 # may read what is waiting and may not answer it (OPERATIONS.md §20).
-check "runtime may read approvals"       200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" "http://api:8000/api/v1/approval-requests?status=pending&limit=1"')"
-check "runtime may not decide approvals" 403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X POST -H "Content-Type: application/json" -d "{\"approved\":true}" http://api:8000/api/v1/approval-requests/00000000-0000-0000-0000-000000000000/approve')"
-check "runtime may read its tool rights"  200 "$(in_agent 'a=$(curl -s -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" http://api:8000/api/v1/agents | python3 -c "import json,sys;d=json.load(sys.stdin);r=d if isinstance(d,list) else d.get(\"items\") or [];print(r[0][\"id\"])"); curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" http://api:8000/api/v1/agents/$a/governance')"
-check "runtime may not rewrite them"      403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X PUT -H "Content-Type: application/json" -d "{}" http://api:8000/api/v1/agents/00000000-0000-0000-0000-000000000000/governance')"
-check "runtime may not mint credentials"  403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X POST -H "Content-Type: application/json" -d "{\"name\":\"probe\"}" http://api:8000/api/v1/auth/api-keys')"
+check "runtime may read approvals"       200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" "'"$RT_API"'/api/v1/approval-requests?status=pending&limit=1"')"
+check "runtime may not decide approvals" 403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X POST -H "Content-Type: application/json" -d "{\"approved\":true}" '"$RT_API"'/api/v1/approval-requests/00000000-0000-0000-0000-000000000000/approve')"
+check "runtime may read its tool rights"  200 "$(in_agent 'a=$(curl -s -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" '"$RT_API"'/api/v1/agents | python3 -c "import json,sys;d=json.load(sys.stdin);r=d if isinstance(d,list) else d.get(\"items\") or [];print(r[0][\"id\"])"); curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" '"$RT_API"'/api/v1/agents/$a/governance')"
+check "runtime may not rewrite them"      403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X PUT -H "Content-Type: application/json" -d "{}" '"$RT_API"'/api/v1/agents/00000000-0000-0000-0000-000000000000/governance')"
+check "runtime may not mint credentials"  403 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -X POST -H "Content-Type: application/json" -d "{\"name\":\"probe\"}" '"$RT_API"'/api/v1/auth/api-keys')"
 # An instance installed before #34 has claude, Conductor and the Preloop CLI in its home volume as
 # well as in the image. The image's are on PATH and run; the volume's copy is dead weight, and
 # removing it is the operator's one-time step — said here, not done (§76).
@@ -340,8 +347,8 @@ check "grok /route login"                yes "$(in_agent 'test -s /route/grok/au
 # tools (stack/grok_posture.py). Without it a Grok lane writes with its native tool, waits for a
 # person, and ends DENIED. Reported for every grok login the profiles name; `--` when none exists.
 if in_agent 'test -s /route/grok/auth.json' >/dev/null 2>&1; then
-  check "grok native tools denied in its config" yes "$(in_agent '/opt/venv/bin/python /work/stack/grok_posture.py check --brief 2>/dev/null')"
-  in_agent '/opt/venv/bin/python /work/stack/grok_posture.py check 2>/dev/null' | grep -v '"ok"' | sed 's/^/        /' || true
+  check "grok native tools denied in its config" yes "$(in_agent '$PY_IN_AGENT /work/stack/grok_posture.py check --brief 2>/dev/null')"
+  in_agent '$PY_IN_AGENT /work/stack/grok_posture.py check 2>/dev/null' | grep -v '"ok"' | sed 's/^/        /' || true
 else
   printf '  --    %-44s %s\n' "grok native tools denied in its config" "no grok login"
 fi
@@ -359,7 +366,7 @@ echo "== quota observer"
 # A login file can exist while its token is dead: the router then reports the provider as
 # ineligible for an *unknown* reason, and every run that needs it holds. Being at a limit or
 # having a stale observation is ordinary; not being able to tell is not, so only "unknown:" fails.
-check "every provider's state is knowable"  0 "$(in_agent '/opt/venv/bin/python -c "
+check "every provider's state is knowable"  0 "$(in_agent '$PY_IN_AGENT -c "
 import sys; sys.path.insert(0, \"/work/stack\")
 import ops_health
 bad = ops_health.unknowable()
@@ -369,7 +376,7 @@ in_agent 'cat /tmp/unknowable 2>/dev/null' | head -4
 # What the run will meet: the router's own answer, not one source's file. The freshness of the
 # observer's file stopped being the model when codex became readable with the login that
 # executes — the router said ROUTE while this said no (OPERATIONS §31).
-check "the router can choose a provider"  yes "$(in_agent '/opt/venv/bin/python -c "
+check "the router can choose a provider"  yes "$(in_agent '$PY_IN_AGENT -c "
 import sys; sys.path.insert(0, \"/work/stack\")
 import capabilities
 print(\"yes\" if capabilities.probe()[\"admission\"][\"available\"] else \"no\")"')"
@@ -378,7 +385,7 @@ bash "$HERE/scripts/host-state.sh" >/dev/null 2>&1 || true
 # The allowlist is one file for one proxy, shared by every container on the governed network: a host
 # opened for one package is reachable by all of them. So a bring-up says which open host no installed
 # package asks for any more — the same shape as the identity report above (OPERATIONS §45).
-orphan_hosts="$(in_agent '/opt/venv/bin/python -c "
+orphan_hosts="$(in_agent '$PY_IN_AGENT -c "
 import json, subprocess, sys
 out = subprocess.run([sys.executable, \"/work/stack/packages.py\", \"egress\", \"--json\"],
                      capture_output=True, text=True).stdout
@@ -392,11 +399,11 @@ print(\" \".join(json.loads(out or \"{}\").get(\"open_and_undeclared\") or []))"
 # are created (that needs root, so it is done from the host with `docker exec -u 0`), the proxy
 # configurations and credentials are written into the volume the agent and the proxy share, and the
 # proxy is restarted so it serves them.
-roles_json="$(in_agent '/opt/venv/bin/python /work/stack/role_egress.py plan --json' 2>/dev/null)"
+roles_json="$(in_agent '$PY_IN_AGENT /work/stack/role_egress.py plan --json' 2>/dev/null)"
 case "$roles_json" in
   *'"uid"'*)
     for r in $(echo "$roles_json" | tr ',' '\n' | grep -o '"[a-z][a-z0-9-]*": {"hosts"' | cut -d'"' -f2); do
-      u="$(in_agent "/opt/venv/bin/python /work/stack/role_egress.py uid $r" 2>/dev/null)"
+      u="$(in_agent "$PY_IN_AGENT /work/stack/role_egress.py uid $r" 2>/dev/null)"
       [ -n "$u" ] || continue
       docker exec -u 0 "$STACK-agent" sh -c \
         "id -u $r >/dev/null 2>&1 || useradd -M -u $u -g roles -s /usr/sbin/nologin $r" >/dev/null 2>&1
@@ -413,7 +420,7 @@ case "$roles_json" in
       chmod g+rwX /route 2>/dev/null
       for d in /route/*/; do chmod -R g+rwX "$d" 2>/dev/null; done
       true' >/dev/null 2>&1
-    out="$(docker exec -u 0 "$STACK-agent" /opt/venv/bin/python /work/stack/role_egress.py write 2>&1 | tail -1)"
+    out="$(docker exec -u 0 "$STACK-agent" $PY_IN_AGENT /work/stack/role_egress.py write 2>&1 | tail -1)"
     case "$out" in
       *'"wrote"'*) echo "== per-role egress: $out";;
       *) echo "  WARN  per-role egress could not be written: $out" >&2;;

@@ -7,4 +7,4 @@ CD=$2; [ "$CD" = "-" ] && CD=null || CD="\"$CD\""
 curl -s --max-time "${4:-15}" -w '\nhttp=%{http_code} t=%{time_total}\n' \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d "{\"tool_name\":\"$1\",\"tool_input\":$3,\"source\":\"acpx_probe\",\"session_id\":\"p281-probe\",\"cwd\":\"/tmp/agentstack\",\"client_decision\":$CD}" \
-  http://console/api/v1/agents/permission-check
+  "$(python3 -c 'import sys; sys.path.insert(0, "/work/stack"); import settings; print(settings.url("preloop", "api_url"))')/api/v1/agents/permission-check"

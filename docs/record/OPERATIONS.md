@@ -4503,3 +4503,21 @@ packages' authors' measurement (trading#2, devflow#1) and needs their repositori
 stack's side of it is this section. Its remark that some controls check source text rather than
 behaviour is fair: the reproductions above are behaviour where a behaviour exists without a model,
 and text where the behaviour is a shell script against a Docker volume.
+
+## 80. One fact, one place: providers, addresses, paths (review 3, "변경 용이성", 2026-10-03)
+
+The third review left this axis as "improving", naming three facts written in more than one
+place: the provider list, the default in-network addresses, and the stack's own paths. Counted
+before changing anything:
+
+| fact | where it was written | now |
+|---|---|---|
+| the three providers | `cfg.py KNOWN_PROVIDERS`, `ops/server.py PROVIDERS`, a tuple in `login_helper.py`, and the module list under `stack/adapter/providers/` | `settings.PROVIDERS` (provider → routes); `cfg.py` validates against it, `login_helper.py` reads it, the ops API reads the provider modules that exist; a control holds the table equal to the module list |
+| `http://api:8000`, `console/mcp/v1`, `broker:8791`, `egress:8888`, `mlflow:5000` | `settings.DEFAULT_RUNTIME` and, as fallbacks or literals, `run-agent.mjs` (3), `broker.py` (2), `broker_dispatch.py`, `mcp_list.py`, `mcp_call.py`, `approver.py`, `bootstrap_preloop.py`, `capabilities.py`, `collect_obs.py`, `pcheck.sh`, and nine probes in `up.sh` | `settings.url(section, key)` — the generated settings or the one default table (`broker` added to it); the adapter reads `runtime.json` or refuses with "run cfg.py generate" instead of running on a second copy of the defaults; `up.sh` reads the four addresses it probes once from the agent. `preloop-api:8000` in `up.sh` stays: the admin side's name for Preloop's api on its own network, a different fact |
+| `/opt/venv/bin/python` (93 sites) and `/work/stack/...` (157) | every module that starts another, five scripts, the package workflows | Python: `sys.executable` (or the package's `POC_PY`) and `__file__`/`settings.STACK` — no module names the interpreter or another module by an absolute path; scripts: `PY_IN_AGENT` once each (`up.sh` 17 → 1, `verify.sh` 6 → 1, `down.sh` 3 → 1, `packages.sh` 2 → 1); `ops/server.py` names the stack's mount once. The package workflows keep `${POC_PY:-/opt/venv/bin/python}`: that line is the package contract (docs/packages.md), not a copy |
+
+**Measured as absence.** `ease_controls` (12 pins): the table equals the module list; no second
+provider list in the Python; no in-network address on a code line outside `settings.py` across
+stack/, the adapter and `up.sh`; no interpreter path in a Python module; no module naming another
+by `/work/stack/...`; one `PY_IN_AGENT` per script; one `STACK` in the ops API. review_controls
+179/179 and static 13/13 on this runner; the cold start for what runs — run number below.

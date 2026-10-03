@@ -39,8 +39,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, "/work/stack")
 
-CONSOLE_MCP = os.environ.get("AGENTSTACK_CONSOLE_MCP", "http://console/mcp/v1")
-SELF_MCP = os.environ.get("AGENTSTACK_BROKER_MCP", "http://broker:8791/mcp/v1")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import settings  # noqa: E402
+CONSOLE_MCP = os.environ.get("AGENTSTACK_CONSOLE_MCP") or settings.url("preloop", "mcp_url")
+SELF_MCP = os.environ.get("AGENTSTACK_BROKER_MCP") or settings.url("broker", "mcp_url")
 RUNNER_PORT = int(os.environ.get("AGENTSTACK_RUNNER_PORT", "8790"))
 NAME = re.compile(r"[a-z][a-z0-9-]{0,39}")
 

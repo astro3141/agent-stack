@@ -40,7 +40,7 @@ def _load(path, default=None):
 def _view(ui):
     """The run as run_workflow.py sees it — the same reader the panel uses."""
     import subprocess
-    out = subprocess.run(["/opt/venv/bin/python", "/work/stack/run_workflow.py", "show", ui],
+    out = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_workflow.py"), "show", ui],
                          capture_output=True, text=True, cwd="/work").stdout
     try:
         return json.loads(out)

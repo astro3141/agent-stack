@@ -21,7 +21,8 @@ import json, os, subprocess, sys, time
 
 sys.path.insert(0, "/work/stack")
 
-PY = "/opt/venv/bin/python"
+PY = sys.executable
+STACK = os.path.dirname(os.path.abspath(__file__))
 OPS_DIR = "/work/evidence/ops"
 RECORD = f"{OPS_DIR}/cycles.jsonl"
 LOCK = f"{OPS_DIR}/.cycle.lock.d"
@@ -62,7 +63,7 @@ def run(workflow, profile="research-default", allow_unrecorded=False,
         open(f"{LOCK}/pid", "w").write(str(os.getpid()))
 
         ui = "cyc-" + time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-        argv = [PY, "/work/stack/run_workflow.py", "start", ui, workflow, profile]
+        argv = [PY, os.path.join(STACK, "run_workflow.py"), "start", ui, workflow, profile]
         # the workflow's inputs, as the panel and the CLI pass them; the runner validates them.
         # Until this line a scheduled cycle could pass none, and trading read `day=` inside a
         # step instead (PACKAGE-MATRIX §4).
@@ -79,7 +80,7 @@ def run(workflow, profile="research-default", allow_unrecorded=False,
                 why = {"error": (p.stderr or p.stdout)[-200:]}
             return record({"workflow": workflow, "by": by, "ui": ui, "refused": why})
 
-        out = subprocess.run([PY, "/work/stack/soak_outcome.py", ui],
+        out = subprocess.run([PY, os.path.join(STACK, "soak_outcome.py"), ui],
                              capture_output=True, text=True, cwd="/work").stdout
         try:
             outcome = json.loads(out.strip().splitlines()[-1])
@@ -89,7 +90,7 @@ def run(workflow, profile="research-default", allow_unrecorded=False,
                       "outcome": outcome})
 
         if retain_days or retain_keep:
-            args = [PY, "/work/stack/cleanup.py", "--apply", "--json"]
+            args = [PY, os.path.join(STACK, "cleanup.py"), "--apply", "--json"]
             if retain_days:
                 args += ["--days", str(retain_days)]
             if retain_keep:

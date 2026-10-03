@@ -58,7 +58,7 @@ def probe(profile=DEFAULT_PROFILE):
         "required": True}
 
     # Egress. The proxy must be reachable *and* still refuse what is not a provider.
-    prov = http("http://egress:8888", timeout=5)
+    prov = http(RT["egress"]["proxy"], timeout=5)
     caps["egress"] = {
         "available": prov != 0,
         "detail": f"allowlist proxy answered {prov or 'nothing'}",

@@ -813,7 +813,7 @@ def review3_controls():
         check("calls: a retry's own name (-a2) is kept and repeats under it (-a2-r2)",
               retry[0] == "run-repair-claude-a2" and (os.makedirs(retry[1]), Path(retry[1], "x").write_text(""), own("run-repair-claude-a2")[0])[2] == "run-repair-claude-a2-r2")
     check("calls: the name is decided after the door, by the process that makes the call",
-          at.index("broker_dispatch.py\"] + sys.argv[1:])") < at.index("run_id, evid = _own_evidence_dir(run_id)") < at.index("os.makedirs(evid, exist_ok=True)"))
+          at.index("\"broker_dispatch.py\")] + sys.argv[1:])") < at.index("run_id, evid = _own_evidence_dir(run_id)") < at.index("os.makedirs(evid, exist_ok=True)"))
     check("calls: the retry number travels through the broker to the runner's environment",
           '"attempt": os.environ.get("AGENTSTACK_ATTEMPT", "")' in (HERE / "steps" / "broker_dispatch.py").read_text()
           and '"attempt": str(req.get("attempt") or "")' in (HERE / "broker.py").read_text()
@@ -902,6 +902,46 @@ def review3_controls():
           m.group(1) if m else None)
 
 
+# ---------------------------------------------------------------- 13. one fact, one place (§80)
+def ease_controls():
+    """Providers, in-network addresses and the stack's own paths are each written once; the rest
+    reads them. Measured as absence: the literal does not appear a second time."""
+    st = importlib.import_module("settings")
+    mods = sorted(p.stem for p in (HERE / "adapter" / "providers").glob("*.mjs"))
+    check("providers: settings.PROVIDERS is the module list under stack/adapter/providers/", sorted(st.PROVIDERS) == mods, (sorted(st.PROVIDERS), mods))
+    cfg = importlib.import_module("cfg")
+    check("providers: cfg.py validates against the same table", cfg.KNOWN_PROVIDERS is st.PROVIDERS)
+    pyfiles = [p for p in list(HERE.rglob("*.py")) + list((WORK / "ops").glob("*.py")) if not p.name.endswith("_controls.py") and p.name != "settings.py" and "fixtures" not in p.parts]
+    lit = re.compile(r'[\(\[\{]\s*"claude",\s*"codex",\s*"grok"\s*[\)\]\}]')
+    bad = [str(p.relative_to(WORK)) for p in pyfiles if lit.search(p.read_text())]
+    check("providers: no second list of the three in the Python", bad == [], bad)
+    srv = (WORK / "ops" / "server.py").read_text()
+    check("providers: the ops API reads the provider modules that exist, not a set of its own", "def providers():" in srv and 'PROVIDERS = {"claude"' not in srv)
+    hosts = re.compile(r'http://(console|api:8000|broker:8791|egress:8888|mlflow:5000)\b')
+    files = [p for p in list(HERE.rglob("*.py")) + list(HERE.glob("*.mjs")) + list((HERE / "adapter" / "providers").glob("*.mjs")) + list(HERE.glob("*.sh")) + [WORK / "scripts" / "up.sh"]
+             if p.name != "settings.py" and not p.name.endswith("_controls.py") and "fixtures" not in p.parts]
+    bad = sorted({f"{p.relative_to(WORK)}:{i}" for p in files for i, l in enumerate(p.read_text().splitlines(), 1)
+                  if hosts.search(l) and not l.lstrip().startswith("#") and not l.lstrip().startswith("//")})
+    check("addresses: no in-network address is written outside settings.py (code lines of stack/, the adapter, up.sh)", bad == [], bad)
+    check("addresses: the adapter reads the generated settings or says to generate them — no fallback copy",
+          "run `cfg.py generate`" in (HERE / "run-agent.mjs").read_text() and 'need(RT.preloop?.api_url' in (HERE / "run-agent.mjs").read_text())
+    check("addresses: up.sh probes the addresses the settings name, read once from the agent",
+          "read -r RT_API RT_MCP RT_MLFLOW RT_PROXY" in (WORK / "scripts" / "up.sh").read_text())
+    check("addresses: settings.url falls back to the one default table",
+          st.url("broker", "url") == st.DEFAULT_RUNTIME["broker"]["url"] and st.url("preloop", "api_url").startswith("http://"))
+    # ops/server.py runs in another container and names the agent's interpreter to exec into it —
+    # that is not its own interpreter, and it is named there once
+    interp = [str(p.relative_to(WORK)) for p in pyfiles if "/opt/venv/bin/python" in p.read_text() and p.name != "server.py"]
+    check("paths: no Python module of the stack writes its own interpreter's path — sys.executable, or the package's POC_PY", interp == [], interp)
+    check("paths: the ops API names the agent's interpreter once", srv.count("/opt/venv/bin/python") == 1)
+    stackp = [f"{p.relative_to(WORK)}" for p in HERE.rglob("*.py") if not p.name.endswith("_controls.py") and "fixtures" not in p.parts
+              and re.search(r'"/work/stack/[A-Za-z_]+(?:/[A-Za-z_]+)*\.(?:py|mjs)"', p.read_text())]
+    check("paths: no module names another module of the stack by an absolute path — __file__ and settings.STACK", stackp == [], stackp)
+    counts = {f: (WORK / "scripts" / f).read_text().count("/opt/venv/bin/python") for f in ("up.sh", "down.sh", "packages.sh", "verify.sh")}
+    check("paths: each script names the agent's interpreter once (PY_IN_AGENT)", all(v == 1 for v in counts.values()), counts)
+    check("paths: the ops API names the stack's mount once", srv.count('"/work/stack') == 1 and 'STACK = "/work/stack"' in srv, srv.count('"/work/stack'))
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -919,6 +959,7 @@ next_controls()
 adapter_controls()
 update_controls()
 review3_controls()
+ease_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

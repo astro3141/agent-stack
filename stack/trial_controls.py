@@ -942,7 +942,7 @@ def controls_approval_boundary():
     check("applying a policy runs on the admin side, at the bring-up",
           bool(re.search(r'docker exec "\$STACK-admin"[^\n]*cfg\.py apply', up)), True)
     check("generating it does not — the provider logins are in the agent",
-          'docker exec "$STACK-agent" /opt/venv/bin/python /work/stack/cfg.py generate' in up, True)
+          'docker exec "$STACK-agent" $PY_IN_AGENT /work/stack/cfg.py generate' in up, True)
     admin_block = compose.split("  admin:")[1].split("  apiguard:")[0]
     check("the operator's container is on the admin network and no other",
           admin_block.split("networks:")[1].split("volumes:")[0].split(), ["-", "adminnet"])

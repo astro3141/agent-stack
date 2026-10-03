@@ -18,9 +18,10 @@
 #
 # Exit 0 when every check at the chosen level passed; 1 otherwise. Changes nothing but
 # evidence/ and the run it starts at `full`.
+PY_IN_AGENT=/opt/venv/bin/python   # the agent container's interpreter — named once here (OPERATIONS §80)
 set -uo pipefail
 # Git Bash rewrites an argument that looks like a POSIX path into a Windows one before docker sees
-# it, so `docker exec … /opt/venv/bin/python` arrived as "C:/Program Files/Git/opt/venv/bin/python"
+# it, so `docker exec … $PY_IN_AGENT` arrived as "C:/Program Files/Git$PY_IN_AGENT"
 # (measured on a Windows host, 2026-10-02; up.sh already carries this line). The host python there
 # is a native Windows one: it reads no MSYS path and ends its lines with CRLF, so what this script
 # hands it is converted with cygpath, and what it prints is read without the CR.
@@ -60,7 +61,7 @@ ok()   { CHECKS=$((CHECKS+1)); printf '  ok    %s\n' "$1"; }
 bad()  { CHECKS=$((CHECKS+1)); FAILS=$((FAILS+1)); printf '  FAIL  %s\n' "$1"; [ -n "${2:-}" ] && printf '        %s\n' "$2"; }
 note() { printf '  note  %s\n' "$1"; }
 sect() { printf '\n== %s\n' "$1"; }
-in_agent() { docker exec "$STACK-agent" /opt/venv/bin/python "$@"; }
+in_agent() { docker exec "$STACK-agent" $PY_IN_AGENT "$@"; }
 
 stack_up() { docker info >/dev/null 2>&1 && docker inspect -f '{{.State.Running}}' "$STACK-agent" 2>/dev/null | grep -q true; }
 
@@ -157,8 +158,8 @@ echo "$out" | grep "note:" | sed 's/^/        /' || true
 if stack_up; then
   CROOT="/tmp/verify-$$"
   docker exec "$STACK-agent" sh -c "mkdir -p $CROOT/config/generated $CROOT/ws && printf '%s' '{\"preloop\":{\"api_url\":\"x\",\"mcp_url\":\"x\"},\"mlflow\":{\"url\":\"x\"},\"egress\":{\"proxy\":\"http://127.0.0.1:1\",\"no_proxy\":[]},\"paths\":{\"workspace_root\":\"$CROOT/ws\",\"evidence_root\":\"$CROOT/ev\",\"observations\":\"$CROOT/obs\",\"logins_root\":\"$CROOT/route\"}}' > $CROOT/config/generated/runtime.json"
-  runpy()  { local id="$1" f="$2"; shift 2; docker exec -e AGENTSTACK_ROOT="$CROOT" -e CONDUCTOR_SELF_RUN_ID="$id" "$STACK-agent" /opt/venv/bin/python "/work/$f" "$@"; }
-  runpyc() { docker exec -e AGENTSTACK_ROOT="$CROOT" "$STACK-agent" /opt/venv/bin/python -c "$@"; }
+  runpy()  { local id="$1" f="$2"; shift 2; docker exec -e AGENTSTACK_ROOT="$CROOT" -e CONDUCTOR_SELF_RUN_ID="$id" "$STACK-agent" $PY_IN_AGENT "/work/$f" "$@"; }
+  runpyc() { docker exec -e AGENTSTACK_ROOT="$CROOT" "$STACK-agent" $PY_IN_AGENT -c "$@"; }
   note "step tests and package controls run in the agent container, with the stack's interpreter"
 else
   runpy()  { local id="$1"; shift; CONDUCTOR_SELF_RUN_ID="$id" $PY "$@"; }
@@ -251,7 +252,7 @@ done
 # the way a run's first step does, and run the controls on that — when the router finds all three
 # providers eligible, since the control cases take that as their starting point.
 RC_OBS="/tmp/verify-obs-$$"
-rc_state="$(docker exec -i "$STACK-agent" sh -c "rm -rf $RC_OBS && mkdir -p $RC_OBS && /opt/venv/bin/python - $RC_OBS" <<'PYRC' 2>/dev/null | nocr
+rc_state="$(docker exec -i "$STACK-agent" sh -c "rm -rf $RC_OBS && mkdir -p $RC_OBS && $PY_IN_AGENT - $RC_OBS" <<'PYRC' 2>/dev/null | nocr
 import json, sys
 sys.path.insert(0, "/work/stack")
 import admission

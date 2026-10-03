@@ -31,8 +31,15 @@ AGENT = os.environ.get("OPS_AGENT_CONTAINER", "agentstack-agent")
 # The operator's own commands — the ones that change what the account enforces — run here, on the
 # admin side, because the guard refuses those writes from the governed network (OPERATIONS §21).
 ADMIN = os.environ.get("OPS_ADMIN_CONTAINER", "agentstack-admin")
-PY = "/opt/venv/bin/python"
-PROVIDERS = {"claude", "codex", "grok"}
+PY = "/opt/venv/bin/python"          # the agent container's interpreter, which this process is not
+STACK = "/work/stack"                # the stack, as the agent container mounts it
+def providers():
+    """The providers the execution layer supports: one module each under stack/adapter/providers/
+    (the same tree is mounted here). Read, not written down a second time (OPERATIONS §80)."""
+    try:
+        return {f[:-4] for f in os.listdir(os.path.join(STACK, "adapter", "providers")) if f.endswith(".mjs")}
+    except OSError:
+        return set()
 NAME = re.compile(r"[a-z0-9-]{1,40}")
 
 
@@ -81,12 +88,12 @@ def accounts(profile):
     routing = prof["routing"]
     # quota observations + the router's own evaluation, with this profile's policy — asked
     # through the one door every caller of the router uses (stack/admission.py)
-    ev = jexec([PY, "/work/stack/admission.py", profile], timeout=180)
+    ev = jexec([PY, f"{STACK}/admission.py", profile], timeout=180)
     evaluated = {e["provider"]: e for e in (ev.get("evaluated") or [])}
     rows = []
     for name in routing["candidates"]:
         login = routing["login"].get(name, name)
-        st = jexec([PY, "/work/stack/login_helper.py", "status", name, login])
+        st = jexec([PY, f"{STACK}/login_helper.py", "status", name, login])
         e = evaluated.get(name, {})
         rows.append({
             "provider": name, "login": login, "route": routing["model_route"].get(name),
@@ -128,16 +135,16 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/health":
             return self._send(200, {"ok": True, "agent": AGENT})
         if p == "/api/config/status":
-            return self._send(200, jexec([PY, "/work/stack/cfg.py", "status"]))
+            return self._send(200, jexec([PY, f"{STACK}/cfg.py", "status"]))
         if p == "/api/workflows":
             # with what each one says about itself, so the screen offers what exists
-            return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "workflows", "--detail"]))
+            return self._send(200, jexec([PY, f"{STACK}/run_workflow.py", "workflows", "--detail"]))
         m = re.fullmatch(r"/api/packages/([a-z][a-z0-9-]{1,39})/runbook", p)
         if m:
             # §58: the package's own operating document. The loader validated the path (inside the
             # package, exists); this only reads what that validation admitted, and says so when a
             # package declares none.
-            info = jexec([PY, "/work/stack/packages.py", "show", m.group(1)])
+            info = jexec([PY, f"{STACK}/packages.py", "show", m.group(1)])
             rb = (info or {}).get("runbook") or ""
             if not rb:
                 return self._send(404, {"error": f"{m.group(1)} declares no runbook"})
@@ -155,10 +162,10 @@ class H(BaseHTTPRequestHandler):
         if m:
             # a package may declare an official login of its own, driven exactly as a provider's
             # (OPERATIONS §44). Read-only here: state, the URL to open, the code the flow issued.
-            return self._send(200, jexec([PY, "/work/stack/login_helper.py",
+            return self._send(200, jexec([PY, f"{STACK}/login_helper.py",
                                           "status", "pkg:" + m.group(1)]))
         if p == "/api/packages":
-            return self._send(200, jexec([PY, "/work/stack/packages.py", "logins", "--json"]))
+            return self._send(200, jexec([PY, f"{STACK}/packages.py", "logins", "--json"]))
         if p == "/api/profiles":
             rc, out, _ = dexec(["sh", "-c", "ls /work/config/generated/profiles/"])
             names = [x[:-5] for x in out.split() if x.endswith(".json")]
@@ -173,24 +180,24 @@ class H(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/accounts/([a-z]+)/login", p)
         if m:
             prov, login = m.group(1), (q.get("login") or [m.group(1)])[0]
-            if prov not in PROVIDERS or not NAME.fullmatch(login):
+            if prov not in providers() or not NAME.fullmatch(login):
                 return self._send(400, {"error": "invalid provider or login"})
-            return self._send(200, jexec([PY, "/work/stack/login_helper.py", "status", prov, login]))
+            return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "status", prov, login]))
         if p == "/api/runs":
-            return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "list"]))
+            return self._send(200, jexec([PY, f"{STACK}/run_workflow.py", "list"]))
         if p == "/api/approvals":          # what is waiting for a person right now
-            return self._send(200, jlocal(["/work/stack/approvals.py"]))
+            return self._send(200, jlocal([f"{STACK}/approvals.py"]))
         if p == "/api/overview":
             # One read for the panel: what the stack can do now, how the unattended cycles have
             # been going, what the last check found, and where the other solutions' own consoles
             # are. Nothing here is recomputed — it is what the stack already records.
-            health = jexec([PY, "/work/stack/ops_health.py", "--json", "--last", "50"])
+            health = jexec([PY, f"{STACK}/ops_health.py", "--json", "--last", "50"])
             rc, out, _ = dexec(["cat", "/work/evidence/checks/last.json"])
             try:
                 last = json.loads(out) if rc == 0 else {}
             except ValueError:
                 last = {}
-            elsewhere = jexec([PY, "/work/stack/elsewhere.py", "--json"])
+            elsewhere = jexec([PY, f"{STACK}/elsewhere.py", "--json"])
             # §55: which role runs where, and whether the broker is up — asked of the broker
             # itself, so the screen shows what would happen, not a copy of the configuration
             broker = jexec([PY, "-c",
@@ -233,7 +240,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"at": None, "ok": None, "error": "unreadable check result"})
         m = re.fullmatch(r"/api/runs/([a-z0-9-]{6,40})", p)
         if m:
-            return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "show", m.group(1)]))
+            return self._send(200, jexec([PY, f"{STACK}/run_workflow.py", "show", m.group(1)]))
         return self._send(404, {"error": "no such route"})
 
     def do_POST(self):
@@ -246,31 +253,31 @@ class H(BaseHTTPRequestHandler):
         if m:
             prov, act = m.groups()
             login = b.get("login") or prov
-            if prov not in PROVIDERS or not isinstance(login, str) or not NAME.fullmatch(login):
+            if prov not in providers() or not isinstance(login, str) or not NAME.fullmatch(login):
                 return self._send(400, {"error": "invalid provider or login"})
             if act == "login":
-                return self._send(200, jexec([PY, "/work/stack/login_helper.py", "start", prov, login], timeout=60))
+                return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "start", prov, login], timeout=60))
             if act == "cancel":
-                return self._send(200, jexec([PY, "/work/stack/login_helper.py", "cancel", prov, login]))
+                return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "cancel", prov, login]))
             code = b.get("code")
             if not isinstance(code, str) or not code.strip() or len(code) > 2000:
                 return self._send(400, {"error": "missing code"})
-            return self._send(200, jexec([PY, "/work/stack/login_helper.py", "code", prov, login], stdin=code))
+            return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "code", prov, login], stdin=code))
         m = re.fullmatch(r"/api/packages/([a-z][a-z0-9-]{1,39})/(login|code|cancel)", p)
         if m:
             pkg, act = m.groups()
             target = "pkg:" + pkg
             if act == "login":
-                return self._send(200, jexec([PY, "/work/stack/login_helper.py", "start", target],
+                return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "start", target],
                                              timeout=60))
             if act == "cancel":
-                return self._send(200, jexec([PY, "/work/stack/login_helper.py", "cancel", target]))
+                return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "cancel", target]))
             code = b.get("code")
             if not isinstance(code, str) or not code.strip() or len(code) > 2000:
                 return self._send(400, {"error": "missing code"})
             # the one-time code the operator got from the service, handed to the flow through a
             # FIFO inside the agent. It is not written down here and not logged.
-            return self._send(200, jexec([PY, "/work/stack/login_helper.py", "code", target],
+            return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "code", target],
                                          stdin=code))
         if p == "/api/replay":
             # Not a control over the stack: it chooses which recorded run the read-only dashboard
@@ -290,7 +297,7 @@ class H(BaseHTTPRequestHandler):
         if m:
             # Stopping a run that is going is a person's call — the same kind of decision as an
             # approval, and the only other one this panel makes. Conductor does the stopping.
-            return self._send(200, jexec([PY, "/work/stack/run_workflow.py", "stop", m.group(1)]))
+            return self._send(200, jexec([PY, f"{STACK}/run_workflow.py", "stop", m.group(1)]))
         # POST …/resume is gone with the start (#24): continuing an interrupted run is
         # `run_workflow.py resume <id>`, a command, as CONTRACT.md's table has always said.
         m = re.fullmatch(r"/api/approvals/([0-9a-f-]{36})", p)
@@ -306,7 +313,7 @@ class H(BaseHTTPRequestHandler):
             comment = b.get("comment") or ""
             if not isinstance(comment, str) or len(comment) > 500:
                 return self._send(400, {"error": "comment must be a string of at most 500 chars"})
-            out = jlocal(["/work/stack/approvals.py", "decide", m.group(1), d, comment])
+            out = jlocal([f"{STACK}/approvals.py", "decide", m.group(1), d, comment])
             return self._send(200 if out.get("ok") else 502, out)
         # POST /api/runs (start a workflow) is gone: starting is a command (scripts/cycle.sh), not a
         # button — CONTRACT.md "What belongs on a screen", decided on #24 (2026-10-02). Stopping a

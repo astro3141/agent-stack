@@ -32,7 +32,8 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, "/work/stack")
 import trajectory
 
-PYTHON = os.environ.get("POC_PY", "/opt/venv/bin/python")
+PYTHON = os.environ.get("POC_PY") or sys.executable
+STACK = os.path.dirname(os.path.abspath(__file__))
 RUNS = "/work/evidence/ui-runs"
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,19}")
 
@@ -75,7 +76,7 @@ def start_one(suite, workflow, profile, case, extra):
     ui = ui_for(suite, case["case"])
     if os.path.isdir(f"{RUNS}/{ui}"):
         return {"case": case["case"], "ui": ui, "started": False, "why": "already run"}
-    argv = [PYTHON, "/work/stack/run_workflow.py", "start", ui, workflow, profile]
+    argv = [PYTHON, os.path.join(STACK, "run_workflow.py"), "start", ui, workflow, profile]
     argv += [f"{k}={v}" for k, v in case["inputs"].items()]
     argv += ["--suite", suite, "--case", case["case"]] + extra
     r = subprocess.run(argv, capture_output=True, text=True)

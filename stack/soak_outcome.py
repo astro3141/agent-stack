@@ -1,7 +1,7 @@
 """One line about how a soak cycle ended. usage: soak_outcome.py <ui-id>"""
-import json, subprocess, sys
+import os, json, subprocess, sys
 
-v = json.loads(subprocess.run(["/opt/venv/bin/python", "/work/stack/run_workflow.py", "show",
+v = json.loads(subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_workflow.py"), "show",
                                sys.argv[1]], capture_output=True, text=True, cwd="/work").stdout
               or "{}")
 o = v.get("output") or {}

@@ -20,8 +20,8 @@ import sys
 import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-PY = "/opt/venv/bin/python"
-STEP = "/work/stack/steps/agent_task.py"
+PY = sys.executable
+STEP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steps", "agent_task.py")
 PROFILE = os.environ.get("AGENTSTACK_EGRESS_PROFILE", "")
 NAME = re.compile(r"[a-z][a-z0-9-]{0,39}")
 SAFE = re.compile(r"[A-Za-z0-9._\- ]{1,200}")
