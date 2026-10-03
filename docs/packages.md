@@ -504,6 +504,104 @@ capability; one it does not carry is skipped when absent, never imported; a pack
 judgements are its own controls. A package with no `controls.py` is listed by `verify` as having
 nothing that pins its rules — which is the truth, and the reason to write one.
 
+## Moving a package to a newer stack
+
+A package is pinned to the stack it was run on (`requires.stack.min`), and the stack moves. Moving
+the package is four steps, and the fourth is the one that pays for the other three:
+
+1. **Read what changed for packages** since your floor (the list below, newest first; each entry
+   names the OPERATIONS section with the measurement). Most entries change nothing in a package
+   that keeps the contract above; the ones that do say so.
+2. **Change what the list says to change**, then raise `requires.stack.min` to the revision you
+   ran on. A floor you did not run on is a guess.
+3. **Run it**: `scripts/packages.sh verify` (your controls, in the agent container), then one real
+   run and its read-back (the checklist in the next section). A package whose controls pin its
+   rules by behaviour rather than by its own source text survives this step with less surprise;
+   `stack/pin_kinds.py packages/<name>/controls.py` says which kind each of yours is (§82).
+4. **Report what you found** — in this repository, with the *package feedback* issue template
+   (`.github/ISSUE_TEMPLATE/package-feedback.md`): what you did, what happened, what you expected,
+   and which document you had read when it surprised you. A package author is the only reader
+   this contract has, so a sentence you had to work out from the source is a defect of this page,
+   and a thing the stack made you build around is a candidate for the stack (CONTRACT.md's second
+   half). Findings arrive the same way whether they are the stack's, the document's or yours to
+   fix; the triage is the maintainer's.
+
+### What changed for packages, by stack revision
+
+Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
+behaviour you notice has a name.
+
+**ec628d4 (2026-10-03, §84 — stop, resume, rollback measured live).**
+- A stop leaves a checkpoint and `run_workflow.py resume` **re-enters the unfinished step from
+  its start**; the steps before it do not run again. A step is therefore entered twice in one run
+  when the run was stopped inside it: `REPEATABLE = "guarded"` and the workspace marker (contract
+  item 3) are what make that safe. A model call made again this way gets an evidence directory of
+  its own, `<run>-<label>-<provider>-r2` (`-r3`, …), and the first attempt's record is kept.
+- Nothing else to change.
+
+**§79–§83 (2026-10-03 — the third review's contract fixes).**
+- **Evidence directory per attempt** (§79): any second call with the same id in the same run —
+  a resume, a chain's retry, a fan-out member's retry — lands in `…-r2`, not over the first.
+  A step or a control of yours that reads evidence directories by name must accept the suffix
+  (`-a<n>` for a fan-out attempt, `-r<n>` for a repeat; the stack's own reader uses
+  `-a\d+(?:-r\d+)?$`). The recorder merges executions by `run_id`, so a call listed in your
+  receipt and found in its directory is one child run, not two.
+- **A fan-out member sees its attempt** as `AGENTSTACK_ATTEMPT` (`1`, `2`, …) and a run started
+  from a step sees its parent as `AGENTSTACK_PARENT_RUN`; `CONDUCTOR_SELF_RUN_ID` is always the
+  run's own id. Read them through `step.run_id()` and `os.environ`; never set them.
+- **One place for providers, addresses and paths** (§80): the stack's provider list is
+  `settings.PROVIDERS`, the broker's address and every root are in `runtime.json`
+  (`step.runtime()["paths"]`, `step.runtime()["broker"]`). A package that carries its own copy
+  of a provider name, a port or `/work/...` root is one stack change away from breaking, and the
+  break is silent. Nothing to change if yours reads them through `step`.
+- **The panel's command is built once and run by the checks** (§81): the 워크플로 tab shows
+  `scripts/cycle.sh <workflow> <profile> key=<default>` for every input your workflow declares
+  with a default, and `verify --level stack` runs that line as printed. Declare inputs with
+  defaults that make the printed line a real first run.
+- **Controls** (§82–§83): a check that pins your own source text (`"…" in open(step).read()`)
+  passes when the behaviour is wrong and fails when the wording changes; the stack converted its
+  own and holds the count with a ratchet. Yours are yours; `pin_kinds.py` classifies any
+  controls file.
+
+**#34 (2026-10-02/03, §76, §79 — the toolchain lives in the image).**
+- `claude`, `conductor` and `preloop` run from `/opt` in the agent image; `/home/agent/.local/bin`
+  is **not on the PATH** and a fresh install never creates it. A package that spawns a tool by
+  name (`claude`, `preloop`) is unaffected. One that names `~/.local/bin/<tool>` — a fallback
+  path, a check, a README line — is naming a directory that is not there; the trading harness has
+  such a fallback for `preloop` (`harness/trader/cli.py`).
+- A rollback to a release recorded before #34 restores that release's own toolchain into the
+  volume (§84); on such an instance both layouts exist for a while and the PATH decides.
+
+**#24, #26, §81 (2026-10-02 — the panel starts nothing).**
+- Starting, resuming and applying configuration are commands; the panel shows them. A RUNBOOK
+  that tells a person to press a button says the command instead:
+  `scripts/cycle.sh <workflow> <profile> key=value` (inputs go through, §66) and
+  `run_workflow.py resume <id>`.
+
+**§70–§71 (2026-10-02 — #13, #22, #23, #25, #26).**
+- **Every model call reaches the record** whether or not your workflow lists it: the recorder
+  reads the run's evidence directories (#22). Listing them in `executions:` is still how you say
+  which ones the judgement rests on.
+- **A run your step starts** through `run_workflow.py start` carries your run as its parent and
+  inherits `--suite`/`--case` (#13). Pass nothing extra.
+- **`contract: 1`** travels in the execution record, a fan-out's receipt and a chain's answer; a
+  reader of yours may check it (#26).
+- **A package with its own runtime** (a desk, a harness, a loop) keeps its runtime and uses the
+  stack's doors: `agent_task.py` for every model call, Preloop for every approval, the recorder
+  or the evidence directory for every record; it never writes into `/route` (#25, CONTRACT.md "A
+  package that brings its own runtime"). This is the contract trading's official, epoch and lane-i
+  workflows are measured against (agent-stack-trading#2).
+- **The documented examples run**: the YAML and Python blocks on this page are parsed and the
+  manifest example is loaded as a package by the stack's checks (#23). Copying from here is safe;
+  so is reporting a block that does not match what you see.
+
+**2485a20 (2026-10-02, §65–§69) — the baseline the package matrix and the two package issues
+(agent-stack-trading#2, agent-stack-devflow#1) were written against.** The step helper
+(`import step`), `requires.stack.min`, `requires.state`, one door (`agent_task.py` chooses broker
+or local from the role), the recorder taking `executions:`, package controls run by
+`packages.sh verify`, and the platform's suite no longer importing packages. Those two issues list,
+per package, what each one still does its own way; this list is what came after them.
+
 ## Before you call it done
 
 ```bash
