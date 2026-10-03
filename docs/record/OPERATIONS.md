@@ -4266,6 +4266,19 @@ GitHub lines read `Failed to connect to 127.0.0.1 port 9`. `release.sh` parses; 
 runs only on an instance and is for the operator's next update day, where the expected line for a
 provider-CLI-only day is the "move with the recreate" list and no refusal.
 
+**Found by the cold start (run 52).** The first push's control ran `drift.sh` as is, and at the
+stack level review_controls run inside the governed runtime, which has no egress: eleven asks each
+waited for a timeout and the control died at 240 s (`subprocess.TimeoutExpired`), stack 21/22. The
+host side of the same run had already printed "every registry asked answered". So `drift.sh` has
+`--offline` — asks nothing, every registry line reads `unanswered` with `not asked (--offline)`,
+and the summary counts them — and the control pins that shape (14 lines, 11 unanswered, 3 unasked,
+the last line) in 0.06 s and no network. `npm view` also gets `--fetch-retries=0
+--fetch-timeout=15000`, one try bounded like curl's 15 s. Measured on this runner in a network
+namespace with no network at all (`unshare -rn`): the whole report in 2.9 s, the GitHub and PyPI
+lines naming their reason (`Could not resolve host: pypi.org`), and npm answering from its cache —
+so the minutes-long wait of a host whose npm has no cache and no network is bounded by the flags
+but was not timed here.
+
 Also fixed here: §74's heading carried a literal `\n\n` from the heredoc that wrote it, and the
 decisions table's first line had the leftovers of a regex that was meant for the #27 row (the row
 itself was never updated); both from the §74 commit.

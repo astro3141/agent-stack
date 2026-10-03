@@ -3,6 +3,8 @@
 #
 #   scripts/drift.sh            one line per pinned component: pinned, latest, same|newer|unknown
 #   scripts/drift.sh --json     the same, as one JSON object
+#   scripts/drift.sh --offline  asks no registry: the pins and the shape, for a control run where
+#                               there is no egress (the governed runtime; §75)
 #
 # Nine external things are pinned here, in five files, and a rebuild that drifted once pulled
 # three newer versions at once (docker/agent.Dockerfile, the comment above CLAUDE_CODE_VERSION).
@@ -17,7 +19,8 @@
 # not as "nothing newer" (OPERATIONS §73: every line `unknown`, and no way to tell which).
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-JSON=0; [ "${1:-}" = "--json" ] && JSON=1
+JSON=0; OFFLINE=0
+for a in "$@"; do case "$a" in --json) JSON=1;; --offline) OFFLINE=1;; *) echo "drift.sh: unknown argument $a" >&2; exit 2;; esac; done
 
 # pin <file> <grep -E pattern> <prefix glob to strip> [<suffix glob to strip>]
 pin() { local v; v="$(grep -oE "$2" "$HERE/$1" | head -1)"; v="${v##$3}"; v="${v%${4:-}}"; printf '%s' "$v"; }
@@ -37,12 +40,16 @@ npm_pin() { pin docker/"$2" "$1@[0-9.]+" '*@'; }
 ERR="$(mktemp)"; trap 'rm -f "$ERR"' EXIT
 LATEST=""; WHY=""
 ask_npm() {
-  WHY=""; LATEST="$(npm view "$1" version 2>"$ERR" | tail -1)"
+  WHY=""; LATEST=""
+  [ $OFFLINE = 0 ] || { WHY="npm: not asked (--offline)"; return; }
+  # one try, and no longer than curl waits: a host with no registry access answers in seconds, not minutes
+  LATEST="$(npm view --fetch-retries=0 --fetch-timeout=15000 "$1" version 2>"$ERR" | tail -1)"
   [ -n "$LATEST" ] || WHY="npm: $(grep -m1 -oE 'code E[A-Z0-9_]+' "$ERR" || grep -m1 . "$ERR" | cut -c1-70)"
   [ "$WHY" != "npm: " ] || WHY="npm: no answer"
 }
 ask_http() {  # <registry host> <url> <python expression over d=json>
   local code; WHY=""; LATEST=""
+  [ $OFFLINE = 0 ] || { WHY="$1: not asked (--offline)"; return; }
   code="$(curl -sS --max-time 15 -o "$ERR.body" -w '%{http_code}' -H 'Accept: application/vnd.github+json' "$2" 2>"$ERR")"
   if [ "$code" = 200 ]; then
     LATEST="$(python3 -c "import json,sys; d=json.load(sys.stdin); print($3)" <"$ERR.body" 2>/dev/null)"

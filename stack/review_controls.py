@@ -747,13 +747,15 @@ def update_controls():
           all(w in dr for w in ('state="same"', 'state="newer"', 'state="unasked"', 'state="unanswered"', "UNANSWERED+=", '"reason":"%s"')))
     check("drift: verify.sh prints the summary line, not only 'nothing newer'",
           'note "drift: $(tail -1 <<<"$drift")"' in (WORK / "scripts" / "verify.sh").read_text())
-    r = subprocess.run(["bash", str(WORK / "scripts" / "drift.sh")], capture_output=True, text=True, timeout=240)
+    # --offline: this runs inside the governed runtime at the stack level, which has no egress, and
+    # eleven asks that each wait for a timeout are what made cold-start run 52 fail (§75)
+    r = subprocess.run(["bash", str(WORK / "scripts" / "drift.sh"), "--offline"], capture_output=True, text=True, timeout=60)
     out = [l for l in r.stdout.splitlines() if l.strip()]
     states = [l.split()[3] for l in out[1:-1]]
-    check("drift: runs here — 14 lines, every state one of the four words, and a last line that counts the unanswered",
-          r.returncode == 0 and len(states) == 14 and set(states) <= {"same", "newer", "unasked", "unanswered"}
-          and (out[-1].startswith("every registry asked answered") or "did not answer from this host" in out[-1]),
-          (r.returncode, states, out[-1:] , r.stderr[-300:]))
+    check("drift: the shape, without a registry — 14 lines, 11 unanswered as 'not asked', 3 unasked, and the last line counts them",
+          r.returncode == 0 and len(states) == 14 and states.count("unanswered") == 11 and states.count("unasked") == 3
+          and out[-1].startswith("11 of 14 lines unanswered") and "not asked (--offline)" in out[-1],
+          (r.returncode, states, out[-1:], r.stderr[-300:]))
 
 
 policy_controls()
