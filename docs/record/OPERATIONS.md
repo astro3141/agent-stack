@@ -4410,3 +4410,31 @@ the login. Roles that name a principal (novel-a's architect and story) do not re
 
 #27 closes with this: the four steps — the cut where a recorded run checks it (§74), the fixtures,
 the provider modules, and this record.
+
+## 78. The file Preloop looks for before it will see codex (#37, 2026-10-03)
+
+**Found** by #27's step-3 evidence (§77) and visible in every cold start's claim line since §31's
+fix: `"onboarded_partially": {"codex": "Error: agent \"codex\" not found. Available agents:
+Claude Code (claude-code)"}`. On a fresh install, codex without a principal then fails with
+`ENOENT ~/.codex/config.toml`, on main as on the branch. Roles that name a principal are not
+affected: that path hands the credential over ACP and never reads the file.
+
+**Why.** The Preloop CLI lists an agent only once that agent's own configuration file exists —
+measured for codex in FINDINGS-281 ("`discover` did not list Codex until `~/.codex/config.toml`
+existed; an empty file suffices") and for claude in §31, where the bootstrap already seeds
+`~/.claude/settings.json` with `{}` for exactly this reason. §31's fix named codex as a kind to
+onboard but seeded nothing for it, so on a home with no `~/.codex/` the CLI answered "not found",
+the claim reported it as partial, and nothing retried after the operator signed in: the claim
+runs once, on the branch of `up.sh` that finds no user.
+
+**Fix.** `bootstrap_preloop.py` keeps the rule as data (`SEED`: claude-code → `.claude/settings.json`
+`{}`, codex → `.codex/config.toml` empty) and seeds each kind's file before asking the CLI;
+`seed_for()` never overwrites. The issue's first proposal, a retry at every bring-up, is not
+needed once the cause is the missing file; it stays open as a thought only if a cold start still
+reports a partial onboarding for another reason.
+
+**Measured.** review_controls 145/145 (three pins: both seeds, no overwrite, the seed before the
+CLI). The stack-level measurement is a fresh cold start's claim line — `"onboarded": true` and no
+`onboarded_partially` — on `cold-start-linux` RUN_LINE. What this level cannot say: that codex
+without a principal now completes a call on a fresh install (§77's x0). That takes a cold start
+with a codex login, the operator's, and its line goes here.
