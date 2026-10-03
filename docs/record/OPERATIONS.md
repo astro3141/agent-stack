@@ -4135,3 +4135,61 @@ scripts/verify.sh --level full
 ```
 
 and the numbers go here, under this section, as §65 did for day 1.
+
+### §73 addendum: update day 2 on the instance, steps 3–5 (measured 2026-10-03)
+
+**Before**, in the procedure's order this time:
+
+```
+scripts/up.sh --check                             ALL CHECKS PASSED
+scripts/backup.sh                                 ~/agentstack-backups/agentstack-backup-20261002-235705.tar.gz.enc
+                                                  1.3 GB, 14 members; `state` MISSING (this instance has no
+                                                  state/ yet; not required); key ~/.cadp-backup.key, the old
+                                                  name's file, which backup.sh falls back to when
+                                                  ~/.agentstack-backup.key does not exist
+scripts/release.sh record --tag pre-202610        claude 2.1.278 · conductor 0.1.37 · codex 0.155.1 · grok 1.0.40
+scripts/drift.sh                                  every line `unknown`: no registry answered from this host
+```
+
+**The update.**
+
+```
+scripts/release.sh update --to 911dc67 --replace-toolchain
+  ALL CHECKS PASSED · toolchain answers; the previous copy was removed · policy applied
+  claude 2.1.287 · conductor 0.1.41 · preloop_cli 0.15.0 · codex 0.160.0 · grok 1.0.46
+```
+
+**verify full.** The first run was 22/23: novel-a held (`author:claude (stale: 33503s old >
+1800s)`) and router_controls were skipped for the same reason. The instance's claude login had
+expired for the quota reading ("Claude OAuth token expired. CodexBar CLI does not launch Claude
+to refresh credentials"). The update was not the cause: the last good reading was nine hours
+older than the update. The operator signed in again on the panel, and the second run:
+
+```
+scripts/verify.sh --level full                    24/24 — trial_controls 504/504, review_controls 120/120,
+                                                  router_controls 26/26, docs/packages.md 10/10, novel 32/32,
+                                                  hello-lane and child-run (same_run: yes on Conductor 0.1.41),
+                                                  the adapter loads with acpx 0.19.4, auto PASS (claude),
+                                                  novel-a PASS (architect=codex author=claude story=codex
+                                                  history=claude cold=grok, every reviewer COMPLETED)
+```
+
+**§50's grok principal pair**, on grok 1.0.46, brokered into the `closed` profile:
+
+```
+grok, principal novel-reviewer, write {WS}/review_r7.json       COMPLETED, produced: true, mcp_rule_denials 0
+grok, principal novel-reviewer, write {WS}/zz_not_allowed.json  DENIED, mcp_rule_denials 1
+                                                                ("Access denied: Scoped rule 2")
+```
+
+**N7 on the three providers**, read from the evidence of the runs above:
+
+| provider | calls read | writes | native write / shell |
+|---|---|---|---|
+| claude 2.1.287, claude-agent-acp 0.85.1 | auto f26adcb9, novel author, novel history | `mcp__preloop__write_file`; permissions.jsonl `routed=preloop_mcp_rules`, `allow_once` | 0 (native reads `Read File`/`Find` ran, as before) |
+| codex 0.160.0, codex-acp 2.1.1 | auto 8a733846, novel architect, novel story | `mcp.preloop.write_file`, reads `mcp.preloop.read_file`/`read_multiple_files` | 0 (codex-acp 2.1.1 reports an MCP call as `kind: execute`) |
+| grok 1.0.46 | the §50 pair, novel cold | `use_tool` → `preloop__write_file` | 0 executed: `write`, `search_replace` refused ("deny rule on edit"), `run_terminal_command` refused ("deny rule on bash"), `read_file` refused (ACP fs `--deny-all`) |
+
+grok's native `grep` (and `list_dir`) ran. The posture denies writes, shell and the web, and
+leaves reads alone. Every cold-role grok run on 1.0.40 since 09-23 shows the same, so 1.0.46
+reads the posture as 1.0.40 did. §64's cold role completed through Preloop on this run.
