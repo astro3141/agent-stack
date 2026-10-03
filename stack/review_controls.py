@@ -758,6 +758,19 @@ def update_controls():
     check("instance: up.sh --check names an unused pre-#34 toolchain copy in the volume, with the command, and does not remove it",
           "pre-#34 toolchain copy" in up and "alpine rm -rf /vol/.local" in up
           and up.index("test -d /home/agent/.local/share/claude") < up.index('echo "        docker run --rm'))
+    # #37: the Preloop CLI lists an agent only once its config file exists; a fresh home has none
+    bp = importlib.import_module("bootstrap_preloop")
+    import tempfile
+    with tempfile.TemporaryDirectory() as home:
+        made = [bp.seed_for(k, home) for k in ("claude-code", "codex", "grok")]
+        cx = Path(home) / ".codex" / "config.toml"; cl = Path(home) / ".claude" / "settings.json"
+        check("onboarding: the bootstrap seeds the file each vendor's CLI must have before Preloop sees it — codex's empty, claude's {}",
+              cx.is_file() and cx.read_text() == "" and cl.is_file() and json.loads(cl.read_text()) == {} and made[2] is None, made)
+        cx.write_text("model_provider = 'preloop'\n")
+        bp.seed_for("codex", home)
+        check("onboarding: a file that exists is left alone", cx.read_text() == "model_provider = 'preloop'\n")
+    check("onboarding: the seed happens for every kind the claim onboards, before the CLI is asked",
+          "for kind in agent_kinds:\n        seed_for(kind, home)" in (HERE / "bootstrap_preloop.py").read_text())
     dr = (WORK / "scripts" / "drift.sh").read_text()
     check("drift: four states, and an unanswered line carries the registry's reason",
           all(w in dr for w in ('state="same"', 'state="newer"', 'state="unasked"', 'state="unanswered"', "UNANSWERED+=", '"reason":"%s"')))

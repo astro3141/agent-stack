@@ -4366,3 +4366,77 @@ pins move. What this round measured is what mattered: an update with no flag end
 refusal and with the three tools answering from `/opt`.
 
 The old copy is gone; the volume keeps its logins and state. #34 closes with this.
+
+## 77. The adapter's last cut: one module per provider, the call's context instead of globals (#27 step 3, 2026-10-03)
+
+The half of `run-agent.mjs` that §74 left in place — the provider table and the module-level
+`LOGIN`, `PRINCIPAL`, `HOOK_FOR` — was the half only a model call could measure. The operator
+made the measurement and the cut (PR #38, branch `issue27-run-agent-split`, cd0641e).
+
+**Cut.** `stack/adapter/providers/{claude,codex,grok}.mjs`: each a function of one call's context
+(login directory, principal, egress, the MCP url), returning the profile `run-agent.mjs` used to
+hold in its table. The context is built once in `main()` from the request; the hook is a `const`
+there and its token travels to the permission POST. `run-agent.mjs` 430 → 297 lines, naming no
+provider internal. `stack/adapter/providers_check.mjs` (20 checks, no model) pins that a module
+follows the login and principal it was made with, that a second call in one process does not reach
+the first, that the native-tool switches and the downstream rules are unchanged, and that no
+module-level `let` remains; it runs at the static level and in review_controls. Two trial_controls
+pins follow the renamed expressions.
+
+**Measured, on a fresh cold start beside the live instance** (coldthree, a clone of 9cfc516,
+signed in to all three providers; the branch's ten files overlaid on the clone, the live instance
+untouched):
+
+| | main 9cfc516 | branch |
+|---|---|---|
+| verify.sh --level full | 24/24 | 24/24 |
+| trial / review / router controls | 500 / 141 / 26 | 500 / 142 / 26 |
+| auto, novel-a | PASS, PASS | PASS, PASS |
+
+The same seven calls through `agent_task.py` → `run-agent.mjs` on each side — claude ×3 (the
+adapter's own login, a local principal, a brokered principal), codex ×2, grok ×2 (allow, deny) —
+**7/7 the same**: result keys, status, `produced`, provider, principal, route, hook source, the
+permission requests (title, routed, outcome), the MCP denials ("Access denied: Scoped rule 2") and
+the failure; run ids, paths, timings, token counts, model text and vendor session ids left out as
+volatile. The tools that ran were identical per call on claude and codex; grok tried its native
+write once on each side and was refused both times — the model's behaviour, not the adapter's.
+Model-free in the agent's node: replay 4/4, provider checks 20/20. On this runner: static 13/13,
+review_controls 142/142; cold-start-linux **run 60** on cd0641e, green.
+
+**Found on the way, not the branch's (#37).** codex without a principal fails on a fresh install,
+on main as on the branch: `ENOENT ~/.codex/config.toml`. The claim's onboarding runs once, before
+codex is signed in, the Preloop CLI answers `agent "codex" not found`, and nothing retries after
+the login. Roles that name a principal (novel-a's architect and story) do not read that file.
+
+#27 closes with this: the four steps — the cut where a recorded run checks it (§74), the fixtures,
+the provider modules, and this record.
+
+## 78. The file Preloop looks for before it will see codex (#37, 2026-10-03)
+
+**Found** by #27's step-3 evidence (§77) and visible in every cold start's claim line since §31's
+fix: `"onboarded_partially": {"codex": "Error: agent \"codex\" not found. Available agents:
+Claude Code (claude-code)"}`. On a fresh install, codex without a principal then fails with
+`ENOENT ~/.codex/config.toml`, on main as on the branch. Roles that name a principal are not
+affected: that path hands the credential over ACP and never reads the file.
+
+**Why.** The Preloop CLI lists an agent only once that agent's own configuration file exists —
+measured for codex in FINDINGS-281 ("`discover` did not list Codex until `~/.codex/config.toml`
+existed; an empty file suffices") and for claude in §31, where the bootstrap already seeds
+`~/.claude/settings.json` with `{}` for exactly this reason. §31's fix named codex as a kind to
+onboard but seeded nothing for it, so on a home with no `~/.codex/` the CLI answered "not found",
+the claim reported it as partial, and nothing retried after the operator signed in: the claim
+runs once, on the branch of `up.sh` that finds no user.
+
+**Fix.** `bootstrap_preloop.py` keeps the rule as data (`SEED`: claude-code → `.claude/settings.json`
+`{}`, codex → `.codex/config.toml` empty) and seeds each kind's file before asking the CLI;
+`seed_for()` never overwrites. The issue's first proposal, a retry at every bring-up, is not
+needed once the cause is the missing file; it stays open as a thought only if a cold start still
+reports a partial onboarding for another reason.
+
+**Measured.** review_controls 145/145 (three pins: both seeds, no overwrite, the seed before the
+CLI). The stack-level measurement is a fresh cold start's claim line — `"onboarded": true` and no
+`onboarded_partially`. **Run 62** (ddddce6): `{"ok": true, "user": "owner", "onboarded": true}` — the first
+cold start since §31 whose claim line carries no partial; stack 23/23 (trial 500/500, review
+145/145, the provider modules' line new since #38). What this level cannot say: that codex
+without a principal now completes a call on a fresh install (§77's x0). That takes a cold start
+with a codex login, the operator's, and its line goes here.

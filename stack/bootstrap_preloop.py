@@ -104,27 +104,48 @@ def claim(api, username, email, bootstrap_token, secrets_file):
     return api_key, None
 
 
+# What the Preloop CLI has to find in the home before it will see an agent at all: the file each
+# vendor's CLI keeps its configuration in. The image ships none of them and the home is a volume,
+# so on a fresh machine neither is there — and an agent whose file is missing is "not found", not
+# onboarded, and never retried (issue #37). An empty one is enough (measured: FINDINGS-281 for
+# codex, "an empty file suffices"; §31 for claude); what goes into it afterwards is onboarding's
+# own writing (the Preloop entry) and then the agent's, not this step's business.
+SEED = {
+    "claude-code": (".claude/settings.json", "{}"),
+    "codex":       (".codex/config.toml", ""),
+}
+
+
+def seed_for(kind, home):
+    """Create the file the Preloop CLI needs to see `kind`, if it is not there; the path, or None
+    when this kind needs none. Never overwrites: a file that exists is the agent's."""
+    if kind not in SEED:
+        return None
+    rel, content = SEED[kind]
+    path = os.path.join(home, rel)
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+    return path
+
+
 def onboard(api, api_key, agent_kinds):
     """Let the Preloop CLI create each agent's managed identity, credential and permission hook.
-
-    The CLI reads `$HOME/.claude/settings.json` and fails outright if it is not there. The image
-    ships none and the home is a volume, so on a fresh machine it is not there — measured, both
-    ways round. An empty object is enough for onboarding to proceed; what goes in it afterwards is
-    the agent's own configuration, not this step's business.
 
     **Every vendor this stack routes to, not only Claude.** On the second machine a fresh install
     onboarded claude-code and nothing else, so `~/.codex/config.toml` had no Preloop entry and
     every codex lane died in under a second — silently, because the step dropped the reason
-    (OPERATIONS §31). Onboarding here also means it happens on the admin side, which is the only
-    side allowed to create an agent at all: from the governed network the guard answers 403, and
-    that is the boundary working, not a problem to route around.
+    (OPERATIONS §31). The fix there named both kinds; the third install showed the second one
+    still "not found", because the CLI looks for `~/.codex/config.toml` before it will list codex,
+    and a fresh home has none (#37, §78) — so each kind's file is seeded first (SEED). Onboarding
+    here also means it happens on the admin side, which is the only side allowed to create an
+    agent at all: from the governed network the guard answers 403, and that is the boundary
+    working, not a problem to route around.
     """
-    cfg_dir = os.path.join(os.path.expanduser("~"), ".claude")
-    cfg = os.path.join(cfg_dir, "settings.json")
-    if not os.path.exists(cfg):
-        os.makedirs(cfg_dir, exist_ok=True)
-        with open(cfg, "w", encoding="utf-8") as f:
-            json.dump({}, f)
+    home = os.path.expanduser("~")
+    for kind in agent_kinds:
+        seed_for(kind, home)
     r = subprocess.run(["preloop", "auth", "login", "--token", api_key, "--url", api, "--force"],
                        capture_output=True, text=True, timeout=300)
     if r.returncode:
