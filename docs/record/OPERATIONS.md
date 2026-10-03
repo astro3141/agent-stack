@@ -4435,6 +4435,8 @@ reports a partial onboarding for another reason.
 
 **Measured.** review_controls 145/145 (three pins: both seeds, no overwrite, the seed before the
 CLI). The stack-level measurement is a fresh cold start's claim line — `"onboarded": true` and no
-`onboarded_partially` — on `cold-start-linux` RUN_LINE. What this level cannot say: that codex
+`onboarded_partially`. **Run 62** (ddddce6): `{"ok": true, "user": "owner", "onboarded": true}` — the first
+cold start since §31 whose claim line carries no partial; stack 23/23 (trial 500/500, review
+145/145, the provider modules' line new since #38). What this level cannot say: that codex
 without a principal now completes a call on a fresh install (§77's x0). That takes a cold start
 with a codex login, the operator's, and its line goes here.
