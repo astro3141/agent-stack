@@ -73,21 +73,31 @@ RUN mkdir -p /opt/claude && HOME=/opt/claude bash -c 'curl -fsSL https://claude.
     && test -x /opt/claude/.local/bin/claude && chmod -R a+rX /opt/claude
 
 # uv + Conductor with the extras this PoC needs. uv's tool directory and its bin are under /opt
-# too (UV_TOOL_DIR, UV_TOOL_BIN_DIR); the venv it makes is /opt/uv/tools/conductor-cli.
-RUN pip install --no-cache-dir --prefix=/opt/uv uv && test -x /opt/uv/bin/uv
+# too (UV_TOOL_DIR, UV_TOOL_BIN_DIR); the venv it makes is /opt/uv/tools/conductor-cli. HOME is
+# root's for these two steps: whatever they write beside /opt must not land in /home/agent.
+RUN HOME=/root pip install --no-cache-dir --prefix=/opt/uv uv && test -x /opt/uv/bin/uv
 # v0.1.41 (2026-09-29): run bundles, secrets bindings on script steps; OPERATIONS §72, #17
 ARG CONDUCTOR_COMMIT=11dcc41ed3df78f0806127cc901822fe8758294b
-RUN UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/opt/uv/bin \
+RUN HOME=/root UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/opt/uv/bin \
       uv tool install --no-cache "conductor-cli[telemetry,claude-agent-sdk] @ git+https://github.com/microsoft/conductor.git@${CONDUCTOR_COMMIT}" \
     && test -x /opt/uv/bin/conductor && test -x /opt/uv/tools/conductor-cli/bin/python && chmod -R a+rX /opt/uv
 
-# Preloop CLI, so onboarding happens INSIDE the container and never touches the host.
+# Preloop CLI, so onboarding happens INSIDE the container and never touches the host. Its installer
+# also onboards the agents it finds under $HOME and writes ~/.preloop/config.yaml there — that is
+# the agent's home, so this step runs as the agent, as it always did; run as root it left the file
+# root-owned and the claim of a fresh instance failed (cold-start run 55, §76). Only the binary's
+# directory is handed to root afterwards.
+RUN mkdir -p /opt/preloop/bin && chown agent:agent /opt/preloop/bin
+USER agent
 ARG PRELOOP_CLI_VERSION=0.15.0
 RUN curl -fsSL https://preloop.ai/install/cli -o /tmp/preloop-cli.sh \
-    && mkdir -p /opt/preloop/bin \
     && PRELOOP_VERSION=${PRELOOP_CLI_VERSION} INSTALL_DIR=/opt/preloop/bin \
        sh /tmp/preloop-cli.sh < /dev/null || true
-RUN test -x /opt/preloop/bin/preloop && chmod -R a+rX /opt/preloop
+USER root
+RUN test -x /opt/preloop/bin/preloop && chown -R root:root /opt/preloop && chmod -R a+rX /opt/preloop
+# The volume is seeded from /home/agent as it is here, so nothing in it may belong to anyone but
+# the agent — the build says so, rather than a fresh instance finding out.
+RUN test -z "$(find /home/agent ! -user agent)"
 USER agent
 
 # Linux-side virtualenv for the fixture's pytest (the host .venv is a Windows venv).

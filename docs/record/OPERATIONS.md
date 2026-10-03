@@ -4315,6 +4315,16 @@ and unused. `up.sh --check` notes it with the one-line removal (`rm -rf /vol/.lo
 volume, stack down) and does not run it — the operator's one-time step, and the volume still holds
 logins, so nothing here deletes in it.
 
+**Found by the cold start (run 55).** The image built — claude's installer, run as root with
+`/opt/claude` as its home, uv with a prefix and the Preloop installer with its directory all
+answered — and the fresh instance then could not be claimed: `open /home/agent/.preloop/config.yaml:
+permission denied`. The Preloop installer does more than install: it onboards the agents it finds
+under `$HOME` and writes `~/.preloop/config.yaml`, and `$HOME` was `/home/agent` with the step run
+as root, so the file the volume was seeded from belonged to root. As the agent, which is how that
+step always ran, the file is the agent's; only the binary's directory is handed to root after.
+The two root steps (pip, uv) get `HOME=/root`, and the build now asserts
+`find /home/agent ! -user agent` is empty, so this class of mistake stops at the build.
+
 **Measured.** review_controls 141/141 (the update group rewritten: 14 pins on the Dockerfile,
 compose, release.sh, the docs, up.sh and drift), static on this runner; the image build and the
 stack level on `cold-start-linux` — run number below once it ran. This runner cannot build the

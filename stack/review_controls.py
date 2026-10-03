@@ -729,8 +729,10 @@ def update_controls():
                                 "test -x /opt/uv/bin/conductor", "INSTALL_DIR=/opt/preloop/bin", "test -x /opt/preloop/bin/preloop")))
     check("image: nothing is installed under /home/agent, and /home/agent/.local/bin is not on PATH",
           "/home/agent/.local" not in df.replace("Nothing of them is under /home/agent", "") and "PATH=/opt/claude/.local/bin:/opt/uv/bin:/opt/preloop/bin:" in df)
-    check("image: the installs run as root and the first USER agent comes after them",
-          df.index("test -x /opt/preloop/bin/preloop") < df.index("\nUSER agent\n"))
+    check("image: the Preloop installer runs as the agent (it writes the agent's home), the rest as root, and the build proves /home/agent is all the agent's",
+          df.index("chown agent:agent /opt/preloop/bin\nUSER agent\n") < df.index("sh /tmp/preloop-cli.sh")
+          < df.index("chown -R root:root /opt/preloop") < df.index('RUN test -z "$(find /home/agent ! -user agent)"')
+          and "RUN HOME=/root pip install" in df and "RUN HOME=/root UV_TOOL_DIR" in df)
     check("image: claude's self-update is off — the pin is the version", "DISABLE_AUTOUPDATER=1" in df)
     check("image: the three are world-readable for the role users a step runs as",
           all(f"chmod -R a+rX {d}" in df for d in ("/opt/claude", "/opt/uv", "/opt/preloop")))
