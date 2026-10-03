@@ -81,6 +81,33 @@ def load(path, name, ws):
     return m
 
 
+def ops_post(path, body, calls=False):
+    """POST to the panel's API handler in-process: no socket, no docker.
+
+    ops/server.py is loaded once; its `jlocal`, `jexec` and `dexec` are replaced by recorders for
+    the call, so what a route would run — and where — is read back instead of run."""
+    import io, importlib.util as il
+    srv = sys.modules.get("ops_server_behaviour")
+    if srv is None:
+        spec = il.spec_from_file_location("ops_server_behaviour", "/work/ops/server.py")
+        srv = il.module_from_spec(spec); sys.modules["ops_server_behaviour"] = srv
+        spec.loader.exec_module(srv)
+    rec = {"local": [], "exec": []}
+    srv.jlocal = lambda args, timeout=60: (rec["local"].append(list(args)) or {"ok": True})
+    srv.jexec = lambda args, **kw: (rec["exec"].append(list(args)) or {"ok": True})
+    srv.dexec = lambda args, **kw: (rec["exec"].append(list(args)) or (0, "", ""))
+    raw = json.dumps(body).encode()
+    h = srv.H.__new__(srv.H)
+    h.path, h.command, h.request_version, h.requestline = path, "POST", "HTTP/1.1", f"POST {path} HTTP/1.1"
+    h.client_address, h.headers = ("127.0.0.1", 0), {"Content-Length": str(len(raw))}
+    h.rfile, h.wfile, h.log_message = io.BytesIO(raw), io.BytesIO(), (lambda *a, **k: None)
+    h.do_POST()
+    head, _, out = h.wfile.getvalue().partition(b"\r\n\r\n")
+    status = int(head.split(b" ")[1])
+    answer = json.loads(out or b"{}")
+    return (status, answer, rec) if calls else (status, answer)
+
+
 # triage — novel's own judgement; pinned by packages/novel/controls.py since 2026-10
 
 
@@ -932,8 +959,17 @@ def controls_approval_boundary():
     check("the panel reaches Preloop past the guard",
           "AGENTSTACK_PRELOOP_API: http://preloop-api:8000" in compose, True)
     ops_server = open("/work/ops/server.py", encoding="utf-8").read()
+    # behaviour (§83): the handler, called with the ops module's two exec functions replaced; what
+    # the decision route calls, and with what, is read from the calls
+    _uuid = "0f6b0b5e-5a1d-4b9e-9a2a-0f3c2d1e4b5a"
+    _st, _body, _calls = ops_post("/api/approvals/" + _uuid, {"decision": "approve", "comment": "fine"},
+                                  calls=True)
     check("the panel runs the decision itself, not in the agent",
-          'jlocal([f"{STACK}/approvals.py", "decide"' in ops_server, True)
+          (_st, _body.get("ok"), _calls["local"], _calls["exec"]),
+          (200, True, [["/work/stack/approvals.py", "decide", _uuid, "approve", "fine"]], []))
+    _st, _body, _calls = ops_post("/api/approvals/" + _uuid, {"decision": "maybe"}, calls=True)
+    check("and a decision that is neither approve nor decline never reaches Preloop",
+          (_st, _calls["local"], _calls["exec"]), (400, [], []))
     # #24 (decided 2026-10-02): the panel neither generates nor applies configuration — the
     # endpoints went with the start and resume buttons. The split (generate in the agent, apply
     # on the admin side past the guard, §21) is pinned where it lives now: the bring-up.
@@ -1861,7 +1897,7 @@ def controls_packages():
     _rwb = load("/work/stack/run_workflow.py", "run_workflow_behaviour_b", "/tmp")
     # the question is the id, not the stack: the capability probe answers "all there" for this call.
     # `capabilities` is one module shared by every loader of run_workflow (sys.modules), so the
-    # patch is undone before the next group asks it real questions (CI run 72 saw it leak).
+    # patch is undone before the next group asks it real questions (cold-start run 74 saw it leak).
     _caps_real = (_rwb.capabilities.probe, _rwb.capabilities.missing)
     _rwb.capabilities.probe = lambda profile=None: {}
     _rwb.capabilities.missing = lambda *a, **k: []
@@ -2277,10 +2313,16 @@ def controls_resume():
     hub = open("/work/hub/index.html", encoding="utf-8").read()
     ops_server = open("/work/ops/server.py", encoding="utf-8").read()
 
+    # behaviour (§83): the command that starts a run, from the function that builds it
+    _argv = rw.conductor_argv("hello-lane", "research-default", {"text": "hi there"})
     check("a run is started with the dashboard that makes a graceful stop possible",
-          '"--web", "--web-port", "0"' in src, True)
+          ("--web" in _argv and _argv[_argv.index("--web-port") + 1] == "0"
+           and "--no-interactive" in _argv and _argv[3] == rw.WORKFLOWS["hello-lane"]), True)
+    check("and the profile and the inputs travel as -i pairs",
+          [_argv[i + 1] for i, a in enumerate(_argv) if a == "-i"],
+          ["profile=research-default", "text=hi there"])
     check("and the reason is written down, not the feature",
-          "checkpoint" in src.split('"--web", "--web-port", "0"')[0][-700:], True)
+          "checkpoint" in (rw.conductor_argv.__doc__ or ""), True)
 
     # The view, driven with a log that was stopped and then finished — the shape a resume leaves.
     with tempfile.TemporaryDirectory() as tmp:
@@ -2314,10 +2356,46 @@ def controls_resume():
     # What `--web` cost, and what pays for it: the dashboard outlives the workflow, so waiting for
     # the process to exit waits forever (measured: five launchers asleep half an hour after their
     # runs ended, and a suite whose third case never started).
-    check("a run comes back when the workflow ends, not when the process does",
-          "def run_conductor(" in src and "proc.terminate()" in src, True)
-    check("and a resume looks only past what was already in the log",
-          "from_byte" in src, True)
+    # behaviour (§83): run_conductor itself, with a child standing in for Conductor. One child
+    # writes the workflow's end into the log and then stays, as the dashboard does; the launcher
+    # must come back, say 0, and the child must be gone. The other child writes nothing into a log
+    # that already ends with a stop (what a resume starts from): the launcher must still be waiting
+    # when that stop is all there is. The two run side by side, so the wait is paid once.
+    import threading as _thr, time as _t9
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        rw.runstate.RUNS = root
+        stop = _json.dumps({"type": "workflow_failed", "data": {"message": "stopped by user"}})
+        done = _json.dumps({"type": "workflow_completed", "data": {"output": {"decision": "PASS"}}})
+        logs = {}
+        for ui in ("u3", "u4"):
+            d = root / ui / "tmp" / "conductor"; d.mkdir(parents=True)
+            logs[ui] = d / f"conductor-p281-{ui}-20260101-000000-abcd1234.events.jsonl"
+            logs[ui].write_text(stop + chr(10))
+        pid3, pid4 = root / "u3.pid", root / "u4.pid"
+        argv3 = ["sh", "-c", f"echo $$ > {pid3}; sleep 3; printf '%s\\n' '{done}' >> {logs['u3']}; exec sleep 300"]
+        argv4 = ["sh", "-c", f"echo $$ > {pid4}; exec sleep 300"]
+        out = {}
+        def _go(ui, argv):
+            with open(root / ui / "run.log", "wb") as lg:
+                t0 = _t9.time(); out[ui] = (rw.run_conductor(ui, argv, dict(os.environ), lg), _t9.time() - t0)
+        th3 = _thr.Thread(target=_go, args=("u3", argv3)); th3.start()
+        th4 = _thr.Thread(target=_go, args=("u4", argv4)); th4.start()
+        th3.join(timeout=60)
+        still_waiting = th4.is_alive()                 # the stop already in the log did not end it
+        try: os.kill(int(pid4.read_text().strip()), 15)   # let u4's child go: it left on its own
+        except (ProcessLookupError, ValueError, FileNotFoundError): pass
+        th4.join(timeout=30)
+        rc3, took3 = out.get("u3", (None, None))
+        try:
+            os.kill(int(pid3.read_text().strip()), 0); gone = False
+        except (ProcessLookupError, ValueError, FileNotFoundError):
+            gone = True
+        check("a run comes back when the workflow ends, not when the process does",
+              (rc3, took3 is not None and took3 < 45, gone), (0, True, True))
+        check("our own tidy-up is not reported as the run failing", rc3 != -15 and rc3 == 0, True)
+        check("and a resume looks only past what was already in the log",
+              (still_waiting, out.get("u4", (None,))[0] is not None), (True, True))
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
         d = root / "u2" / "tmp" / "conductor"
@@ -2329,16 +2407,34 @@ def controls_resume():
         check("the stop that a resume starts from is not read as its end",
               rw.run_ended("u2", len(first) + 1), False)
         check("and what the resume itself writes is", rw.run_ended("u2", 0), True)
-    check("our own tidy-up is not reported as the run failing",
-          "Reporting -15 as the exit" in src, True)
 
     # #24 (decided 2026-10-02): continuing a run is a command, like starting one — the panel's
     # resume button and the API's resume endpoint went with the start button. What stays is the
     # fact: a run that can be continued says so, with the command.
-    check("continuing a run is a command", "def cmd_resume(" in src
-          and "run_workflow.py resume" in open("/work/docs/commands.md", encoding="utf-8").read(), True)
+    # behaviour (§83): cmd_resume answers in JSON for a run that is not there and for one that left
+    # no checkpoint; the panel's API answers 404 for a resume route (the handler called directly,
+    # with no socket and no docker: the ops module's exec functions are replaced for the call)
+    import io as _io9, contextlib as _ctx9
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp); rw.runstate.RUNS = root
+        (root / "zz-nocp-1").mkdir(); (root / "zz-nocp-1" / "meta.json").write_text(_json.dumps(
+            {"ui_id": "zz-nocp-1", "state": "finished", "launcher_pid": 1, "instance": "x"}))
+        _ans = {}
+        for ui in ("nosuch-run", "zz-nocp-1"):
+            buf = _io9.StringIO()
+            with _ctx9.redirect_stdout(buf):
+                rc = rw.cmd_resume(ui)
+            _ans[ui] = (rc, _json.loads(buf.getvalue().strip().splitlines()[-1]).get("error", ""))
+    check("continuing a run is a command",
+          "run_workflow.py resume" in open("/work/docs/commands.md", encoding="utf-8").read(), True)
+    check("a resume of a run that is not there is an answer",
+          _ans["nosuch-run"], (1, "no such run"))
+    check("and a run that left no checkpoint says what is missing",
+          (_ans["zz-nocp-1"][0], "no checkpoint" in _ans["zz-nocp-1"][1]), (1, True))
+    _st, _body = ops_post("/api/runs/abc123/resume", {})
     check("the panel offers no resume and the API has no resume endpoint",
-          "data-resume" not in hub and "/resume" not in hub and '/resume", p)' not in ops_server, True)
+          ("data-resume" not in hub and "/resume" not in hub, _st, _body.get("error")),
+          (True, 404, "no such route"))
     check("a run that can be continued says so, with the command",
           'r.resumable ? ` <span class="muted">재개 가능 · <code>run_workflow.py resume' in hub, True)
 

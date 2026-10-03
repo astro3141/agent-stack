@@ -302,15 +302,7 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
             "unrecorded": bool(allow_unrecorded and not caps["record"]["available"]),
             "launcher_pid": os.getpid(), "instance": instance_id()}
     meta_path(ui).write_text(json.dumps(meta))
-    # `--web` is not for anyone to look at: the dashboard binds the container's loopback and is
-    # not published (OPERATIONS §14). It is here because `conductor stop` escalates *starting from
-    # a graceful cancel via the dashboard*, and that is the path that lets a run write a
-    # checkpoint. Without it a stopped run leaves nothing to resume from. Port 0 = auto-selected,
-    # so concurrent runs do not collide.
-    argv = ["conductor", "--silent", "run", WORKFLOWS[workflow], "--no-interactive",
-            "--web", "--web-port", "0", "-i", f"profile={profile}"]
-    for k, v in inputs.items():
-        argv += ["-i", f"{k}={v}"]
+    argv = conductor_argv(workflow, profile, inputs)
     env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor"),
            # this run's own Conductor sets CONDUCTOR_SELF_RUN_ID afresh; the parent travels apart
            "AGENTSTACK_PARENT_RUN": parent}
@@ -319,6 +311,23 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
     meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})
     meta_path(ui).write_text(json.dumps(meta))
     return 0
+
+
+def conductor_argv(workflow, profile, inputs):
+    """The command that starts a run: Conductor on the workflow's file, with the profile and the
+    inputs as `-i` pairs.
+
+    `--web` is not for anyone to look at: the dashboard binds the container's loopback and is
+    not published (OPERATIONS §14). It is here because `conductor stop` escalates *starting from
+    a graceful cancel via the dashboard*, and that is the path that lets a run write a
+    checkpoint. Without it a stopped run leaves nothing to resume from. Port 0 = auto-selected,
+    so concurrent runs do not collide.
+    """
+    argv = ["conductor", "--silent", "run", WORKFLOWS[workflow], "--no-interactive",
+            "--web", "--web-port", "0", "-i", f"profile={profile}"]
+    for k, v in inputs.items():
+        argv += ["-i", f"{k}={v}"]
+    return argv
 
 
 def run_conductor(ui, argv, env, log):

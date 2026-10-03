@@ -1023,7 +1023,7 @@ def pinkind_controls():
         kinds = {}
     rc = kinds.get(str(HERE / "review_controls.py"), {}); tc = kinds.get(str(HERE / "trial_controls.py"), {})
     check("pins: review_controls' source-text pins do not grow (≤ 51 at §82)", 0 < rc.get("source-text", 999) <= 51, rc)
-    check("pins: trial_controls' source-text pins do not grow (≤ 185 at §83)", 0 < tc.get("source-text", 999) <= 185, tc)
+    check("pins: trial_controls' source-text pins do not grow (≤ 179 at §83)", 0 < tc.get("source-text", 999) <= 179, tc)
     check("pins: behaviour checks are the majority of review_controls", rc.get("behaviour", 0) > rc.get("source-text", 0) + rc.get("absence", 0), rc)
 
 
