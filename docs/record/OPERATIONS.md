@@ -4694,4 +4694,4 @@ number the ratchet holds rather than an estimate.
 
 **Measured, third round.** The three groups and `controls_composition` on this host in one
 process, 145/145; pin_kinds trial 167/440, review 51/170; the ratchet bound lowered to 167;
-review_controls and static here; the cold start — run number below.
+review_controls 187/187 and static 13/13 here; **cold-start run 78 green**: trial_controls 507/507 in the container, review 187/187, stack 24/24.
