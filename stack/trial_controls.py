@@ -1831,8 +1831,10 @@ def controls_packages():
     mjs = open("/work/stack/run-agent.mjs", encoding="utf-8").read()
     check("the credential presented is the running agent's",
           "function preloopHook(provider)" in mjs and "h.source === want" in mjs, True)
+    # the result shape lives in stack/adapter/result.mjs since §74; the adapter hands it the hook
     check("and which one it was is in the run's own record",
-          '"hook":' in mjs.split("const out = {")[1][:400] or "hook: HOOK_FOR" in mjs, True)
+          "hook: HOOK_FOR" in mjs
+          and "hook: hook ? { principal: hook.hook.runtime_principal" in open("/work/stack/adapter/result.mjs", encoding="utf-8").read(), True)
     co_src = open("/work/stack/collect_obs.py", encoding="utf-8").read()
     check("the newest identity is the one presented, not the first listed",
           "Newest first" in mjs and "mtimeMs" in mjs, True)
