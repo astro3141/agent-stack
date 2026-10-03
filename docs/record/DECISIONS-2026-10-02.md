@@ -97,7 +97,7 @@ CADP effect client와 CADP-GAP의 큰 갭 1~4는 CADP가 v0.5를 authority로 �
 | [#27](https://github.com/astro3141/agent-stack/issues/27) | **완료**(§74 모델 없는 절반, §77 provider 모듈 — 콜드 스타트 전후 7/7 동일, full 24/24) | run-agent.mjs 분리(공급자 어댑터 / 승인 / 원장 / 결과) — 모델 호출이 있어야 검증되므로 fixture부터 |
 | [#34](https://github.com/astro3141/agent-stack/issues/34) | **결정: 이미지로 옮김**(§76) | toolchain의 자리: claude·Conductor·Preloop CLI도 `/opt`로. release.sh의 toolchain 기계·플래그·256 MB 아카이브 삭제(437→329줄); release = 리비전 + 이미지 id + 설정. 옛 인스턴스의 볼륨 사본은 up.sh가 알려만 준다 |
 | 리뷰 3 (0a0536b) | 6건 모두 코드로 확인·수정(§79) | P1 두 건(옛 release로의 롤백, 반복·재시도·브로커 경로의 호출 id)과 P2 네 건(기록 병합, 재개 상태·부모, 관측 디렉터리, 명령·문서 정확성) |
-| 라이브 측정 (§84) | resume 확인, 롤백은 검사 버그로 거부 → 수정 | stop이 남긴 체크포인트에서 author만 다시 돎(`-r2`, `segment 2`). pre-202610 롤백은 `bin/claude`의 절대 심볼릭 링크를 `-e`가 따라가 거부됨 → `toolchain_usable`로 링크 대상을 아카이브 안에서 찾고, 거부 시 `.local.new` 제거. claude 토큰 만료로 반복되는 HOLD는 [#44](https://github.com/astro3141/agent-stack/issues/44) |
+| 라이브 측정 (§84) | resume 확인, 롤백은 검사 버그로 거부 → 수정 → **pre-202610 롤백 통과** | stop이 남긴 체크포인트에서 author만 다시 돎(`-r2`, `segment 2`). pre-202610 롤백은 `bin/claude`의 절대 심볼릭 링크를 `-e`가 따라가 거부됨 → `toolchain_usable`로 링크 대상을 아카이브 안에서 찾고, 거부 시 `.local.new` 제거. claude 토큰 만료로 반복되는 HOLD는 [#44](https://github.com/astro3141/agent-stack/issues/44) |
 
 #22–#26은 PR #21 머지 전 외부 리뷰를 코드로 검증한 결과(OPERATIONS §67)에서 나온 설계 수준 항목이다. 확인된 결함 일곱은 같은 PR에서 고쳤다.
 

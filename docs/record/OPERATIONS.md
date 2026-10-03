@@ -4763,3 +4763,58 @@ measurements and the candidate fixes; nothing was changed for it here.
 **Measured.** Resume: the table above, on the live instance. Rollback: refused as quoted; the fix's
 function on this host through review_controls (verifies / refuses naming claude / refuses naming
 preloop); review_controls 189/189, static 13/13 here; **cold-start run 80 green** (review 189/189 in the container, among them the two archive-check cases). The rollback itself: the live instance, after this merges.
+
+**Rolled back, and back again (the operator, after #45 merged).** First the fix onto the live
+instance, then the rollback:
+
+```
+scripts/release.sh update --to 7a57911        # release 20261003-112138-55d81da recorded, ALL CHECKS PASSED
+scripts/release.sh rollback --to pre-202610   # exit 0
+  toolchain archive    from before #34 — unpacked and verified; swapped into /home/agent/.local below
+  verified             images and the archives
+  workspace            2485a20 · images ← :rel-pre-202610 (agent, mlflow, fsmcp, egress, ops, hub)
+  ALL CHECKS PASSED
+  claude 2.1.278 · conductor v0.1.37 · preloop_cli 0.15.0 · codex 0.155.1 · grok 1.0.40
+  rolled back to pre-202610
+```
+
+claude, conductor and preloop ran from the volume's `/home/agent/.local/bin`; no `.local.old` or
+`.local.new` was left. **The rollback to a release from before #34 works** — §79's P1, measured.
+
+Coming back took three attempts, and the second did harm:
+
+| | script that ran | result |
+|---|---|---|
+| `update --to 7a57911` | the workspace's, now 2485a20's | refused: tools differ, "re-run with --replace-toolchain"; nothing touched |
+| `update --to 7a57911 --replace-toolchain` | 2485a20's | moved the workspace to 7a57911, then "could not stage the new toolchain; nothing was replaced" — it looks for the tools in the new image's `/home/agent/.local`, and since #34 they are in `/opt`. The instance was left as **new code on old images and old tools** (claude 2.1.278), and a release `20261003-112907-7a57911` was recorded in that state: its name says 7a57911, its images and tools are pre-202610's |
+| `update --to 7a57911` | the workspace's, now 7a57911's | four `will change` lines (claude 2.1.278→2.1.287, conductor 0.1.37→0.1.41, codex 0.155.1→0.160.0, grok 1.0.40→1.0.46), ALL CHECKS PASSED, tools from `/opt` again |
+
+The cause is the self-copy at the top of release.sh: an `update` runs the script of the revision
+*in the workspace*, and after a rollback that is the old release's script, which cannot know a
+layout that came after it. Nothing in this repository can change what 2485a20's script does. What
+the current script can do, and does now: when a rollback restores a pre-#34 release, it says so at
+the end and prints the way back — the target revision's own script, run against this workspace:
+
+```
+git -C <workspace> show <rev>:scripts/release.sh > /tmp/release.sh
+RELEASE_SH_HOME=<workspace> bash /tmp/release.sh update --to <rev>
+```
+
+docs/update-day.md carries the same procedure. The third attempt above is exactly this path, by
+accident: the second attempt had already put the new script into the workspace. Not decided here:
+whether `update` should always run the *target* revision's script (the new installer installs),
+which would make this class of failure impossible from the next revision on; it changes who is
+trusted with the update, and is the operator's call.
+
+Two things the operator should know about the live instance: the release
+`20261003-112907-7a57911` is mislabelled (old images under a new revision name) and a rollback to
+it would recreate the mixed state — removing it from the releases directory is the simplest
+answer; and the volume carries the unpacked old toolchain again (`/home/agent/.local`, 656 MB),
+which `up.sh` reports on every bring-up and which goes only with the stack down.
+
+The instance is at 7a57911, ALL CHECKS PASSED, tools from `/opt`. `verify --level full` 23/24:
+trial_controls 511/511, review_controls 189/189, auto PASS; novel-a held on claude's session
+window at 81 % ≥ 80 % — the day's measurements used it — and router_controls skipped for the same
+reason. That hold is the router doing its job, not a defect.
+
+**Measured, this addendum.** The rollback and the way back: the operator's outputs above, on the live instance. The printed note and the docs: review_controls 189/189, static 13/13 here; **cold-start run 82 green** on 1d7e042.
