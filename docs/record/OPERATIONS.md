@@ -5087,8 +5087,10 @@ with its sentence, and takes it back on the next completed call; the collector c
 `execution_refusal` when it is newer than the reading; the router holds on it, young reading or
 not, as `unknown: the last call was refused for the account's sake — "…" — follow that sentence`,
 and `fix_for` says the sentence is the remedy. review_controls 218/218 (the classifier, the note
-with a good and a kept reading, an old note not carried, the router's hold and wording). Not
-measured live: the next refusal of that class on the instance. #61 (trading): the one sentence on
+with a good and a kept reading, an old note not carried, the router's hold and wording), the note
+left and cleared by `execution.note_refusal` — the step itself deletes nothing, which the cold
+start's trial_controls pins (run 94 red on that, 512/513, before the move). **Cold-start run 95
+green** on a118059. Not measured live: the next refusal of that class on the instance. #61 (trading): the one sentence on
 docs/packages.md "Controls" — with the controls' root set the three roots are re-mapped whatever a
 fixture `runtime.json` says; take the workspace from the step's answer. #62 (trading): the door's
 three gaps for a schema-pinned harness — a stdin payload, the vendor's raw envelope, a per-call
