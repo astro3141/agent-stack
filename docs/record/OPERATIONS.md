@@ -5350,8 +5350,8 @@ the update: door DRY_OK, rehearse 36/36, admission 5/5, two launchd slots.
   inside `$( )`, a known parse bug of that bash — before the first check ran; the cold start, on
   Linux, cannot see it. The loop is now a function and the substitution calls it; no other
   bash-4-only construct is in `scripts/*.sh` (measured by grep: no `declare -A`, `mapfile`,
-  `${x,,}`). Parsed here by bash 5 only: the next run on that Mac with `/bin/bash` is the
-  measurement (the operator ran it under a Homebrew bash 5.3 meanwhile).
+  `${x,,}`). Parsed here by bash 5 only at the time; **measured on the Mac the same day**, after
+  the update to 7ac3f1a: `/bin/bash` (3.2) `scripts/verify.sh --level static` → 13/13.
 - **A trial control expected exactly this repository's two roles** (`novel-author`,
   `novel-reviewer`) among the principals the installed packages name, and failed on an instance
   whose own packages declare more (seven there, trading's included). It now asks that the two
@@ -5424,4 +5424,8 @@ built: the path it would serve is the one §51 retired.
 **Measured.** `verify.sh --level static` 13/13; pins at the ratchets (51 / 167). The role-egress
 group that carries the pin runs only where `up.sh` wrote `/role-egress` — the cold start: **run
 115 green** on 37d9a36 (run 114 red on the pin's own needle, which spanned two string literals of
-the refusal's source; a pin reads the file, not the string it builds).
+the refusal's source; a pin reads the file, not the string it builds). Live the same day: the
+instance moved 837ea2a → 7ac3f1a (the operator had taken #72–#74 live the day before, on a
+recorded update of its own), `performed by  the target revision's scripts/release.sh (7ac3f1a)`
+— the hand-over's third measurement — ALL CHECKS PASSED; trading's door DRY_OK re-read, Tuesday's
+cutover untouched. Recorded by the operator on #48.
