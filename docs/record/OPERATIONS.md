@@ -5524,4 +5524,4 @@ a test that reads a repository file is `source-text`, a `not in` of one `absence
 
 **Measured.** review_controls 255/255 — a controls file of three asserts and one `check`
 classifies 4 (one source-text, two behaviour, one absence) and lists the assert's message by
-name; `verify.sh --level static` 13/13.
+name; `verify.sh --level static` 13/13; **cold-start run 122 green** on ac13811.
