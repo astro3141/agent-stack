@@ -3,7 +3,8 @@
 # project and its own ports. The instance in use is never written to.
 #
 #   scripts/restore.sh --archive FILE --workspace DIR [--stack NAME] [--key FILE]
-#                      [--clone-from REPO --rev REV] [--verify-only] [--into-existing]
+#                      [--clone-from REPO --rev REV] [--into-existing]
+#   scripts/restore.sh --archive FILE --verify-only [--key FILE]      unpack and check; write nothing
 #
 #   --workspace DIR    where the restored instance's /work lives. With --clone-from it is created
 #                      as a fresh clone (the repository layout: <clone>/poc/281-routing).
@@ -22,8 +23,10 @@
 # script refuses to start while the live instance is up, and says how to stop it.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
-u() { if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
-m() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+# An empty path stays empty: Git Bash's cygpath refuses '' ("can't convert empty path") and under
+# set -e that ended restore.sh --verify-only on the first host (§86, measured live).
+u() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+m() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
 ARCHIVE=""; WORKSPACE=""; CLONE_FROM=""; REV=""; VERIFY_ONLY=0; INTO_EXISTING=0
 STACK="${STACK:-agentstackr}"
@@ -55,8 +58,11 @@ done
 say()    { printf '  %-42s %s\n' "$1" "$2"; }
 refuse() { echo "refusing: $*" >&2; exit 2; }
 
-[ -n "$ARCHIVE" ] && [ -n "$WORKSPACE" ] || { echo "need --archive and --workspace" >&2; exit 2; }
-ARCHIVEU="$(u "$ARCHIVE")"; KEYU="$(u "$KEY")"; WORKSPACEU="$(u "$WORKSPACE")"
+# --verify-only unpacks and checks the manifest and writes nothing: it needs no workspace (§86:
+# it asked for one and was given a scratch path; the usage and the behaviour disagreed)
+[ -n "$ARCHIVE" ] || { echo "need --archive (and --workspace, unless --verify-only)" >&2; exit 2; }
+[ -n "$WORKSPACE" ] || [ "$VERIFY_ONLY" = 1 ] || { echo "need --archive and --workspace" >&2; exit 2; }
+ARCHIVEU="$(u "$ARCHIVE")"; KEYU="$(u "$KEY")"; WORKSPACEU="$(u "${WORKSPACE:-}")"
 PRELOOP_RESTORE_DIRU="$(u "$PRELOOP_RESTORE_DIR")"; LIVE_PRELOOP_DIRU="$(u "$LIVE_PRELOOP_DIR")"
 [ -f "$ARCHIVEU" ] || { echo "no such archive: $ARCHIVE" >&2; exit 2; }
 [ -f "$KEYU" ] || { echo "no key file: $KEY" >&2; exit 2; }

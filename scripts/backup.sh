@@ -29,8 +29,10 @@
 # Losing the key file means losing the backup: keep a copy of it, and of the archive, elsewhere.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
-u() { if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
-m() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+# An empty path stays empty: Git Bash's cygpath refuses '' ("can't convert empty path") and under
+# set -e that ended restore.sh --verify-only on the first host (§86, measured live).
+u() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+m() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"
@@ -257,8 +259,14 @@ if [ -n "$ENV_FILES" ]; then
 else
   say "docker/*.env" "none (the instance was not claimed by up.sh, or the files were moved)"
 fi
+# The console account's password is the one thing the archive cannot regenerate: Preloop's dump
+# holds the user with its hash, and a restore signs in with the password. An instance claimed
+# before up.sh wrote this file (the live one, 2026-09-20) has no such file and never will unless
+# the operator writes it — so its absence is said, with the remedy, and is not a failure: the
+# archive is complete for everything the stack itself can give (§86, measured live).
 case " $ENV_FILES " in *" preloop-owner.env "*) ;;
-  *) MISSING="$MISSING docker/preloop-owner.env"; say "preloop-owner.env" "MISSING — the console account has no other copy";;
+  *) say "preloop-owner.env" "absent — the console account's password is in nobody's backup; write it to"
+     say "" "docker/preloop-owner.env (PRELOOP_OWNER_USERNAME=, PRELOOP_OWNER_EMAIL=, PRELOOP_OWNER_PASSWORD=, mode 0600)";;
 esac
 
 if [ -n "$MISSING" ]; then

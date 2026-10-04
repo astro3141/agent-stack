@@ -22,8 +22,10 @@
 # the restored policy is applied again, so what the account enforces matches what was restored.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
-u() { if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
-m() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+# An empty path stays empty: Git Bash's cygpath refuses '' ("can't convert empty path") and under
+# set -e that ended restore.sh --verify-only on the first host (§86, measured live).
+u() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+m() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
 HERE="${RELEASE_SH_HOME:-$(cd "$(dirname "$0")/.." && pwd)}"
 # An update or a rollback checks out another revision of this very workspace — including this
