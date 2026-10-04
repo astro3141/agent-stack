@@ -5506,6 +5506,7 @@ requires it. docs/update-day.md says a policy change rides with any bring-up.
 
 **Measured.** trial_controls' bootstrap and review-findings groups 30/30 here (the claim-time
 apply and the apply-before-rescan order unchanged); `verify.sh --level static` 13/13; the check's
-command run on this checkout's generated state. The cold start measures the line on a fresh
-claim; the case it was written for — an instance brought up on a checkout whose policy moved —
+command run on this checkout's generated state; **cold-start run 120 green** on 65aaa5b, the new
+check line `ok` on the fresh claim and required by the judge. The cold start measures the line on
+a fresh claim; the case it was written for — an instance brought up on a checkout whose policy moved —
 is the next policy change on a live instance brought up by `up.sh`, read in that line.
