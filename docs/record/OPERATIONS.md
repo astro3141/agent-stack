@@ -5321,7 +5321,7 @@ the tree #70 measured (detached at A, origin at B) is put back on `main` at B, t
 behind is fast-forwarded; a branch ahead is refused with both ends and the two ways out, HEAD
 unmoved; a tag is detached and said; a branch the clone lacks is created. `verify.sh --level
 static` 13/13; pins at the ratchets (a text pin on the install case was written and taken out
-again — the ratchet at 51 holds). Not measured here: the install command end to end, which needs
+again — the ratchet at 51 holds); **cold-start run 107 green** on 80346fa. Not measured here: the install command end to end, which needs
 the agent container for the declaration — the next `scripts/packages.sh install trading` on the
 instance measures it, in its `locked — on branch main (tracks origin/main)` line and in
 `git -C packages/trading status` showing a branch.
