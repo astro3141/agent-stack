@@ -5485,3 +5485,28 @@ ratchets; **cold-start run 118 green** on 1959d8b (the policy with the new condi
 on a fresh Preloop). Not measured here: the policy's new conditions on a live Preloop (the cold start
 applies the policy — `"applied"` is its acceptance; the denial itself is one write with `..` on
 the instance, the author's probe endpoint will do).
+
+## 97. A policy change is applied on every bring-up, and `--check` says when it is not (#78 follow-up, 2026-10-04)
+
+**Measured by novel-v2 on its instance, updated to e929362 (not a cold start):** the first `..`
+write probe reached the filesystem — the §96 denies were not on that Preloop yet — and only after
+`cfg.py apply` by hand did the account answer `Access denied: no traversal in a write path (#78)`.
+Read against `scripts/up.sh`: the policy was applied on the claim, and again when the runtime's
+tool probe failed (§28's heal); a plain bring-up of a claimed instance with a changed `policy/`
+applied nothing, and no check line said so. `release.sh update` applies it after its own bring-up
+(`reapply_policy`), which is why the operator's updates never showed this; an instance moved by
+`git pull` and `up.sh` did.
+
+**What changed.** `up.sh` applies the policy on every bring-up of a claimed instance (the `else`
+of the claim branch; `cfg.py apply` answers "already applied" when the account carries this
+content and the servers are there, so it is one question); `up.sh --check` has a line, `the
+account enforces this checkout's policy`, read from `cfg.py status` (`applied`, or
+`changed_since_apply` / `replaced` / `unknown` / `apply_failed`), and the cold start's judge
+requires it. docs/update-day.md says a policy change rides with any bring-up.
+
+**Measured.** trial_controls' bootstrap and review-findings groups 30/30 here (the claim-time
+apply and the apply-before-rescan order unchanged); `verify.sh --level static` 13/13; the check's
+command run on this checkout's generated state; **cold-start run 120 green** on 65aaa5b, the new
+check line `ok` on the fresh claim and required by the judge. The cold start measures the line on
+a fresh claim; the case it was written for — an instance brought up on a checkout whose policy moved —
+is the next policy change on a live instance brought up by `up.sh`, read in that line.
