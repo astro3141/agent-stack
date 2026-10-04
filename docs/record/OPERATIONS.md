@@ -5325,3 +5325,42 @@ again — the ratchet at 51 holds); **cold-start run 107 green** on 80346fa. Not
 the agent container for the declaration — the next `scripts/packages.sh install trading` on the
 instance measures it, in its `locked — on branch main (tracks origin/main)` line and in
 `git -C packages/trading status` showing a branch.
+
+## 93. The second live hand-over, and what the first Mac host found (2026-10-04, evening)
+
+**Measured live (the operator's session, reported on #48): the instance moved 0027352 → a30d1ef.**
+Before: `up.sh --check` ALL PASSED, `backup.sh` (1.5 GB), `release.sh record --tag
+pre-202610-door`, `drift.sh` (no pin changed). `release.sh update --to a30d1ef` printed
+`performed by  the target revision's scripts/release.sh (a30d1ef)` — the hand-over of §90, the
+second time, from a workspace that had the rule — and ended ALL CHECKS PASSED, exit 0. With it the
+instance carries #68, #69 and #71 before trading's door Day-1 (Tuesday 10/6; Monday is a market
+holiday). §92's line, read live: `packages.sh install trading` → `at 06042124, locked — on branch
+main (tracks origin/main)`, the tree on `main...origin/main`. §91's brokered query: the chain
+`agent_task → broker → probe runner` carried the schema and the model to the end, shown by two
+exact refusals — the runner's `invalid expected` on an absolute path (the brokered contract is a
+workspace-relative path), then the **§50 guard**: `egress-probe declares egress of its own … the
+login 'claude' belongs to uid 1000. Connect a login named for this role`. So this instance has no
+provider login owned by an egress role yet, which is a fact about the instance, not a defect; the
+final read of that call's `request.json` (`kind: query`, `model`) waits on the owner connecting
+one, and trading runs on the direct route, so nothing of its cutover depends on it. Trading after
+the update: door DRY_OK, rehearse 36/36, admission 5/5, two launchd slots.
+
+**Two findings for the stack, both fixed here.**
+- **verify.sh died under macOS's bash 3.2** at the REPEATABLE scan — a `case` with `)` patterns
+  inside `$( )`, a known parse bug of that bash — before the first check ran; the cold start, on
+  Linux, cannot see it. The loop is now a function and the substitution calls it; no other
+  bash-4-only construct is in `scripts/*.sh` (measured by grep: no `declare -A`, `mapfile`,
+  `${x,,}`). Parsed here by bash 5 only: the next run on that Mac with `/bin/bash` is the
+  measurement (the operator ran it under a Homebrew bash 5.3 meanwhile).
+- **A trial control expected exactly this repository's two roles** (`novel-author`,
+  `novel-reviewer`) among the principals the installed packages name, and failed on an instance
+  whose own packages declare more (seven there, trading's included). It now asks that the two
+  this repository carries are among them. trial 542/543 on the instance was that one line.
+
+**Not the stack's, noted.** The egress scan's other red line was an instance file — the research
+profile's allow list carried six raw hostnames without anchors; anchored at the source and
+regenerated, ok. An orphan compose service (`agst-mac-toolsvc`) is the instance's to remove
+(`--remove-orphans`).
+
+**Measured.** `verify.sh --level static` 13/13 (the REPEATABLE scan through the function);
+trial_controls' template group 26/26 here; pins at the ratchets.
