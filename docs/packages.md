@@ -576,7 +576,12 @@ its role can fetch from — is an answer, `step.egress_hosts("closed")`: the pat
 proxy reads, from the generated list, not a file your package parses (#55). The older `egress: [hosts]` key is the uid-based
 design (§48): still read, still run — the platform's own `egress-probe` declares it, and
 `agent_task.py` takes the uid path for a role on it — but deprecated for a package, and every
-`principals.py apply` names roles still on it. Declare a profile.
+`principals.py apply` names roles still on it. Declare a profile. A role on the uid path also
+needs a vendor login *it owns* (§50), and nothing on the panel makes one: the login flow writes
+`<logins_root>/<name>` as the agent's own uid, so such a role is refused with that sentence until
+someone makes the login inside the container and chowns it to the role's uid by hand (§95). A
+brokered role (`egress_profile:` alone) needs none of that — the profile's runner uses the shared
+login, which is what the recorded `grok-allow` run did.
 
 **Installing a package is a decision to trust it**: that is what gives its principals rights. Read a
 package before installing it, as you would a dependency.

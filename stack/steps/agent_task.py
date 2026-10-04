@@ -173,8 +173,11 @@ if principal and not os.environ.get("AGENTSTACK_ROLE"):
                            f"{'uid ' + str(owner) if owner is not None else 'nobody: it is not there'}. "
                            "These CLIs own their credential files: they set the mode, and they "
                            "rewrite it on every token refresh, so group access granted by hand "
-                           "lasts until the next one. Connect a login named for this role and run "
-                           "the step on it, or drop the role's egress declaration (§50).")
+                           "lasts until the next one. The way out is to declare `egress_profile:` "
+                           "and drop `egress:` — the uid path is deprecated (§51–§55), nothing on "
+                           "the panel makes a login a role owns, and a brokered role needs none; "
+                           "the uid path survives only with a login made inside the container and "
+                           "chowned to this role's uid by hand (§50, §95).")
             execution.write(evid, rec)
             print(json.dumps(rec))
             raise SystemExit(0)
