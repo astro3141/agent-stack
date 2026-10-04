@@ -4961,5 +4961,6 @@ this change. The text pins trial_controls holds on the files changed here (`cycl
 exit code, `soak.sh`'s no-cleanup, `up.sh`'s role block and recreate, the Dockerfile's sudoers)
 were read against the new text and hold; the suite itself runs on the cold start. What waits on
 the live instance: a `--check` under a running call (the proxy stays up), a backup and a
-`--verify-only` restore, one cycle with a misnamed workflow (exit 3, a `refused` row), and the
-cold start on this revision (run number below).
+`--verify-only` restore, one cycle with a misnamed workflow (exit 3, a `refused` row). **Cold-start run 88 green** on 57e0458: the stack
+level 24/24, trial_controls 507/507 in the container, review_controls 189/189, hello-lane, the
+first-use cycle and the child run to completion; the image built with an empty `docker/ca/`.
