@@ -90,6 +90,52 @@ locked_commit() {   # name
   cat "$LOCK" "$LOCAL_LOCK" 2>/dev/null | grep -E "^$1 " | awk '{print $2}' | head -1
 }
 
+# `install` used to check out FETCH_HEAD, which leaves the tree detached — and an author who
+# develops the package on the instance that runs it (the documented loop) then commits on the
+# detached chain: `git push origin main` pushes a stale local main, says "Everything up-to-date",
+# and the next install restores the old tree over the new files (#70, trading, measured twice; a
+# cutover shipped on old code that way). So a ref that is a branch is checked out AS that branch,
+# fast-forwarded to what was fetched, tracking origin; a local branch that holds commits the
+# remote does not have is never moved — the install refuses and names both ends. A tag or a
+# commit stays detached, and the line says so. Sets WHERE for the caller's line.
+checkout_ref() {   # dir ref — 0 and WHERE; 1 with why on stderr, nothing moved
+  local dir="$1" ref="$2" want local_tip base name
+  name="$(basename "$dir")"
+  if git -C "$dir" fetch --quiet origin "+refs/heads/$ref:refs/remotes/origin/$ref" 2>/dev/null; then
+    want="$(git -C "$dir" rev-parse "refs/remotes/origin/$ref")"
+    if git -C "$dir" show-ref --verify --quiet "refs/heads/$ref"; then
+      local_tip="$(git -C "$dir" rev-parse "refs/heads/$ref")"
+      if [ "$local_tip" != "$want" ]; then
+        base="$(git -C "$dir" merge-base "$local_tip" "$want" 2>/dev/null || true)"
+        if [ "$base" != "$local_tip" ]; then
+          echo "  REFUSED  $name — the local branch $ref is at ${local_tip:0:8}, origin/$ref at ${want:0:8}:" >&2
+          echo "           the branch holds commits the remote does not. Push them" >&2
+          echo "           (git -C packages/$name push origin $ref) or drop them" >&2
+          echo "           (git -C packages/$name checkout -B $ref origin/$ref); this install moved nothing." >&2
+          return 1
+        fi
+      fi
+      git -C "$dir" checkout --quiet "$ref" && git -C "$dir" merge --quiet --ff-only "$want" \
+        || { echo "  could not check out $ref" >&2; return 1; }
+    else
+      git -C "$dir" checkout --quiet -b "$ref" "$want" || { echo "  could not check out $ref" >&2; return 1; }
+    fi
+    git -C "$dir" branch --quiet --set-upstream-to="origin/$ref" "$ref" 2>/dev/null || true
+    WHERE="on branch $ref (tracks origin/$ref)"
+    return 0
+  fi
+  git -C "$dir" fetch --quiet origin "$ref" || { echo "  could not fetch $ref" >&2; return 1; }
+  want="$(git -C "$dir" rev-parse FETCH_HEAD)"
+  git -C "$dir" checkout --quiet --detach "$want" || { echo "  could not check out $ref" >&2; return 1; }
+  WHERE="detached — $ref is a tag or a commit, not a branch"
+  return 0
+}
+where_of() {       # dir — where a fresh clone's tree is
+  local b
+  b="$(git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  [ -n "$b" ] && echo "on branch $b" || echo "detached"
+}
+
 write_lock() {      # name commit ref url
   f="$(lock_file_for "$1")"
   touch "$f"
@@ -159,14 +205,15 @@ case "$CMD" in
     run_controls "$ONLY"; exit $?;;
 
   install)
+    fail=0
     declared | while read -r name from ref; do
       [ "$from" = "local" ] && continue
       [ -n "$ONLY" ] && [ "$ONLY" != "$name" ] && continue
       dir="$PKGDIR/$name"
       if [ -d "$dir/.git" ]; then
         echo "== $name: fetching $ref"
-        git -C "$dir" fetch --quiet origin "$ref" || { echo "  could not fetch $name" >&2; continue; }
-        git -C "$dir" checkout --quiet FETCH_HEAD || { echo "  could not check out $ref" >&2; continue; }
+        # a refusal (local commits the remote lacks, #70) is this command's failure, out loud
+        checkout_ref "$dir" "$ref" || exit 1
       else
         echo "== $name: cloning $from at $ref"
         rm -rf "$dir"
@@ -174,14 +221,15 @@ case "$CMD" in
           || git clone --quiet "$from" "$dir" \
           || { echo "  could not clone $name" >&2; continue; }
         git -C "$dir" checkout --quiet "$ref" 2>/dev/null || true
+        WHERE="$(where_of "$dir")"
       fi
       head="$(git -C "$dir" rev-parse HEAD)"
       write_lock "$name" "$head" "$ref" "$from"
-      echo "   at ${head:0:8}, locked"
-    done
+      echo "   at ${head:0:8}, locked — $WHERE"
+    done || fail=1
     echo
-    echo "now: scripts/up.sh   (its principals are created and given credentials there)"
-    exit 0;;
+    [ "$fail" = 0 ] && echo "now: scripts/up.sh   (its principals are created and given credentials there)"
+    exit "$fail";;
 
   *) echo "usage: scripts/packages.sh [list|install|verify|controls] [name]" >&2; exit 2;;
 esac
