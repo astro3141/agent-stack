@@ -216,7 +216,12 @@ fi
 # config/principals.yaml — not remembered from whoever created them by hand. Applying that on
 # every bring-up is what keeps a second machine governed the same way as this one; it writes to
 # Preloop, so it runs on the admin side (OPERATIONS.md §21, §25).
-if docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
+#
+# Not under --check: a check changes nothing (the runbook's promise, and verify.sh's). Until §86
+# this ran in every mode, and so did the guard reload and the per-role egress block below — a
+# `--check` applied principals, could recreate the agent and restarted the egress proxy, the
+# agent's only route to the providers, under whatever call was in flight.
+if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-admin"; then
   out="$(docker exec "$STACK-admin" $PY_IN_AGENT /work/stack/principals.py apply 2>&1 | tail -1)"
   case "$out" in
     *'"ok": true'*) echo "$out" | grep -q '"changes": \[\]' || echo "== principals: $out";;
@@ -284,7 +289,7 @@ fi
 
 # The guard's rules are a bind-mounted file, and compose does not restart a container because a
 # file under it changed — a rule edited without this reload is a rule that is not enforced.
-if docker ps --format '{{.Names}}' | grep -qx "$STACK-apiguard"; then
+if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STACK-apiguard"; then
   docker exec "$STACK-apiguard" nginx -t >/dev/null 2>&1 &&
     docker exec "$STACK-apiguard" nginx -s reload >/dev/null 2>&1 ||
     echo "  WARN  the guard did not accept its configuration — the rules in effect are the old ones" >&2
@@ -398,8 +403,11 @@ print(\" \".join(json.loads(out or \"{}\").get(\"open_and_undeclared\") or []))"
 # Three things have to happen and none of them belongs inside the governed runtime: the role users
 # are created (that needs root, so it is done from the host with `docker exec -u 0`), the proxy
 # configurations and credentials are written into the volume the agent and the proxy share, and the
-# proxy is restarted so it serves them.
-roles_json="$(in_agent "$PY_IN_AGENT"' /work/stack/role_egress.py plan --json' 2>/dev/null)"
+# proxy is restarted so it serves them. Not under --check, which asks and changes nothing: the
+# platform's own egress-probe always declares hosts, so this block always ran, and every
+# `--check` restarted the proxy under the runs (§86).
+roles_json=""
+[ "$MODE" = "--check" ] || roles_json="$(in_agent "$PY_IN_AGENT"' /work/stack/role_egress.py plan --json' 2>/dev/null)"
 case "$roles_json" in
   *'"uid"'*)
     for r in $(echo "$roles_json" | tr ',' '\n' | grep -o '"[a-z][a-z0-9-]*": {"hosts"' | cut -d'"' -f2); do
