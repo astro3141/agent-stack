@@ -4987,3 +4987,36 @@ an empty argument, `u ""` called it, and `set -e` ended the script; Linux has no
 cold start never sees it. The two helpers return an empty path unchanged now, in backup.sh,
 restore.sh and release.sh alike (backup.sh had the same call for an instance with no `/research`
 mount). Measured on e9265eb by the operator: `--verify-only` with no `--workspace`, exit 0.
+
+## 87. The devflow author's findings, triaged (#51–#56, 2026-10-04)
+
+Six findings came back through the package-feedback template on the day §85 asked for them
+(agent-stack-devflow 36b388d on c872360). Each was read against the code and taken as the page
+says: a sentence worked out from the source is the page's defect; a thing built around is the
+stack's. Five were the stack's, one the page's.
+
+| # | the finding | what changed |
+|---|---|---|
+| #51 | `roles.py` reads only `route.py`'s `decision.json` and binds only the profile's `candidates`; a round admitted by `admit_models.py` (which writes `admission.json`, and may name a provider the profile does not list) cannot be bound | `roles.py` reads either file; a provider outside the candidates binds when this run's admission named it eligible — login and route from the profile's tables when it has them, the provider's name and the direct route otherwise; one nobody asked about is still "not in the profile" |
+| #52 | `step.main` writes the crash under `reason` only; devflow answers machinery failures under `error`, and `reason` means why a task waits | `step.main(fn, failure_key="error", **shape)`; `reason` stays the default |
+| #53 | `requires.state` takes one value, and devflow keeps both: a cache here and the task's state on its issue | `state: {here: true, with_the_work: "…"}` (or `[true, "…"]`); `packages.py state` reports both |
+| #54 | a package's controls drive its real steps, which reach the roots through the stack's settings, so the controls wrote 821 KB of fixture trees into the instance's `/work/state` | `packages.sh controls` sets `AGENTSTACK_CONTROLS_ROOT` to a temporary directory in the agent for that one process and removes it after; under it `settings.runtime()` moves the three roots a step writes to (workspace, evidence, state) and leaves the rest |
+| #55 | `paths` lacks the hand-in root, the configuration root and the hosts of a role's egress profile, so devflow carried `/work/...` defaults | `handoff_root` and `config_root` in `config/environment.yaml` and the defaults; `step.handoff(name)` resolves a hand-in and refuses an escape; `step.egress_hosts(profile)` answers the profile's patterns from the generated list. And `settings.runtime()` fills every section and path key from the defaults, so a `runtime.json` generated before a key still answers for it (the `broker` KeyError of docs/packages.md's old sentence is gone the same way) |
+| #56 | no guidance for the printed first-run line of a workflow whose inputs name something real | the page: declare such an input `required: true` with no default; the line carries a quoted placeholder, a person replaces it, and the stack level runs hello-lane's line only |
+
+**Not changed.** Whether `verify --level stack` should run a package's placeholder line (#56): no —
+it runs the one workflow whose first run is about nothing in particular. What `admission.json`'s
+verdict means for a provider the profile does not list (#51): the profile's thresholds judged it
+(`admit_models.py` keeps them, only *who* is asked changes, §61), so binding it is the same
+contract the profile's own candidates get.
+
+**Measured.** review_controls 206/206 (a group for #52–#55: the crash key, the four state forms,
+the roots filled from the defaults, the controls' scratch root moving three roots and not the
+fourth, a hand-in that escapes refused four ways, a profile's hosts answered from the generated
+list); doc_examples 10/10; `verify.sh --level static` 13/13; pin_kinds review 51, trial 167, at
+their ratchets. `roles.py` against an `admission.json` on this checkout: the codex reviewer bound
+on `long-task` (candidates `[claude]`) with login `codex`, route `direct`, its principal carried;
+claude's role ineligible with the admission's own words; grok "not in the profile". The same
+three cases are in trial_controls' roles group, run by the cold start: **run 91 green** on 2b37097
+(the stack level 24/24, novel's controls through `packages.sh verify` on the scratch root). That
+`packages.sh controls` sets the scratch root is measured there.

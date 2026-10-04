@@ -16,3 +16,5 @@ paths:
   observations: /obs                    # quota observer output (read-only in the agent)
   logins_root: /route                   # the routing layer's own provider logins
   state_root: /work/state               # package state that outlives a run (docs/packages.md, "State that outlives a run")
+  handoff_root: /work/handoff           # data handed in by name, for one run (handoff/README.md)
+  config_root: /work/config             # this instance's configuration; a package reads config/<package>/… from here (git-ignored)

@@ -1,6 +1,11 @@
 """Conductor script step: assign a provider to each role of a role-split workflow.
 
-usage: roles.py <profile> <router-evidence-dir> <role>=<provider>[:<principal>] [...]
+usage: roles.py <profile> <admission-evidence-dir> <role>=<provider>[:<principal>] [...]
+
+The evidence directory is the one `route.py` wrote (decision.json) or the one `admit_models.py`
+wrote (admission.json): a round that admits several providers by name binds its roles against
+that admission, and a provider the profile does not list is bound when that admission says it
+is eligible (#51).
 
 The router (steps/route.py) answers "may anything run, and on which provider" from quota, and its
 answer names one provider. A role-split workflow needs more than that: each role is bound to a
@@ -48,19 +53,26 @@ routes = routing.get("model_route") or {}
 
 
 def eligibility():
-    """provider -> (eligible, why) from this run's router decision; {} when there is none."""
-    p = os.path.join(evidence_dir, "decision.json") if evidence_dir else ""
-    if not p or not os.path.isfile(p):
-        return None
-    try:
-        d = json.load(open(p, encoding="utf-8"))
-    except ValueError:
-        return None
-    ev = d.get("evaluated")
-    if not isinstance(ev, list):
-        return None
-    return {e.get("provider"): (bool(e.get("eligible")), e.get("why") or "")
-            for e in ev if isinstance(e, dict)}
+    """provider -> (eligible, why) from this run's admission; None when there is none to read.
+
+    Two steps write one: `route.py` (decision.json — the one-of question) and `admit_models.py`
+    (admission.json — every provider a round names, each with a verdict, #51). Either is this
+    run's own evaluation; a role is bound against it, never against the fact that some other
+    provider had room."""
+    for fn, pick in (("decision.json", lambda d: d),
+                     ("admission.json", lambda d: d.get("decision") or {})):
+        p = os.path.join(evidence_dir, fn) if evidence_dir else ""
+        if not p or not os.path.isfile(p):
+            continue
+        try:
+            d = pick(json.load(open(p, encoding="utf-8")))
+        except (ValueError, AttributeError):
+            continue
+        ev = d.get("evaluated")
+        if isinstance(ev, list):
+            return {e.get("provider"): (bool(e.get("eligible")), e.get("why") or "")
+                    for e in ev if isinstance(e, dict)}
+    return None
 
 
 elig = eligibility()
@@ -70,7 +82,11 @@ for arg in specs:
     role, _, rest = arg.partition("=")
     provider, _, principal = rest.partition(":")
     why = ""
-    if provider not in candidates:
+    # A provider the profile does not list may still be bound when this run's admission asked
+    # about it by name and admitted it (admit_models.py, #51): the profile's thresholds judged
+    # it, and its login and route are the profile's when it has them, the provider's own name
+    # and the direct route otherwise. A provider nobody asked about is still "not in the profile".
+    if provider not in candidates and not (elig and provider in elig):
         # the profile does not carry this provider: say so, do not substitute another vendor
         why, bucket = "not in the profile", missing
     elif elig is None:
@@ -86,7 +102,7 @@ for arg in specs:
         continue
     out[f"{role}_provider"] = provider
     out[f"{role}_login"] = logins.get(provider, provider)
-    out[f"{role}_route"] = routes.get(provider, "preloop_gateway")
+    out[f"{role}_route"] = routes.get(provider, "preloop_gateway" if provider in candidates else "direct")
     out[f"{role}_principal"] = principal
 out["missing"] = ",".join(missing)
 out["ineligible"] = ",".join(ineligible)
