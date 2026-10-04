@@ -4986,4 +4986,4 @@ with no `--workspace`: **exit 1, `cygpath: can't convert empty path`** — Git B
 an empty argument, `u ""` called it, and `set -e` ended the script; Linux has no cygpath and the
 cold start never sees it. The two helpers return an empty path unchanged now, in backup.sh,
 restore.sh and release.sh alike (backup.sh had the same call for an instance with no `/research`
-mount). One more `--verify-only` on the first host is the measurement.
+mount). Measured on e9265eb by the operator: `--verify-only` with no `--workspace`, exit 0.
