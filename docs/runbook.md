@@ -97,6 +97,22 @@ docker exec agentstack-agent sh -c 'CLAUDE_CONFIG_DIR=/route/claude HTTPS_PROXY=
 **Do:** sign in again from the panel's 계정 tab. That is a person's job — the stack will not do it
 and cannot. Then `up.sh --check` should show `0` again (OPERATIONS §24).
 
+**The same expiry, after a good reading was kept (OPERATIONS §88, #44).** The collector keeps the
+last good reading beside the login (§64), so an expired token first shows as a reading that is
+used while young and then as one that aged out — and until §88 that aged-out reading was called
+`stale`, the ordinary word for a collection that has not run, which fails no check and names no
+remedy; novel-a held three times in two days on it. The router now says what it is:
+
+```
+claude: unknown: the login's token expired — the last reading is 27152s old (> 1800s) and
+        nothing here refreshes it; sign in on the panel
+```
+
+`up.sh --check` fails `every provider's state is knowable` on it, the panel's 계정 tab shows
+`연결됨 · 토큰 만료` beside the provider while the reading is still young, and the standing risk
+carries the remedy. A workflow that would rather run on another vendor than hold names its order:
+`author=claude|codex:novel-author` in its roles step binds the first the admission admitted.
+
 **Two more "unknown" lines, measured on a second install (OPERATIONS §64), and what each is:**
 
 ```
