@@ -5510,3 +5510,18 @@ command run on this checkout's generated state; **cold-start run 120 green** on 
 check line `ok` on the fresh claim and required by the judge. The cold start measures the line on
 a fresh claim; the case it was written for — an instance brought up on a checkout whose policy moved —
 is the next policy change on a live instance brought up by `up.sh`, read in that line.
+
+## 98. `pin_kinds.py` reads a package's `assert` controls too (novel-v2's note on #50, 2026-10-04)
+
+docs/packages.md said `pin_kinds.py classifies any controls file`; the tool counted only the
+stack's own `check(name, …)` calls, so novel-v2's controls, written with `assert`, read
+`checks: 0` — a classifier-compatibility question the author left on its own issue rather than
+filing. The page over-promised, so the tool now does what it said: an `assert` statement is a
+check (its message is the name when it has one, else its test), classified by the same rule —
+a test that reads a repository file is `source-text`, a `not in` of one `absence`, the rest
+`behaviour`. The stack's own two suites hold no asserts, so their counts and the ratchets (51 /
+167) are unchanged. The page says what the tool reads, and that anything else is `checks: 0`.
+
+**Measured.** review_controls 255/255 — a controls file of three asserts and one `check`
+classifies 4 (one source-text, two behaviour, one absence) and lists the assert's message by
+name; `verify.sh --level static` 13/13; **cold-start run 122 green** on ac13811.

@@ -1403,6 +1403,25 @@ def pinkind_controls():
     check("pins: review_controls' source-text pins do not grow (≤ 51 at §82)", 0 < rc.get("source-text", 999) <= 51, rc)
     check("pins: trial_controls' source-text pins do not grow (≤ 167 at §83)", 0 < tc.get("source-text", 999) <= 167, tc)
     check("pins: behaviour checks are the majority of review_controls", rc.get("behaviour", 0) > rc.get("source-text", 0) + rc.get("absence", 0), rc)
+    # a package's controls written with assert (novel-v2) are checks to the tool too (§98)
+    root = Path(tempfile.mkdtemp(prefix="agentstack-pins-"))
+    (root / "controls.py").write_text(
+        "from pathlib import Path\n"
+        "def test_a():\n"
+        "    src = Path('/work/stack/step.py').read_text()\n"
+        "    assert 'def out' in src, 'the helper has out'\n"
+        "    assert 1 + 1 == 2\n"
+        "    check('a named one', True)\n"
+        "    assert 'zz' not in src\n")
+    r2 = subprocess.run([sys.executable, str(HERE / "pin_kinds.py"), "--list", str(root / "controls.py")], capture_output=True, text=True, timeout=60)
+    try:
+        k2 = json.loads(r2.stdout.strip().splitlines()[-1])[str(root / "controls.py")]
+    except Exception:
+        k2 = {"error": r2.stdout + r2.stderr}
+    check("pins: assert statements are checks to the classifier — a text read is source-text, a plain one behaviour, a `not in` absence, and the message is the name",
+          k2.get("checks") == 4 and k2.get("source-text") == 1 and k2.get("behaviour") == 2 and k2.get("absence") == 1
+          and "the helper has out" in r2.stdout, (k2, r2.stdout[-300:]))
+    shutil.rmtree(root, ignore_errors=True)
 
 
 policy_controls()
