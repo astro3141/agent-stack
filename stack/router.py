@@ -75,6 +75,17 @@ def evaluate(cand, obs, policy, now):
         return {**r, "eligible": False,
                 "why": f"unknown: {detail[:160]}" if detail else "unknown: no timestamp on the observation"}
     r["age_s"] = round(age)
+    # The door's note: after this reading was taken, the vendor refused a call for the account's
+    # sake (an organisation that disabled access, a dead login, a key it does not accept). The
+    # reading may still say "within limits"; the next call will not run, and the remedy is the
+    # call's own sentence, not the observer's "run `claude login`" (#44, trading's measurement).
+    # Unknown, with those words, until a completed call takes the note back.
+    note = obs.get("execution_refusal")
+    if isinstance(note, dict) and note.get("failure"):
+        return {**r, "eligible": False, "login_refused": True,
+                "why": f"unknown: the last call was refused for the account's sake — "
+                       f"\"{str(note['failure'])[:160]}\" — follow that sentence; a quota reading "
+                       f"{round(age)}s old says nothing about it"}
     if age < -60:
         return {**r, "eligible": False, "why": f"unknown: observed_at is {-round(age)}s in the future"}
     if age > policy["max_age_s"]:

@@ -5074,3 +5074,23 @@ admitted listed with every reason, unknown vendors still missing — run by the 
 green** on 872b4f3 (the stack level 24/24). `verify.sh --level static` 13/13. What waits on the live instance: the next
 expiry, read on the panel (`토큰 만료`) and in `up.sh --check` (`FAIL every provider's state is
 knowable … token expired`), and the `--source cli` command above.
+
+**The variant trading measured, and the place it asked for (#44, same day).** On the live
+instance the observer said `claude=unknown: Claude OAuth token expired … Run claude login` while a
+call with the same credential answered *"Your organization has disabled Claude subscription
+access for Claude Code · Use an Anthropic API key instead, or ask your admin"* — the observer's
+hint was the wrong prescription, the call's sentence the right one, and nothing fed the second
+back to where the first is read. Now: the door (`agent_task.py`) leaves a call the vendor refused
+for the account's sake — an organisation setting, a dead login, a key it rejects
+(`execution.login_refusal`, by words) — as `<logins_root>/.quota/<provider>-<login>.refused.json`
+with its sentence, and takes it back on the next completed call; the collector carries it as
+`execution_refusal` when it is newer than the reading; the router holds on it, young reading or
+not, as `unknown: the last call was refused for the account's sake — "…" — follow that sentence`,
+and `fix_for` says the sentence is the remedy. review_controls 218/218 (the classifier, the note
+with a good and a kept reading, an old note not carried, the router's hold and wording). Not
+measured live: the next refusal of that class on the instance. #61 (trading): the one sentence on
+docs/packages.md "Controls" — with the controls' root set the three roots are re-mapped whatever a
+fixture `runtime.json` says; take the workspace from the step's answer. #62 (trading): the door's
+three gaps for a schema-pinned harness — a stdin payload, the vendor's raw envelope, a per-call
+schema — are a design question on the adapter's ACP path, which carries none of the CLI's
+`--output-format json` envelope; left to the operator with the analysis on the issue.

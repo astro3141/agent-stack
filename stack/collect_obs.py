@@ -57,6 +57,7 @@ login_dir = lambda provider: f"{LOGINS}/{LOGIN_NAMES.get(provider, provider)}"
 # ---- a reading that was taken, kept beside the login ---------------------------------------
 # The profile's quota.reuse_s, handed over by every caller beside the routes and the logins
 # (AGENTSTACK_OBS_REUSE_S); 120 only for a caller that predates the key.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 REUSE_S = int(os.environ.get("AGENTSTACK_OBS_REUSE_S", "120"))
 CACHE = f"{LOGINS}/.quota"
 
@@ -72,6 +73,21 @@ def failure_kind(err):
     if "rate limit" in e or "429" in e:
         return "rate_limited"
     return "other"
+
+
+def execution_refusal(provider, login, rec):
+    """The door's note beside this login (execution.refusal_path), when it is newer than the
+    reading it would qualify: the vendor refused a call for the account's sake after the last
+    good quota reading, so the reading's "within limits" is not the whole truth (#44)."""
+    import execution
+    try:
+        note = json.load(open(execution.refusal_path(LOGINS, provider, login)))
+        seen = rec.get("observed_at") or ""
+        if str(note.get("at") or "") >= seen.replace("+00:00", "Z")[:20]:
+            return {"at": note.get("at"), "failure": str(note.get("failure") or "")[:300]}
+    except Exception:
+        pass
+    return None
 
 
 def kept(provider, login, read):
@@ -119,10 +135,13 @@ def kept(provider, login, read):
             os.replace(path + ".tmp", path)
         except Exception:
             pass
-        return rec
+        note = execution_refusal(provider, login, rec)
+        return {**rec, **({"execution_refusal": note} if note else {})}
     if prev:
-        return {**prev, "source": f"cache:{prev.get('source')}", "live_failed": str(err)[:200],
-                "live_failed_kind": failure_kind(err)}
+        out = {**prev, "source": f"cache:{prev.get('source')}", "live_failed": str(err)[:200],
+               "live_failed_kind": failure_kind(err)}
+        note = execution_refusal(provider, login, prev)
+        return {**out, **({"execution_refusal": note} if note else {})}
     if rec:
         return rec
     raise RuntimeError(err)

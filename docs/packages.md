@@ -506,7 +506,11 @@ one function per risk, a summary line. The roots a step writes to — workspace,
 are a temporary directory for the length of that process (`packages.sh controls` sets
 `AGENTSTACK_CONTROLS_ROOT` and removes it after, #54): your steps read them through `step` as
 always, and the instance's own trees are not written. Logins and the hand-in directory stay where
-they are; a control that needs a hand-in puts a fixture there under a name of its own.
+they are; a control that needs a hand-in puts a fixture there under a name of its own. **With
+`AGENTSTACK_CONTROLS_ROOT` set, those three roots are re-mapped whatever your own fixture
+`runtime.json` says** — a controls file that computed a workspace of its own and read the step's
+output from there found it empty (trading, #61). Take the workspace from the step's own answer
+(`workspace` in the execution record, `step.workspace()` in a step) rather than recomputing it.
 
 The platform's suite (`stack/trial_controls.py`) pins the platform and never imports a package to
 pin that package's rules. Until 2026-10 it did — novel's triage, evidence index and round semantics
