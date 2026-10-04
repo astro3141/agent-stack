@@ -371,7 +371,7 @@ rec = execution.record(**{
     # Why it failed, in the line a reader of this step's output sees. Without it a step that died
     # in 0.4 seconds said only FAILED, and finding "ENOENT: ~/.codex/config.toml" meant replaying
     # the request by hand on another machine (reported from the second install).
-    "failure": verdict or execution.failure_of(r),
+    "failure": execution.failure_of(r) if not verdict else verdict,
     "ledger_error": r.get("ledger_error") or "",
     "turns": 1,
     "tool_calls": tool_calls,
