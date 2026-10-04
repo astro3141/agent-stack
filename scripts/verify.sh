@@ -149,10 +149,16 @@ fs = {"read_file","read_text_file","read_media_file","read_multiple_files","writ
       "search_files","get_file_info","list_allowed_directories"}
 # `allow` is the only value Preloop 0.15.0/0.16.0 accept (policy header, OPERATIONS §63): anything
 # else fails `policy apply` on the instance, so a change here is caught before a bring-up.
-print("allow" if d["defaults"]["unknown_tools"] == "allow" else "UNSUPPORTED", sorted(fs - tools))
+# every tool that writes denies `..` in its path arguments, for every principal (novel-v2 #78, §96)
+writes = {"write_file": ("args.path",), "edit_file": ("args.path",), "create_directory": ("args.path",),
+          "move_file": ("args.source", "args.destination")}
+conds = {t["name"]: [c for c in (t.get("conditions") or []) if c.get("action") == "deny"] for t in d["tools"]}
+open_ = sorted(f"{t}:{f}" for t, fields in writes.items() for f in fields
+               if not any(f"{f}.contains('..')" in c.get("expression", "") for c in conds.get(t, [])))
+print("allow" if d["defaults"]["unknown_tools"] == "allow" else "UNSUPPORTED", sorted(fs - tools), open_)
 PY
 )"
-case "$out" in "allow []") ok "policy/b-fsmcp.yaml names every filesystem tool, with the one default Preloop accepts";; *) bad "policy/b-fsmcp.yaml misses a tool, or sets a default Preloop refuses" "$out";; esac
+case "$out" in "allow [] []") ok "policy/b-fsmcp.yaml names every filesystem tool, with the one default Preloop accepts, and denies .. in every write path";; *) bad "policy/b-fsmcp.yaml misses a tool, sets a default Preloop refuses, or leaves a write path open to .." "$out";; esac
 
 out="$(AGENTSTACK_PACKAGES="$HERE/packages" AGENTSTACK_PACKAGES_YAML="$HERE/config/packages.yaml" AGENTSTACK_PACKAGES_LOCAL="$HERE/config/packages.local.yaml" AGENTSTACK_ROOT="$(hp "$HERE")" $PY stack/packages.py 2>&1 | nocr)"
 if echo "$out" | grep -q "UNUSABLE\|REFUSED"; then bad "a declared package is unusable or needs a newer stack" "$(echo "$out" | grep 'UNUSABLE\|REFUSED')"; else ok "every declared package is usable: $(echo "$out" | grep -cvE '^\s' ) packages"; fi

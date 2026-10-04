@@ -63,8 +63,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import execution  # noqa: E402
 import settings  # noqa: E402
 BROKER = os.environ.get("AGENTSTACK_BROKER_URL") or settings.url("broker", "url")
-timeout_s = int(((settings.profile(prof_name) or {}).get("execution")
-                 or {}).get("timeout_ms", 900000)) // 1000
+_prof = settings.profile(prof_name)
+if _prof is None:                      # the same refusal the door makes (#79): never an empty profile
+    print(json.dumps(execution.record(
+        status="FAILED", provider=provider, principal=principal, profile=prof_name, produced=False, attempts=0,
+        failure=f"profile {prof_name!r} has no generated file — a profile yaml is live only after "
+                f"`cfg.py generate` (scripts/up.sh runs it); generated now: "
+                f"{', '.join(settings.profile_names()) or 'none'}"), ensure_ascii=False))
+    raise SystemExit(0)
+timeout_s = int((_prof.get("execution") or {}).get("timeout_ms", 900000)) // 1000
 
 req = {"role": principal, "provider": provider, "model_route": model_route or "direct",
        "label": label, "prompt": prompt, "expected": expected,

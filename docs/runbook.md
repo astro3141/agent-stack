@@ -113,6 +113,21 @@ claude: unknown: the login's token expired — the last reading is 27152s old (>
 carries the remedy. A workflow that would rather run on another vendor than hold names its order:
 `author=claude|codex:novel-author` in its roles step binds the first the admission admitted.
 
+The login itself is usually fine — the CLI refreshes its token on its next call, and the hold
+exists because no call is made. Measured by novel-v2 (#44): one call **inside the agent container,
+through the proxy**, clears it, because the refresh goes to `console.anthropic.com`, which the
+shared allowlist carries:
+
+```bash
+docker exec <stack>-agent sh -c 'HTTPS_PROXY=http://egress:8888 CLAUDE_CONFIG_DIR=/route/claude claude -p "say OK"'
+```
+
+Without the proxy variables the same call hangs (the refresh cannot leave the governed network).
+It is a model call made for no work, and the stack does not make it for you (decision 2,
+DECISIONS-2026-10-04); it is the operator's remedy when a sign-in on the panel is more than the
+situation needs. The org-disabled variant (§88) answers that call with the sentence that is the
+real remedy.
+
 **Two more "unknown" lines, measured on a second install (OPERATIONS §64), and what each is:**
 
 ```

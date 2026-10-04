@@ -76,7 +76,18 @@ prof_name = POSITIONAL[5] if len(POSITIONAL) > 5 and POSITIONAL[5] else "researc
 login = POSITIONAL[6] if len(POSITIONAL) > 6 and POSITIONAL[6] else provider
 # the principal whose tool rights this step runs with; empty means the adapter's own credential
 principal = POSITIONAL[7] if len(POSITIONAL) > 7 and POSITIONAL[7] else ""
-RT, PROF = settings.runtime(), settings.profile(prof_name) or {}
+RT, PROF = settings.runtime(), settings.profile(prof_name)
+# A profile is live only once `cfg.py generate` has written it (scripts/up.sh does). A yaml that
+# exists without that ran as an empty profile here — no native_allow, so every web lookup waited
+# for a person until the step timed out (novel-v2, #79). Refused, with what there is instead.
+if PROF is None:
+    print(json.dumps(execution.record(
+        status="FAILED", kind=kind, provider=provider, principal=principal, profile=prof_name,
+        produced=False, attempts=0,
+        failure=f"profile {prof_name!r} has no generated file — a profile yaml is live only after "
+                f"`cfg.py generate` (scripts/up.sh runs it); generated now: "
+                f"{', '.join(settings.profile_names()) or 'none'}")))
+    raise SystemExit(0)
 run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 ws = f"{RT['paths']['workspace_root']}/{run}"
 os.makedirs(ws, exist_ok=True)

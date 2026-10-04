@@ -583,6 +583,34 @@ someone makes the login inside the container and chowns it to the role's uid by 
 brokered role (`egress_profile:` alone) needs none of that — the profile's runner uses the shared
 login, which is what the recorded `grok-allow` run did.
 
+**Rules are Preloop's, in Preloop's shape, and two of its habits are worth knowing before the
+first run (novel-v2, #77 and #78):**
+
+- An empty `condition_expression` means "anything else" **only under `condition_type: simple`**
+  — the shape every catch-all deny in this tree is written in. Under `condition_type: cel` an
+  empty expression is an empty program and matches nothing: an allow written that way lets nothing
+  through, and the step's requests fall to approval until it times out. `principals.py apply`
+  refuses such a rule with that sentence.
+- `contains()` is a plain substring, and the rule layer does no path normalization:
+  `args.path.contains('draft.md')` is true of `mydraft.md`, `draft.md.orig` and
+  `draft.md/../review_story.json`. For an **allow** on a path, name the file by its end —
+  `endsWith('/draft.md')`, or `matches(...)` under `cel` — and keep the catch-all deny after it.
+  The account policy (`policy/b-fsmcp.yaml`) denies `..` in every write, edit, create and move
+  path whatever a principal's rules say, so the traversal row is closed category-wide; the
+  substring rows are yours to close with the rule's shape.
+
+**A role that needs web tools** (Search, Fetch) does not get them from its tool rules (novel-v2,
+#79). They are the vendor's native tools, and the switch is the execution **profile**: a profile's
+`tools.native_allow: [WebSearch, WebFetch]` lets those two run without asking (`routed:
+profile_native_allow` in `permissions.jsonl`); nothing else is allowed there (`cfg.py` refuses
+other names). Where `WebFetch` may reach is the egress allowlist's to decide — a role's profile
+pins its hosts at the proxy; `WebSearch` runs at the provider and no proxy limits it. So a
+researcher step takes a profile that allows them (`long-task` carries the devflow researcher's
+binding) and the workflow names it. **A profile yaml is live only after `cfg.py generate`** has
+written `config/generated/profiles/<name>.json` — `scripts/up.sh` runs it — and a profile with no
+generated file is refused by the door, naming the ones that exist, rather than run as an empty one
+(which is how three runs held on every Search until they timed out).
+
 **Installing a package is a decision to trust it**: that is what gives its principals rights. Read a
 package before installing it, as you would a dependency.
 
