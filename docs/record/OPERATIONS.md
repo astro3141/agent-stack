@@ -5229,3 +5229,19 @@ day, `ALL CHECKS PASSED`, rollback point `20261004-071229-6dbbcb7`, no `cand-` i
 host's root certificate intact) was performed by the script of 6dbbcb7, which predates this
 section and so printed no `performed by` line — as the rule says of a workspace older than it.
 The first update *from* 94fc735 or later is the one that measures the hand-over.
+
+**Measured live (the same day): `release.sh update --to 6c354af` from 94fc735**, exit 0,
+`ALL CHECKS PASSED`:
+
+```
+== candidate 6c354af
+== recording release 20261004-071932-94fc735
+  performed by     the target revision's scripts/release.sh (6c354af)
+  handed over by   the script of 94fc735 (candidate built, release in use kept)
+  now at           6c354af
+ALL CHECKS PASSED
+```
+
+The workspace's script built the candidate and recorded the release in use, then the target's
+script moved the workspace, rebuilt and checked. One rollback point recorded, not two; no
+`cand-` image left. #48 closed on it.
