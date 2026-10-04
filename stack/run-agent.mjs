@@ -3,7 +3,11 @@
 //   node run-agent.mjs <request.json>          prints one normalized result JSON on stdout
 //
 // request.json: { run_id, provider, model?, cwd, prompt, timeout_ms?, evidence_dir?,
-//                 mcp_principal? }   mcp_principal: present this role's Preloop credential
+//                 mcp_principal?, kind? }   mcp_principal: present this role's Preloop credential
+//                 kind: "query" — one prompt, no tools, no MCP server (§89): the vendor is asked
+//                 for no tools (allowedTools [], maxTurns 1, and each provider's own switch), every
+//                 permission request is refused here without asking Preloop, and the prompt goes as
+//                 it is. Whether the vendor honoured the ask is read by the door from the events.
 //
 // Everything vendor-specific lives in stack/adapter/providers/<name>.mjs. The caller (Conductor),
 // Preloop and MLflow see the same request and result shape whichever provider runs.
@@ -25,7 +29,7 @@ import { createAgentRegistry } from "/opt/npm-global/lib/node_modules/acpx/dist/
 // how the status is decided, the one result shape; what a permission request says to Preloop and
 // how the answer becomes an outcome; the codex ledger line.
 import { accumulator, take, normalizeStatus, buildResult, exitCodeFor } from "/work/stack/adapter/result.mjs";
-import { NATIVE_ALLOWABLE, permissionBody, permissionEvent, decidedLocally } from "/work/stack/adapter/permissions.mjs";
+import { NATIVE_ALLOWABLE, permissionBody, permissionEvent, decidedLocally, refusedLocally } from "/work/stack/adapter/permissions.mjs";
 import { ledgerLine } from "/work/stack/adapter/ledger.mjs";
 // One module per provider, each a function of the call's context: what a vendor needs (its
 // login directory, its egress, its principal) is handed to it per call, never kept in this
@@ -155,8 +159,13 @@ function postJson(url, obj, signal, token) {
   });
 }
 
-async function askPreloop(req, { provider, prof, token, runId, cwd, signal, log, mcpOnly, nativeAllow = [] }) {
+async function askPreloop(req, { provider, prof, token, runId, cwd, signal, log, mcpOnly, nativeAllow = [], query = false }) {
   const tc = req.raw.toolCall ?? {};
+  // a query has no tools: nothing the model reaches for is approvable, so nobody is asked
+  if (query) {
+    log(refusedLocally(tc, req.raw, "query_no_tools"));
+    return { outcome: "reject_once" };
+  }
   // A read-only web tool the profile lets run without asking (tools.native_allow). Where it can
   // reach is the egress allowlist's to decide; nothing that writes or executes is ever let through.
   const nativeName = tc._meta?.claudeCode?.toolName ?? tc.name;
@@ -214,7 +223,12 @@ async function main() {
   if (call.principal && !mcpOnly) {
     throw new Error("mcp_principal requires native_tools=false: without it the run does not go through the Preloop MCP server");
   }
-  const extraEnv = mcpOnly ? prof.disableNative(req.cwd, req.native_allow || []) : {};
+  // kind: "query" (§89) — no tools at all, and so no Preloop MCP server either: each provider's own
+  // way of asking for none (queryEnv), on top of the session options below. A principal on a query
+  // names whose call it is (uid, egress) and brings no server with it.
+  const query = req.kind === "query";
+  const extraEnv = query ? (prof.queryEnv?.(req.cwd) ?? {})
+    : mcpOnly ? prof.disableNative(req.cwd, req.native_allow || []) : {};
   // model_route: "direct" → the routing layer's own login + allowlist proxy; otherwise the
   // Preloop model gateway (the #278 path). Refused if the provider has no direct profile.
   const direct = req.model_route === "direct" || !!prof.directOnly;
@@ -224,7 +238,7 @@ async function main() {
   // vendor would otherwise read its own file: that is the only way this call's rights differ from
   // the login's. The name is the same one its configuration uses, so a vendor that has both sees one
   // server under one name rather than two answering for the same thing.
-  const handOver = mcpOnly && (!prof.mcpViaConfig || (call.principal && prof.mcpAuthFromFile));
+  const handOver = !query && mcpOnly && (!prof.mcpViaConfig || (call.principal && prof.mcpAuthFromFile));
   const mcpServers = handOver ? [{
     type: "http", name: "preloop", url: PRELOOP_MCP_URL,
     headers: [{ name: "Authorization", value: call.principal ? principalAuth(call.principal) : prof.mcpAuth() }],
@@ -249,13 +263,18 @@ async function main() {
   try {
     // A fresh session key per run: acpx keys sessions on (agent, cwd, name) with no account
     // or policy, so reuse across runs could carry one account's session into another's.
+    // a query asks the agent for no tools and one turn, in the session options acpx forwards
+    // (allowedTools, maxTurns); what each agent makes of them is the live measurement's to say,
+    // and the door reads the answer from the events either way (§89)
+    const sessionOptions = { ...(req.model ? { model: req.model } : {}),
+                             ...(query ? { allowedTools: [], maxTurns: 1 } : {}) };
     handle = await runtime.ensureSession({
       sessionKey: `p281-${req.run_id}`, agent: prof.agent, mode: "oneshot", cwd: req.cwd,
-      sessionOptions: req.model ? { model: req.model } : undefined,
+      sessionOptions: Object.keys(sessionOptions).length ? sessionOptions : undefined,
     });
     const turn = runtime.startTurn({
       handle, text: req.prompt, mode: "prompt", requestId: `${req.run_id}-1`,
-      onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, prof, token: hook.hook.token, runId: req.run_id, cwd: req.cwd, signal, log, mcpOnly, nativeAllow: req.native_allow || [] }),
+      onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, prof, token: hook.hook.token, runId: req.run_id, cwd: req.cwd, signal, log, mcpOnly, nativeAllow: req.native_allow || [], query }),
     });
     for await (const ev of turn.events) {
       take(acc, ev);

@@ -21,11 +21,13 @@ A record carries `contract`, the version of this shape, so a reader can tell an 
 """
 import copy, json, os
 
-CONTRACT = 1
+CONTRACT = 2                             # 2: the query kind's keys (§89) — a 1 is a record from before them
 
 # every key a model step answers with, and what it holds when the call did not get that far
 FIELDS = {
-    "status": "FAILED",                  # COMPLETED | FAILED | DENIED | TIMED_OUT | …
+    "status": "FAILED",                  # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | …
+    "kind": "task",                      # task: the prompt may use tools and writes an artifact;
+                                         # query: one prompt, no tools, an answer in a declared shape (§89)
     "provider": "",
     "principal": "",                     # the Preloop principal the call presented
     "model_route": "",
@@ -45,7 +47,13 @@ FIELDS = {
     "attempts": 1,                       # 2 when the one bounded login-refresh retry ran
     "failure": "",                       # why, when status is not COMPLETED
     "ledger_error": "",
-    "measurements": {},                  # a number the adapter did not report is left out, never 0
+    "turns": 1,                          # one prompt is one turn over ACP; a retry is another call
+    "tool_calls": 0,                     # tool calls the turn made (events.jsonl); a query must say 0
+    "server_tool_use": 0,                # of those, web lookups
+    "schema_sha256": "",                 # a query: the declared schema, by content
+    "answer": {},                        # a query: the validated answer; {} until there is one
+    "measurements": {},                  # a number the adapter did not report is left out, never 0;
+                                         # model_usage: per-model token counts, as the adapter reported them
 }
 REQUIRED = ("run_id", "provider", "status")
 
@@ -94,7 +102,8 @@ def note_refusal(logins_root, provider, login, rec):
     except Exception:
         return ""
 TYPES = {"produced": bool, "produced_stale": bool, "retryable_elsewhere": bool,
-         "approvals_requested": int, "mcp_rule_denials": int, "attempts": int, "measurements": dict}
+         "approvals_requested": int, "mcp_rule_denials": int, "attempts": int, "measurements": dict,
+         "turns": int, "tool_calls": int, "server_tool_use": int, "answer": dict}
 
 
 def record(**fields):

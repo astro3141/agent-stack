@@ -213,7 +213,8 @@ block; three packages had each copied their own subset, one of them twice
 recorder turns into an MLflow run, and what `trajectory.py` sums; a copy is written beside the
 adapter's raw result as `<evidence_dir>/execution.json`, so the evidence directory carries the
 platform's record of the call whether or not any step passed it on. A record carries
-`contract: 1`, the version of this shape; so do a fan-out's receipt and a chain's answer. The
+`contract: 2`, the version of this shape (2 since the query's keys, §89; a 1 is a record from
+before them); so do a fan-out's receipt and a chain's answer. The
 recorder also reads the evidence directories of the run directly, so a call your workflow made
 and did not list is recorded all the same (#22); and a run a step of yours starts through
 `run_workflow.py start` carries your run's id as its parent and inherits your `--suite`/`--case`
@@ -222,7 +223,8 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
 
 ```yaml
     output:
-      status: {type: string}                 # COMPLETED | FAILED | DENIED | TIMED_OUT | ...
+      status: {type: string}                 # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | ...
+      kind: {type: string}                   # task (the default) | query (one prompt, no tools, a declared shape)
       provider: {type: string}
       principal: {type: string}              # the Preloop principal the call presented
       model_route: {type: string}
@@ -242,15 +244,72 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
       attempts: {type: number}               # 2 when the one bounded login-refresh retry ran
       failure: {type: string}                # why, when status is not COMPLETED
       ledger_error: {type: string}
+      turns: {type: number}                  # one prompt is one turn over ACP; a retry is another call
+      tool_calls: {type: number}             # tool calls the turn made, from the adapter's events; a query says 0
+      server_tool_use: {type: number}        # of those, web lookups
+      schema_sha256: {type: string}          # a query: the declared schema, by content
+      answer: {type: object}                 # a query: the validated answer; {} until there is one
       measurements:                          # a number the adapter did not report is left out, never 0
         type: object
         properties:
           total_tokens: {type: number, required: false}
           wall_ms: {type: number, required: false}
+          model_usage: {type: array, required: false}   # per-model token counts, as the adapter reported them
 ```
 
 A YAML anchor (`output: &agent_out` on the first model step, `output: *agent_out` on the rest)
 keeps one copy per workflow; `packages/research-r/research-r.yaml` shows it.
+
+## A query: one prompt, no tools, an answer in a declared shape
+
+A harness that pins its prompts to a schema — a prompt's answer is parsed, checked, and nothing
+else may have happened in between (trading, #62) — calls the same door with one more argument:
+
+```
+agent_task.py <provider> <route> <label> <payload|-> <answer.json> [<profile> [<login> [<principal>]]] --query <schema.json>
+```
+
+What a **query** is, and what the door does with it (§89, DECISIONS-2026-10-04 §8):
+
+- **The payload goes as it is.** The file's bytes (`-` reads them from stdin, for a harness that
+  never writes a prompt to disk), no `{WS}`, nothing added or wrapped; `request.json` in the
+  evidence directory carries exactly what the model saw. What the model is told about the shape
+  it must answer in is the payload's business — the door sends it no schema.
+- **No tools.** The vendor is asked for none (the adapter's session options `allowedTools: []`,
+  `maxTurns: 1`, and each provider's own switch: Claude's project deny list, Codex's shell and
+  web search off; Grok's posture is per login) and no Preloop MCP server travels with the call.
+  Every permission request is refused by the adapter without asking anyone. Whether the vendor
+  honoured the ask is read from the events: **`tool_calls` is 0, or the status is `TOOLS_USED`**,
+  whatever the model wrote.
+- **One turn.** Over ACP one prompt is one turn; `turns: 1` says so, and a retry is another call.
+- **The answer is checked here, after the call, the same for every vendor.** The model's text,
+  with one surrounding ``` fence removed and nothing else, is read as JSON and checked against the
+  schema. It passes: `COMPLETED`, the answer written to the expected file as JSON, and carried in
+  the record as `answer` (`produced` means a valid answer arrived). It does not: `INVALID_OUTPUT`,
+  the problems named in `failure` by their place (`$.verdict: "hold" is not one of […]`), the raw
+  text kept as `answer.raw.txt`, and **no retry** — an answer that broke its schema is the model's
+  doing, and the stack never retries a failure the model produced (CONTRACT.md). A fan-out member
+  sees it as `invalid`, which its default `retry_when` does not retry; say `["invalid"]` to.
+- **What is retried, once:** a login the vendor calls a refresh (as for a task) and a text that
+  is not JSON at all — a cut stream is a transport fault, not an answer. Both are counted in
+  `attempts`, both attempts' results kept (`result.a1.json`, `events.a1.jsonl`).
+- **The schema** is a JSON Schema whose root is `"type": "object"` — the shape the three vendors'
+  own schema modes require too — using the keywords the door checks: `type`, `enum`, `const`,
+  `properties`, `required`, `additionalProperties`, `items`, `minItems`, `maxItems`, `minimum`,
+  `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `minLength`, `maxLength`, `pattern`,
+  `anyOf`, `oneOf`, `allOf`, local `$ref` (`#/$defs/…`, `#/definitions/…`); `title`,
+  `description`, `default`, `examples`, `$schema`, `$id`, `$comment`, `deprecated` are read by
+  nobody and allowed. A schema that uses any other keyword is **refused before the call**
+  (`FAILED`, `attempts: 0`, the keywords named): an answer called valid against a half-read schema
+  would be worse than no call. `schema_sha256` names the schema the answer was checked against.
+- **The record** is the execution record above with `kind: query`, `turns`, `tool_calls`,
+  `server_tool_use`, `schema_sha256`, `answer`, and `measurements.model_usage` — the per-model
+  token rows the adapter reported, so a prompt pinned to one model can read which model answered
+  (`model_adapter_reported` lists them; Claude and Codex report, Grok reports none — a query on
+  Grok cannot be pinned to a model).
+- **Where it runs** is as for a task: a role that declares an egress profile is handed to the
+  broker, schema and payload with it. A chain step (`steps/task_chain.py`) is a query with
+  `"query": "<schema path>"` beside its `prompt`.
 
 **Where a call runs is not the workflow's to choose.** A role that declares an egress profile is
 handed to the broker by `agent_task.py` itself (§54); a fan-out and a chain start the same step
@@ -397,7 +456,9 @@ A fan-out member may ask to be run again when it does not produce:
 
 No retry by default; `["failed"]` when retries are asked for and `retry_when` is not given — a
 denial is an answer (a tool rule, or a person), and retrying an answer is something the workflow
-says out loud. Every attempt is in the receipt as `attempts` and `attempt_outcomes`.
+says out loud. So is a query's `invalid` (an answer that broke its schema, or a tool call the
+model made): the model's doing, retried only when the member says `"invalid"`. Every attempt is
+in the receipt as `attempts` and `attempt_outcomes`.
 
 ## Credentials of its own
 
@@ -548,6 +609,17 @@ the package is four steps, and the fourth is the one that pays for the other thr
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
 
+**§89 (2026-10-04 — the query kind of a call, #62).**
+- **`--query <schema.json>` on `agent_task.py`** makes the call a query: the payload byte for
+  byte (`-` for stdin), no tools, one turn, the answer checked against the schema here and
+  written to the expected file; `INVALID_OUTPUT` / `TOOLS_USED` and no retry for what the model
+  did ("A query", above). A harness that called a vendor CLI with `--json-schema` calls this
+  instead; the record carries the per-model usage it needs (`measurements.model_usage`).
+- The execution record gained `kind`, `turns`, `tool_calls`, `server_tool_use`, `schema_sha256`,
+  `answer`; `contract` is 2. A reader that copied the `output:` block copies it again; one that
+  routes on the old keys needs nothing.
+- A fan-out member's outcome word `invalid` (a query's two verdicts), never retried by default.
+
 **§88 (2026-10-04 — #44, the expired login).**
 - **A role may name its order of vendors**: `author=claude|codex:novel-author` in the roles step
   binds the first one this run's admission admitted, the way the router walks the profile's
@@ -630,8 +702,8 @@ behaviour you notice has a name.
   which ones the judgement rests on.
 - **A run your step starts** through `run_workflow.py start` carries your run as its parent and
   inherits `--suite`/`--case` (#13). Pass nothing extra.
-- **`contract: 1`** travels in the execution record, a fan-out's receipt and a chain's answer; a
-  reader of yours may check it (#26).
+- **`contract: 2`** travels in the execution record, a fan-out's receipt and a chain's answer; a
+  reader of yours may check it (#26). A 1 is a record from before the query's keys (§89).
 - **A package with its own runtime** (a desk, a harness, a loop) keeps its runtime and uses the
   stack's doors: `agent_task.py` for every model call, Preloop for every approval, the recorder
   or the evidence directory for every record; it never writes into `/route` (#25, CONTRACT.md "A

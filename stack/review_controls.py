@@ -588,7 +588,7 @@ def execution_controls():
           ["run_id missing", "provider missing", "attempts is not int"], ex.problems({"status": "FAILED", "attempts": "2"}))
     doc = (WORK / "docs" / "packages.md").read_text()
     block = doc.split("## The output of a model step")[1].split("```yaml")[1].split("```")[0]
-    keys = set(re.findall(r"^\s{6}([a-z_]+):", block, re.M)) - {"type", "properties"}
+    keys = set(re.findall(r"^\s{6}([a-z_0-9]+):", block, re.M)) - {"type", "properties"}
     check("execution: docs/packages.md lists exactly the shape's keys", keys == set(ex.FIELDS), sorted(keys ^ set(ex.FIELDS)))
     root = Path(tempfile.mkdtemp(prefix="agentstack-exec-"))
     ex.write(root / "e1", rec)
@@ -1183,6 +1183,73 @@ def feedback_controls():
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 22. the query kind of a call (§89)
+def query_controls():
+    """What the door checks after a query, as functions: the fence, the schema subset, the keywords
+    it refuses, the tool count read from a turn's events, and the record's keys."""
+    sys.path.insert(0, str(HERE))
+    q = importlib.import_module("query")
+    ex = importlib.import_module("execution")
+    check("query: one surrounding fence is removed, with or without a language tag",
+          q.extract("```json\n{\"a\": 1}\n```") == '{"a": 1}' and q.extract("```\n[1]\n```") == "[1]"
+          and q.extract("  {\"a\": 1}\n") == '{"a": 1}')
+    check("query: text around a fence is kept — it is the answer too, and it is not JSON",
+          q.extract("Sure:\n```json\n{}\n```") == "Sure:\n```json\n{}\n```")
+    schema = {"type": "object", "properties": {"verdict": {"type": "string", "enum": ["buy", "sell"]},
+                                               "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                                               "notes": {"type": "array", "items": {"$ref": "#/$defs/note"}, "maxItems": 2},
+                                               "n": {"type": "integer"}},
+              "required": ["verdict", "confidence"], "additionalProperties": False,
+              "$defs": {"note": {"type": "string", "minLength": 1, "pattern": "^[a-z]"}}}
+    check("query: a valid answer has no problems",
+          q.problems({"verdict": "buy", "confidence": 0.5, "notes": ["ok"], "n": 2}, schema) == [])
+    probs = q.problems({"verdict": "hold", "confidence": 2, "notes": ["", "x", "Y"], "n": 1.5, "x": 1}, schema)
+    check("query: every break is named by its place — enum, maximum, items by $ref, maxItems, integer, extra keys",
+          [p.split(":")[0] for p in probs] == ["$.verdict", "$.confidence", "$.notes", "$.notes[0]", "$.notes[0]", "$.notes[2]", "$.n", "$"], probs)
+    check("query: a missing required key is named", q.problems({"verdict": "buy"}, schema) == ["$: required key 'confidence' is missing"],
+          q.problems({"verdict": "buy"}, schema))
+    check("query: the wrong type stops there — the keywords below assume the type",
+          q.problems("buy", schema) == ["$: is a string, the schema says object"], q.problems("buy", schema))
+    check("query: anyOf, oneOf, allOf and const",
+          q.problems(3, {"anyOf": [{"type": "string"}, {"type": "integer"}]}) == []
+          and q.problems(3, {"oneOf": [{"type": "integer"}, {"minimum": 0}]}) != []
+          and q.problems(3, {"allOf": [{"type": "integer"}, {"maximum": 2}]}) == ["$: 3 is above the maximum 2"]
+          and q.problems("a", {"const": "b"}) != [])
+    check("query: a boolean is not an integer, nor a number",
+          q.problems(True, {"type": "integer"}) != [] and q.problems(True, {"type": "number"}) != [])
+    check("query: a keyword outside the checked set is named, at any depth, and annotations are not",
+          q.unchecked({"type": "object", "title": "t", "properties": {"d": {"type": "string", "format": "date"},
+                       "e": {"items": {"uniqueItems": True}}}}) == ["format", "uniqueItems"]
+          and q.unchecked(schema) == [])
+    check("query: a $ref that points at nothing, or outside the schema, is a problem, not a crash",
+          q.problems(1, {"$ref": "#/$defs/none"}) != [] and q.problems(1, {"$ref": "http://x/y"}) != [])
+    fx = WORK / "stack" / "fixtures" / "run-agent"
+    counts = {d: q.tool_counts(fx / d / "events.jsonl") for d in ("claude-auto", "codex-auto", "grok-allow", "grok-deny")}
+    check("query: tool calls are counted once per start on the recorded runs (claude 2, codex 1, grok 2, 2), none a web lookup",
+          counts == {"claude-auto": (2, 0), "codex-auto": (1, 0), "grok-allow": (2, 0), "grok-deny": (2, 0)}, counts)
+    check("query: no events file is (0, 0), not an error", q.tool_counts(fx / "nothing" / "events.jsonl") == (0, 0))
+    root = Path(tempfile.mkdtemp(prefix="agentstack-query-"))
+    (root / "ev.jsonl").write_text(json.dumps({"type": "tool_call", "tag": "tool_call", "title": "WebSearch", "toolCallId": "a"}) + "\n"
+                                   + json.dumps({"type": "tool_call", "tag": "tool_call_update", "toolCallId": "a"}) + "\n"
+                                   + json.dumps({"type": "tool_call", "tag": "tool_call", "title": "mcp.preloop.write_file", "toolCallId": "b"}) + "\n"
+                                   + "not json\n")
+    check("query: a web lookup is told apart, an update is not a second call, a bad line is skipped",
+          q.tool_counts(root / "ev.jsonl") == (2, 1), q.tool_counts(root / "ev.jsonl"))
+    shutil.rmtree(root, ignore_errors=True)
+    rec = ex.record(provider="claude", run_id="r")
+    check("query: the record's shape carries the query's keys with their nothing-values, and says contract 2",
+          (rec["kind"], rec["turns"], rec["tool_calls"], rec["server_tool_use"], rec["schema_sha256"], rec["answer"], rec["contract"])
+          == ("task", 1, 0, 0, "", {}, 2), rec)
+    check("query: a wrong-typed count is a named problem", ex.problems({"run_id": "r", "provider": "p", "status": "COMPLETED", "tool_calls": "0"}) == ["tool_calls is not int"])
+    r = subprocess.run(["node", "--input-type=module", "-e",
+                        'import { refusedLocally } from "' + str(WORK / "stack" / "adapter" / "permissions.mjs") + '";'
+                        'const e = refusedLocally({ kind: "execute", title: "Bash" }, {}, "query_no_tools");'
+                        'process.stdout.write(JSON.stringify([e.outcome, e.denial, e.routed, e.preloop]));'],
+                       capture_output=True, text=True, timeout=60)
+    check("query: the adapter refuses a tool request without asking Preloop — reject_once, query_no_tools, nobody asked",
+          r.stdout.strip() == '["reject_once","query_no_tools","query_no_tools",null]', r.stdout + r.stderr)
+
+
 def pinkind_controls():
     """pin_kinds.py counts the controls that pin a source file's text rather than a behaviour; the
     count may fall and may not rise. Raise the bound only with a sentence in OPERATIONS."""
@@ -1218,6 +1285,7 @@ review3_controls()
 ease_controls()
 firstuse_controls()
 feedback_controls()
+query_controls()
 pinkind_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

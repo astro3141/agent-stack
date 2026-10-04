@@ -47,3 +47,11 @@ export function decidedLocally(tc, raw, routed) {
   return { at: new Date().toISOString(), acp_kind: tc.kind ?? null, title: tc.title ?? null,
     raw, outcome: "allow_once", denial: null, preloop: null, error: null, routed };
 }
+
+// A request refused without asking anyone: a query (§89) has no tools, so a tool the model reached
+// for is not sent to Preloop as if it could be approved — it is refused here, logged, and the
+// door reads it, with the tool_call event beside it, as TOOLS_USED.
+export function refusedLocally(tc, raw, routed) {
+  return { at: new Date().toISOString(), acp_kind: tc.kind ?? null, title: tc.title ?? null,
+    raw, outcome: "reject_once", denial: "query_no_tools", preloop: null, error: null, routed };
+}

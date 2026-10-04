@@ -1,11 +1,21 @@
 """Conductor script step: one model task through the routing/execution layer.
 
 usage: agent_task.py <provider> <model_route> <label> <prompt-file> <expected-file>
-       [<profile> [<login> [<principal>]]]
+       [<profile> [<login> [<principal>]]] [--query <schema.json>]
 The prompt file may use {WS} for the run's shared workspace (/ws/<conductor run id>), which
 every model step of the run shares, so a later step can read what an earlier one wrote.
 Writes are only possible through the Preloop MCP server (native write/shell are removed);
 Preloop's rules decide them. Emits the normalized result flat for Conductor.
+
+`--query <schema.json>` makes the call a **query** (§89, docs/packages.md "A query"): one prompt,
+no tools, an answer in the declared shape. The prompt file (`-` for stdin) goes to the model byte
+for byte — no {WS}, nothing added; the vendor is asked for no tools and one turn; the model's text
+is read as JSON (one surrounding fence removed, nothing else) and checked against the schema here,
+after the call, the same for every vendor. Valid → COMPLETED, the answer written to the expected
+file and carried as `answer`; invalid → INVALID_OUTPUT with the problems named, and no retry — a
+failure the model made is not retried (CONTRACT.md); a tool call the vendor made anyway →
+TOOLS_USED. Retried once, as a task is: a login refresh, and a text that is not JSON at all (a cut
+stream, not an answer).
 
 Where it runs is the role's business, not the caller's: a principal that declares an egress
 profile is handed to the broker (steps/broker_dispatch.py, same argv) and runs in that profile's
@@ -15,11 +25,24 @@ container; any other runs here. A workflow names this step and never has to choo
 # What a repeat of this step does (OPERATIONS.md §17): "yes" — the same result;
 # "guarded" — it recognises the repeat; "no" — it does the work again.
 REPEATABLE = "no"   # a model call: it costs, and the answer is not the same twice
-import json, os, subprocess, sys, time
+import hashlib, json, os, subprocess, sys, time
 sys.path.insert(0, "/work/stack")
 import execution
+import query as queryk
 import settings
 
+# `--query <schema>` may stand anywhere after the positional arguments; the re-executions below
+# (the broker, the role's uid) pass sys.argv[1:] on unchanged, so it travels with them
+schema_file = ""
+if "--query" in sys.argv:
+    i = sys.argv.index("--query")
+    schema_file = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+    del sys.argv[i:i + 2]
+    if not schema_file:
+        print(json.dumps(execution.record(status="FAILED", kind="query", produced=False,
+                                          failure="--query needs the schema file")))
+        raise SystemExit(0)
+kind = "query" if schema_file else "task"
 provider, model_route, label, prompt_file, expected = sys.argv[1:6]
 prof_name = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else "research-default"
 login = sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else provider
@@ -137,17 +160,61 @@ if principal and not os.environ.get("AGENTSTACK_ROLE"):
         os.execvp("sudo", ["sudo", "-n", "-E", "-u", principal,
                            "/usr/local/bin/role-exec", principal,
                            "--", sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
+def _refused(why, **more):
+    """A call that is not made: the record says why, with attempts 0, and the step ends."""
+    rec = execution.record(status="FAILED", kind=kind, provider=provider, principal=principal,
+                           run_id=run_id, workspace=ws, produced=False, produced_stale=False,
+                           evidence_dir=evid, profile=prof_name, attempts=0, failure=why, **more)
+    execution.write(evid, rec)
+    print(json.dumps(rec))
+    raise SystemExit(0)
+
+
+# A query's payload goes as it is — bytes, no {WS}, nothing added: what the model is told about
+# the shape it must answer in is the payload's business, and the record carries the payload the
+# model saw. `-` reads it from stdin, for a harness that never writes its prompt to disk (#62).
+if kind == "query":
+    raw = sys.stdin.buffer.read() if prompt_file == "-" else open(prompt_file, "rb").read()
+    prompt = raw.decode("utf-8", errors="surrogateescape")
+else:
+    prompt = open(prompt_file, encoding="utf-8").read().replace("{WS}", ws)
+
+# The schema is the step's to check, after the call; so it is read before, and a schema this
+# validator would only half-read is refused now, at no cost — an answer called valid against a
+# keyword nobody checked would be the worse outcome (stack/query.py).
+schema, schema_sha = None, ""
+if kind == "query":
+    try:
+        sbytes = open(schema_file, "rb").read()
+        schema = json.loads(sbytes.decode("utf-8"))
+        schema_sha = hashlib.sha256(sbytes).hexdigest()
+    except (OSError, ValueError) as e:
+        _refused(f"the schema {schema_file!r} could not be read as JSON: {type(e).__name__}: {e}"[:300])
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        _refused("a query's schema is an object with \"type\": \"object\" at its root — the shape the "
+                 "three vendors' own schema modes require too; the answer travels as `answer`, a mapping",
+                 schema_sha256=schema_sha)
+    bad = queryk.unchecked(schema)
+    if bad:
+        _refused(f"the schema uses keywords this door does not check ({', '.join(bad)}); it checks "
+                 f"{', '.join(sorted(queryk.CHECKED))} and reads nothing else — an answer called valid "
+                 "against a half-read schema is not an answer (stack/query.py)", schema_sha256=schema_sha)
+
 req = {"run_id": run_id, "provider": provider, "model_route": model_route or "preloop_gateway",
-       "login": login, "profile": prof_name,
+       "login": login, "profile": prof_name, "kind": kind,
        **({"mcp_principal": principal} if principal else {}),
        "cwd": ws, "timeout_ms": (PROF.get("execution") or {}).get("timeout_ms", 600000),
        "native_tools": (PROF.get("tools") or {}).get("native_tools", False), "evidence_dir": evid,
        "native_allow": list((PROF.get("tools") or {}).get("native_allow") or []),
-       "prompt": open(prompt_file, encoding="utf-8").read().replace("{WS}", ws)}
+       **({"schema_sha256": schema_sha} if kind == "query" else {}),
+       "prompt": prompt}
 rp = os.path.join(evid, "request.json")
-json.dump(req, open(rp, "w"), indent=1)
+json.dump(req, open(rp, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+# the adapter, by path: the controls stand a recorded one in its place (AGENTSTACK_ADAPTER) and
+# measure this step's own reading of what it answered, with no vendor on the line
+ADAPTER = os.environ.get("AGENTSTACK_ADAPTER") or str(settings.STACK / "run-agent.mjs")
 def run_once():
-    p = subprocess.run(["node", str(settings.STACK / "run-agent.mjs"), rp], capture_output=True, text=True,
+    p = subprocess.run(["node", ADAPTER, rp], capture_output=True, text=True,
                        env={**os.environ, "NODE_NO_WARNINGS": "1"})
     try:
         return json.loads(p.stdout.strip().splitlines()[-1])
@@ -183,7 +250,29 @@ attempts = 1
 # crashed the step with an AttributeError instead of reporting why the call failed (measured).
 msg = json.dumps((r.get("turn") or {}).get("error") or r.get("failure") or {})
 first = None
-if r.get("status") != "COMPLETED" and "refresh" in msg.lower():
+
+
+def tool_use(res):
+    """What the turn reached for: (tool calls, web lookups) from the events the adapter kept,
+    and a permission it asked for counts as a call even when no event named it."""
+    calls, web = queryk.tool_counts(os.path.join(evid, "events.jsonl"))
+    return max(calls, len(res.get("permissions") or [])), web
+
+
+def not_json(res):
+    """A completed query whose text is not JSON at all: a cut stream, read as a transport fault
+    and retried once (DECISIONS-2026-10-04 §8) — unlike JSON that breaks the schema, which is the
+    model's answer and is not retried."""
+    if kind != "query" or res.get("status") != "COMPLETED" or tool_use(res)[0]:
+        return False
+    try:
+        json.loads(queryk.extract(res.get("text") or ""))
+        return False
+    except ValueError:
+        return True
+
+
+if (r.get("status") != "COMPLETED" and "refresh" in msg.lower()) or not_json(r):
     # the first attempt is kept, not replaced: its adapter result beside the second's, and what it
     # cost in the measurements below (review 3: `attempts=2` alone lost the first result and time)
     first = r
@@ -191,7 +280,12 @@ if r.get("status") != "COMPLETED" and "refresh" in msg.lower():
         os.replace(os.path.join(evid, "result.json"), os.path.join(evid, "result.a1.json"))
     except OSError:
         pass
-    time.sleep(20)
+    try:
+        os.replace(os.path.join(evid, "events.jsonl"), os.path.join(evid, "events.a1.jsonl"))
+    except OSError:
+        pass
+    if "refresh" in msg.lower():
+        time.sleep(20)
     r = run_once()
     attempts = 2
 
@@ -201,13 +295,51 @@ def _cost(res):
     return (qq.get("token_count") or {}).get("totalTokens"), res.get("wall_ms")
 
 
+def _usage(res):
+    """Per-model token counts, as the adapter reported them: [{model, token_count: {...}}]."""
+    qq = ((res.get("turn") or {}).get("_meta") or {}).get("quota") or {}
+    return [m for m in (qq.get("model_usage") or []) if isinstance(m, dict)]
+
+
 q = ((r.get("turn") or {}).get("_meta") or {}).get("quota") or {}
 _tok, _wall = _cost(r)
+_usage_rows = _usage(r)
 if first is not None:
     t1, w1 = _cost(first)
     _tok = (t1 or 0) + (_tok or 0) if (t1 is not None or _tok is not None) else None
     _wall = (w1 or 0) + (_wall or 0) if (w1 is not None or _wall is not None) else None
-meas = {"total_tokens": _tok, "wall_ms": _wall}
+    _usage_rows = _usage(first) + _usage_rows
+meas = {"total_tokens": _tok, "wall_ms": _wall, **({"model_usage": _usage_rows} if _usage_rows else {})}
+
+# The query's verdict, the door's own (§89): a tool call the vendor made anyway is TOOLS_USED,
+# whatever else happened; a completed call's text is read as JSON and checked against the schema;
+# what passes is written to the expected file — "produced" then means a valid answer arrived.
+status, answer, verdict = r.get("status", "FAILED"), {}, ""
+tool_calls, server_tool_use = tool_use(r)
+if kind == "query":
+    if tool_calls:
+        status, verdict = "TOOLS_USED", (f"the call made {tool_calls} tool call(s) — a query is one prompt "
+                                         "with no tools; the vendor did not honour the ask, or the model "
+                                         "reached for one (events.jsonl)")
+    elif status == "COMPLETED":
+        text = queryk.extract(r.get("text") or "")
+        try:
+            value = json.loads(text)
+            probs = queryk.problems(value, schema)
+        except ValueError as e:
+            value, probs = None, [f"the text is not JSON: {e}"]
+        if probs:
+            status, verdict = "INVALID_OUTPUT", "; ".join(probs)[:600]
+            try:
+                with open(os.path.join(evid, "answer.raw.txt"), "w", encoding="utf-8") as f:
+                    f.write(r.get("text") or "")
+            except OSError:
+                pass
+        else:
+            answer = value
+            os.makedirs(os.path.dirname(exp_path) or ws, exist_ok=True)
+            with open(exp_path, "w", encoding="utf-8") as f:
+                json.dump(answer, f, ensure_ascii=False, indent=1)
 after = stamp()
 # left over from an earlier attempt, untouched by this one: the reader is told, rather than the
 # file being deleted — an artifact someone may want to look at is not this step's to destroy
@@ -216,7 +348,8 @@ stale = bool(after and after == before)
 # keeps, the recorder reads and the trajectory sums — and a copy goes beside the adapter's own
 # result.json, so the evidence directory carries the platform's record of this call too.
 rec = execution.record(**{
-    "status": r.get("status", "FAILED"),
+    "status": status,
+    "kind": kind,
     "provider": provider,
     "principal": principal,
     "model_route": r.get("model_route") or model_route,
@@ -238,10 +371,16 @@ rec = execution.record(**{
     # Why it failed, in the line a reader of this step's output sees. Without it a step that died
     # in 0.4 seconds said only FAILED, and finding "ENOENT: ~/.codex/config.toml" meant replaying
     # the request by hand on another machine (reported from the second install).
-    "failure": execution.failure_of(r),
+    "failure": verdict or execution.failure_of(r),
     "ledger_error": r.get("ledger_error") or "",
-    # missing measurements are omitted, never 0
-    "measurements": {k: v for k, v in meas.items() if isinstance(v, (int, float)) and not isinstance(v, bool)},
+    "turns": 1,
+    "tool_calls": tool_calls,
+    "server_tool_use": server_tool_use,
+    "schema_sha256": schema_sha,
+    "answer": answer,
+    # missing measurements are omitted, never 0; model_usage is the adapter's list as it came
+    "measurements": {k: v for k, v in meas.items()
+                     if (isinstance(v, (int, float)) and not isinstance(v, bool)) or k == "model_usage"},
 })
 execution.write(evid, rec)
 # The refusal of a login, left where the quota observer looks (#44, trading's measurement): a
