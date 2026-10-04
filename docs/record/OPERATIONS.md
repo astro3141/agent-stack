@@ -5285,6 +5285,6 @@ without its id refused; **the brokered door end to end** — `novel-reviewer` wi
 `--model` and a stdin payload is handed to a recorder at the broker's address, and the job
 carries the role, the payload, the schema text and the model; the broker's answer is the step's.
 The same control on the pre-fix door: no job, `prompt unreadable`. `verify.sh --level static`
-13/13; pins at the ratchets. Not measured: the broker's and the runner's two lines on a live
-brokered query — the first query a confined role makes on the instance measures them; read
+13/13; pins at the ratchets; **cold-start run 105 green** on b4af006. Not measured: the broker's
+and the runner's two lines on a live brokered query — the first query a confined role makes on the instance measures them; read
 `request.json` in that call's evidence for `kind: query` and `model`.
