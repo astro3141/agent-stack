@@ -5422,4 +5422,6 @@ mechanism, named as such by every `principals.py apply`. A login flow that runs 
 built: the path it would serve is the one §51 retired.
 
 **Measured.** `verify.sh --level static` 13/13; pins at the ratchets (51 / 167). The role-egress
-group that carries the pin runs only where `up.sh` wrote `/role-egress` — the cold start.
+group that carries the pin runs only where `up.sh` wrote `/role-egress` — the cold start: **run
+115 green** on 37d9a36 (run 114 red on the pin's own needle, which spanned two string literals of
+the refusal's source; a pin reads the file, not the string it builds).
