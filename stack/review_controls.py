@@ -1280,6 +1280,19 @@ def query_controls():
                         'const e = refusedLocally({ kind: "execute", title: "Bash" }, {}, "query_no_tools");'
                         'process.stdout.write(JSON.stringify([e.outcome, e.denial, e.routed, e.preloop]));'],
                        capture_output=True, text=True, timeout=60)
+    at = (HERE / "steps" / "agent_task.py").read_text()
+    src = at[at.index("def split_options(argv):"):at.index('    return pos, opts, vals["--query"], vals["--model"], why') + len('    return pos, opts, vals["--query"], vals["--model"], why')]
+    ns = {}
+    exec(src, ns)
+    so = ns["split_options"]
+    full = ["claude", "direct", "l", "p", "e", "prof", "login", "", "--query", "s.json", "--model", "m-1"]
+    check("query: the options are parted from the positionals and kept as given, to stay in argv behind them for the re-executions (§91)",
+          so(full) == (full[:8], ["--query", "s.json", "--model", "m-1"], "s.json", "m-1", ""), so(full))
+    check("query: options standing where the optional positionals would be leave the positionals short, not wrong",
+          so(["claude", "direct", "l", "p", "e", "--model", "m-1", "--query", "s.json"])[0] == ["claude", "direct", "l", "p", "e"])
+    check("query: an option without its value is named",
+          "schema file" in so(["c", "d", "l", "p", "e", "--query"])[4] and "model id" in so(["c", "d", "l", "p", "e", "--model"])[4])
+    check("query: no options is no options", so(["c", "d", "l", "p", "e"]) == (["c", "d", "l", "p", "e"], [], "", "", ""))
     check("query: the adapter refuses a tool request without asking Preloop — reject_once, query_no_tools, nobody asked",
           r.stdout.strip() == '["reject_once","query_no_tools","query_no_tools",null]', r.stdout + r.stderr)
 

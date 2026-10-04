@@ -1,7 +1,7 @@
 """Run one model step through the broker — the same contract as agent_task.py, different door.
 
 usage: broker_dispatch.py <provider> <model_route> <label> <prompt-file> <expected-file>
-       [<profile> [<login> [<principal>]]] [--query <schema.json>]
+       [<profile> [<login> [<principal>]]] [--query <schema.json>] [--model <id>]
 
 The argv is agent_task.py's on purpose: the fan-out (steps/tasks.py) and a chain
 (steps/task_chain.py) swap the entrypoint and change nothing else, so a receipt, a retry and the
@@ -29,10 +29,15 @@ import urllib.request
 
 # a query's schema (§89) travels with the job as text; the runner writes it back to a file and
 # starts the step with the same --query
-schema_file = ""
+schema_file, model_id = "", ""
 if "--query" in sys.argv:
     i = sys.argv.index("--query")
     schema_file = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+    del sys.argv[i:i + 2]
+# the model asked for (#62, §91) travels the same way; the runner gives it back as --model
+if "--model" in sys.argv:
+    i = sys.argv.index("--model")
+    model_id = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
     del sys.argv[i:i + 2]
 provider, model_route, label, prompt_file, expected = sys.argv[1:6]
 prof_name = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else "research-default"
@@ -66,6 +71,7 @@ req = {"role": principal, "provider": provider, "model_route": model_route or "d
        "profile_name": prof_name, "login": login, "run_id": run,
        "timeout_s": timeout_s,
        **({"schema": schema} if schema_file else {}),
+       **({"model": model_id} if model_id else {}),
        # a retry's number names the call's evidence (agent_task.py); brokered, it has to travel
        # with the request or the second attempt overwrites the first (review 3, §79)
        "attempt": os.environ.get("AGENTSTACK_ATTEMPT", "")}

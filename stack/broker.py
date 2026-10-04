@@ -162,6 +162,8 @@ class H(BaseHTTPRequestHandler):
                "timeout_s": timeout_s,
                # a query's schema (§89): text, bounded like the prompt; the runner makes it a file
                **({"schema": str(req["schema"])[:200000]} if req.get("schema") else {}),
+               # the model asked for (§91): a name, bounded; the runner checks its shape
+               **({"model": str(req["model"])[:120]} if req.get("model") else {}),
                # the retry number, digits or nothing: it names the call's evidence in the runner
                "attempt": str(req.get("attempt") or "") if re.fullmatch(r"\d{0,3}", str(req.get("attempt") or "")) else "",
                "job_token": token, "mcp_url": SELF_MCP}
