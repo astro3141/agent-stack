@@ -5159,7 +5159,8 @@ tool call (TOOLS_USED, the web one told apart), the non-JSON text (one retry, bo
 kept, the cost summed), the stdin payload byte for byte, the three refused schemas (no call),
 and a task through the same door; the retry group +2 (`invalid` not retried by default, retried
 when said). `verify.sh --level static` 13/13. Pins: review 51/51, trial 167/167 at the ratchets.
-Cold-start run: see the follow-up line below.
+**Cold-start run 99 green** on 32e79be (run 98 red on one trial pin, the door's literal
+`"failure": execution.failure_of(r)`, which the verdict line had reworded; kept).
 
 **What waits on the live instance (the two measurements the decision named):** on claude and
 codex, a query whose `model_adapter_reported` is filled, and whose `tool_calls` is 0 with the
