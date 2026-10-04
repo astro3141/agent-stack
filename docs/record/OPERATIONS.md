@@ -5481,6 +5481,7 @@ that call with the real remedy's sentence.
 shapes, no rules); trial_controls' query group +1 (a profile with no generated file: FAILED,
 attempts 0, no call, `cfg.py generate` and the existing names in the sentence); `verify.sh
 --level static`'s policy check now also asks that every write tool denies `..`. Pins at the
-ratchets. Not measured here: the policy's new conditions on a live Preloop (the cold start
+ratchets; **cold-start run 118 green** on 1959d8b (the policy with the new conditions `"applied"`
+on a fresh Preloop). Not measured here: the policy's new conditions on a live Preloop (the cold start
 applies the policy — `"applied"` is its acceptance; the denial itself is one write with `..` on
 the instance, the author's probe endpoint will do).
