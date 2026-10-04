@@ -54,7 +54,7 @@ A `newer` line is a question, not an instruction. Three kinds of answer:
 3. On the instance:
 
 ```bash
-scripts/release.sh update --to <rev>        # records what runs now, moves the workspace, rebuilds, checks
+scripts/release.sh update --to <rev>        # records what runs now; then <rev>'s own script moves the workspace, rebuilds, checks
 scripts/verify.sh --level full              # the checks, the three control suites, package locks,
                                             # controls and floors, then hello-lane, auto and novel-a
 ```
@@ -66,6 +66,16 @@ no flag. Until §76 the first three lived in the home volume, which a rebuild di
 `update` had to be told to swap them (`--replace-toolchain`, §65 §73); an instance from that time
 still carries that unused copy in its volume, and `up.sh --check` says so with the command that
 removes it.
+
+**Whose script performs the update (§90, #48).** The script you run is the workspace's — the
+revision being left — and it knows nothing of what the target changed. So it does the two things
+only the running revision can do safely, builds the candidate from the target's Dockerfile and
+records the release in use as the rollback point, and then hands over to the **target revision's
+own `scripts/release.sh`** (`git show <rev>:scripts/release.sh`, run against this workspace with
+`RELEASE_SH_HANDED=<revision>`), which moves the workspace, rebuilds and checks with the knowledge
+of its own layout. `update` prints `performed by  the target revision's scripts/release.sh (<rev>)`
+when it hands over, and `performed by  this workspace's script` when the target's script is older
+than this rule and would build and record a second time — then the update runs as it did before.
 
 4. `verify.sh --level full` makes the cheap runs (`hello-lane`, `auto`, `novel-a`). For a provider
    CLI change, add the N7 native-tool check on the vendor that changed (OPERATIONS §7) by hand:
@@ -83,12 +93,14 @@ scripts/release.sh rollback --to pre-<yyyymm>   # workspace revision, images (th
 scripts/up.sh --check
 ```
 
-**Coming back from a release recorded before #34** (`pre-202610` and older). The rollback puts
-that release's `scripts/release.sh` into the workspace, and that script does not know the tools
-moved to `/opt`: run as `update`, it refuses ("tools differ"), and with `--replace-toolchain` it
-moves the workspace to the new revision and then fails to find the toolchain, leaving new code on
-old images (measured on the live instance, OPERATIONS §84). Come back with the target revision's
-own script instead, which the rollback prints when it ends:
+**Coming back from a release recorded before §90** (`pre-202610` and older, and every revision
+before the hand-over rule). The rollback puts that release's `scripts/release.sh` into the
+workspace, and that script performs an update itself, knowing nothing of the target: before #34
+it does not know the tools moved to `/opt` — run as `update`, it refuses ("tools differ"), and
+with `--replace-toolchain` it moves the workspace to the new revision and then fails to find the
+toolchain, leaving new code on old images (measured on the live instance, OPERATIONS §84). Come
+back with the target revision's own script instead — the same hand-over `update` makes by itself
+from §90 on — which the rollback prints when it ends:
 
 ```
 git -C <workspace> show <rev>:scripts/release.sh > /tmp/release.sh

@@ -3,7 +3,7 @@
 #
 #   scripts/release.sh record [--tag NAME]                    keep the running release
 #   scripts/release.sh list                                   what is kept
-#   scripts/release.sh update --to REV                        record, move to REV, rebuild, check
+#   scripts/release.sh update --to REV                        record, then REV's own script moves, rebuilds, checks
 #   scripts/release.sh rollback --to TAG                      put a kept release back (operator-run)
 #
 # A release is
@@ -232,11 +232,41 @@ cmd_list() {
 }
 
 # ---------------------------------------------------------------------------- update
+# Who performs an update (#48, OPERATIONS §90). The script that runs is the workspace's — the
+# revision being *left* — and it knows nothing of what the target changed: when the tools moved
+# to /opt (#34) the old script moved the workspace and then looked for them where they no longer
+# were, leaving new code on old images (§84); the next change of layout would do the same. So
+# this script does what only the running revision can do safely — build the candidate from the
+# target's own Dockerfile, keep the release in use as the rollback point — and hands the rest to
+# the target revision's own scripts/release.sh, run against this workspace with
+# RELEASE_SH_HANDED=<this revision>: it skips the build and the record (done) and does not hand
+# over again. A target whose script does not know the marker (older than this) would build and
+# record a second time, so it is not handed to: the update goes on here, as before, and says so.
+hand_over_update() {   # 0: the target's script performed the update, its exit code in HANDED_RC
+  PREFIX="$(git_here rev-parse --show-prefix)"
+  TARGET_SH="$(u "${TMPDIR:-/tmp}")/agentstack-release-target-$$.sh"
+  git_here show "$TO:${PREFIX}scripts/release.sh" > "$TARGET_SH" 2>/dev/null || { rm -f "$TARGET_SH"; return 1; }
+  grep -q 'RELEASE_SH_HANDED' "$TARGET_SH" || { rm -f "$TARGET_SH"; return 1; }
+  say "performed by" "the target revision's scripts/release.sh ($(git_here rev-parse --short "$TO"))"
+  echo
+  HANDED_RC=0
+  RELEASE_SH_PINNED=1 RELEASE_SH_HOME="$HERE" RELEASE_SH_HANDED="$(git_here rev-parse --short HEAD)" \
+    bash "$TARGET_SH" update --to "$TO" || HANDED_RC=$?
+  rm -f "$TARGET_SH"
+  return 0
+}
+
 cmd_update() {
   [ -n "$TO" ] || fail "update needs --to REVISION"
   require_same_workspace
   require_clean_tree "an update checks out another revision"
   git_here rev-parse --verify --quiet "$TO" >/dev/null || fail "unknown revision $TO"
+  if [ -n "${RELEASE_SH_HANDED:-}" ]; then
+    # the workspace's script built the candidate and kept the release in use, then handed over
+    say "handed over by" "the script of $RELEASE_SH_HANDED (candidate built, release in use kept)"
+    update_move
+    return
+  fi
   # ---- build a candidate, before the workspace in use is touched -------------------------
   # The target revision is built in a throw-away worktree under its own image tag: a revision that
   # does not build changes nothing here (§66), and what the update will change is read from that
@@ -284,6 +314,15 @@ cmd_update() {
   echo "== keeping the release in use before changing anything"
   ( TAG=""; cmd_record )
   echo
+  if hand_over_update; then
+    exit "$HANDED_RC"
+  fi
+  say "performed by" "this workspace's script — the target's takes no hand-over (it is older than #48)"
+  update_move
+}
+
+# the half of an update that knows the target's layout: the target's own script runs it
+update_move() {
   echo "== moving the workspace to $TO"
   git_here checkout --quiet "$TO"
   say "now at" "$(git_here rev-parse --short HEAD)"

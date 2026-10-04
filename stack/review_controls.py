@@ -844,6 +844,41 @@ def update_controls():
           and "format=3" in rel and 'say "will change $t"' in rel)
     check("release: a record from before #34 still rolls back — its archive is restored into the volume, verified first (§79)",
           'if [ -f "$SRC/toolchain.tar.gz" ]; then' in rel and "OLD_TOOLCHAIN=1" in rel)
+    # #48 (§90): the update is performed by the target revision's own script, handed the candidate
+    # and the record; a target that does not know the hand-over is not handed to. Driven at
+    # function level on a throw-away repository: no docker, no instance.
+    hroot = Path(tempfile.mkdtemp(prefix="agentstack-handover-"))
+    repo = hroot / "repo"; (repo / "scripts").mkdir(parents=True)
+    g = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True).stdout.strip()
+    g("init", "-q"); g("config", "user.email", "c@c"); g("config", "user.name", "c")
+    (repo / "scripts" / "release.sh").write_text("#!/usr/bin/env bash\necho old\n"); g("add", "-A"); g("commit", "-qm", "old")
+    old_rev = g("rev-parse", "--short", "HEAD")
+    (repo / "scripts" / "release.sh").write_text('#!/usr/bin/env bash\n# knows RELEASE_SH_HANDED\necho "TARGET $1 $2 $3 handed=$RELEASE_SH_HANDED home=$RELEASE_SH_HOME"\nexit 7\n')
+    g("add", "-A"); g("commit", "-qm", "new"); new_rev = g("rev-parse", "--short", "HEAD")
+    g("rm", "-q", "scripts/release.sh"); g("commit", "-qm", "none"); none_rev = g("rev-parse", "--short", "HEAD")
+    g("checkout", "-q", old_rev)
+    drive = f"""set -euo pipefail
+. {WORK / "scripts" / "release.sh"} list >/dev/null
+TO={new_rev}; if hand_over_update; then echo "handed rc=$HANDED_RC"; else echo "not handed"; fi
+TO={old_rev}; if hand_over_update; then echo "handed rc=$HANDED_RC"; else echo "not handed"; fi
+TO={none_rev}; if hand_over_update; then echo "handed rc=$HANDED_RC"; else echo "not handed"; fi
+require_same_workspace() {{ :; }}; require_clean_tree() {{ :; }}; update_move() {{ echo "MOVE to $TO"; }}
+docker() {{ echo "DOCKER CALLED $*"; exit 9; }}
+RELEASE_SH_HANDED=abc1234 TO={new_rev} cmd_update
+ls "${{TMPDIR:-/tmp}}"/agentstack-release-target-* 2>/dev/null || echo "no target copy left"
+"""
+    r = subprocess.run(["bash", "-c", drive], capture_output=True, text=True, timeout=60,
+                       env={**os.environ, "RELEASE_SH_PINNED": "1", "RELEASE_SH_HOME": str(repo), "RELEASE_DIR": str(hroot / "rel")})
+    out = r.stdout
+    check("release: an update hands over to the target revision's script — run against this workspace, told which revision handed over, its exit code kept",
+          f"TARGET update --to {new_rev} handed={old_rev} home={repo}" in out and "handed rc=7" in out
+          and "performed by" in out and f"({new_rev})" in out, (r.returncode, out[-500:], r.stderr[-300:]))
+    check("release: a target whose script does not know the hand-over, or has none, is not handed to",
+          out.count("not handed") == 2, out[-500:])
+    check("release: handed over, the target's script skips the build and the record and moves the workspace",
+          f"MOVE to {new_rev}" in out and "handed over by" in out and "DOCKER CALLED" not in out, out[-500:])
+    check("release: the target's copy is removed", "no target copy left" in out and r.returncode == 0, (r.returncode, out[-300:], r.stderr[-300:]))
+    shutil.rmtree(hroot, ignore_errors=True)
     ud = (WORK / "docs" / "update-day.md").read_text()
     check("docs: update-day.md has no flag and says the rebuild changes every tool",
           "--replace-toolchain]" not in ud and "There is\nno flag" in ud.replace("There is no flag", "There is\nno flag")
@@ -856,7 +891,6 @@ def update_controls():
           and up.index("test -d /home/agent/.local/share/claude") < up.index('echo "        docker run --rm'))
     # #37: the Preloop CLI lists an agent only once its config file exists; a fresh home has none
     bp = importlib.import_module("bootstrap_preloop")
-    import tempfile
     with tempfile.TemporaryDirectory() as home:
         made = [bp.seed_for(k, home) for k in ("claude-code", "codex", "grok")]
         cx = Path(home) / ".codex" / "config.toml"; cl = Path(home) / ".claude" / "settings.json"
