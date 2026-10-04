@@ -5070,7 +5070,7 @@ open on that question.
 kept reading; the router uses a young kept reading and flags the dead login, calls an aged-out
 one `unknown: … sign in on the panel`, and keeps `stale:` for any other age; the remedy's words.
 trial_controls' roles group: the first admitted alternative bound with its principal, none
-admitted listed with every reason, unknown vendors still missing — run by the cold start, run
-number below. `verify.sh --level static` 13/13. What waits on the live instance: the next
+admitted listed with every reason, unknown vendors still missing — run by the cold start: **run 93
+green** on 872b4f3 (the stack level 24/24). `verify.sh --level static` 13/13. What waits on the live instance: the next
 expiry, read on the panel (`토큰 만료`) and in `up.sh --check` (`FAIL every provider's state is
 knowable … token expired`), and the `--source cli` command above.
