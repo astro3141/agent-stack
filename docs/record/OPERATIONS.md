@@ -5599,4 +5599,4 @@ code is unchanged: an update that ends with a provider nobody can determine stil
 **Measured.** On the instance, by the operator, evidence `evidence/m88-*` there: the token's
 `expiresAt`, the check line, the API row, the `--source cli` answer, the credentials file's hash
 before and after. Here: `bash -n scripts/release.sh`; `verify.sh --level static` 13/13; pins at
-the ratchets (51 / 167).
+the ratchets (51 / 167); **cold-start run 127 green** on d8517e2.
