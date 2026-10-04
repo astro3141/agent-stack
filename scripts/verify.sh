@@ -128,7 +128,16 @@ PY
 n="$(echo "$out" | head -1)"; errs="$(echo "$out" | tail -n +2)"
 if [ -z "$errs" ]; then ok "$n YAML files parse, and every workflow route resolves"; else bad "a YAML file or a workflow graph is broken" "$errs"; fi
 
-missing="$(for f in stack/steps/*.py packages/*/steps/*.py; do case "$f" in */vendor/*|*/step.py|*/__init__.py) continue;; esac; grep -q '^REPEATABLE' "$f" || echo "$f"; done)"
+# A `case` with its `)` patterns inside `$( )` is the one construct macOS's bash 3.2 cannot parse
+# (a known bug of that version; it ended verify.sh on the first Mac host before any check ran,
+# §93). The loop lives in a function, and the substitution only calls it.
+steps_without_repeatable() {
+  for f in stack/steps/*.py packages/*/steps/*.py; do
+    case "$f" in */vendor/*|*/step.py|*/__init__.py) continue;; esac
+    grep -q '^REPEATABLE' "$f" || echo "$f"
+  done
+}
+missing="$(steps_without_repeatable)"
 if [ -z "$missing" ]; then ok "every step declares what a repeat of it does (REPEATABLE)"; else bad "steps without REPEATABLE" "$(echo $missing)"; fi
 
 out="$($PY - <<'PY' | nocr

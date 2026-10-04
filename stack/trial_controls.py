@@ -2485,8 +2485,10 @@ def controls_template():
     for f in _glob.glob("/work/packages/*/*.yaml"):
         named |= set(_re.findall(r'=[a-z0-9-]+:([a-z0-9-]+)', open(f, encoding="utf-8").read()))
     check("the principals the workflows name are declared", sorted(named - set(decl)), [])
-    check("and the scan found the ones this stack uses",
-          sorted(named & set(decl)), ["novel-author", "novel-reviewer"])
+    # the ones this repository carries are among them; an instance with packages of its own
+    # names more (seven on the first instance that ran this, §93), and that is not a failure
+    check("and the scan found the ones this stack carries (an instance's own packages may add theirs)",
+          sorted({"novel-author", "novel-reviewer"} - (named & set(decl))), [])
     check("and what each may do is in the file, not in someone's memory",
           bool((decl.get("novel-reviewer") or {}).get("tool_rules", {}).get("write_file")), True)
     check("a reviewer's last rule is the deny that makes the allow mean something",
