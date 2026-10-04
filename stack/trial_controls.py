@@ -186,6 +186,23 @@ def controls_roles():
     r = run(all_ok, args=("author=gemini",))
     check("a provider the profile does not carry", (r["ok"], r["missing"].split(" ")[0]),
           ("no", "author:gemini"))
+    # #51: a round admitted by admit_models.py leaves admission.json, not decision.json, and may
+    # name a provider the profile does not list. roles.py binds against that admission.
+    os.remove(f"{ev}/decision.json")
+    json.dump({"wanted": ["codex", "claude"], "decision": {"decision": "ROUTE", "provider": "codex",
+               "evaluated": [{"provider": "codex", "eligible": True, "why": "within limits"},
+                             {"provider": "claude", "eligible": False, "why": "exhausted: session 91% >= 80%"}]}},
+              open(f"{ev}/admission.json", "w"))
+    p = subprocess.run(["/opt/venv/bin/python", "/work/stack/steps/roles.py", "long-task", ev,
+                        "reviewer=codex:devflow-research-reviewer", "author=claude", "cold=grok"],
+                       capture_output=True, text=True)
+    r = json.loads(p.stdout.strip().splitlines()[-1])
+    check("#51: an admission by admit_models.py is read where a router decision would be",
+          r["ineligible"], "author:claude (exhausted: session 91% >= 80%)")
+    check("#51: a provider the profile does not list binds when this run's admission named it eligible",
+          (r["reviewer_provider"], r["reviewer_login"], r["reviewer_route"], r["reviewer_principal"]),
+          ("codex", "codex", "direct", "devflow-research-reviewer"))
+    check("#51: one nobody asked about is still not in the profile", r["missing"], "cold:grok (not in the profile)")
     shutil.rmtree(root, ignore_errors=True)
 
 
