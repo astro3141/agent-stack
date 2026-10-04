@@ -5363,4 +5363,5 @@ regenerated, ok. An orphan compose service (`agst-mac-toolsvc`) is the instance'
 (`--remove-orphans`).
 
 **Measured.** `verify.sh --level static` 13/13 (the REPEATABLE scan through the function);
-trial_controls' template group 26/26 here; pins at the ratchets.
+trial_controls' template group 26/26 here; pins at the ratchets; **cold-start run 109 green** on
+8cc7e38.
