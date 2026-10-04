@@ -408,7 +408,8 @@ which volumes it will remove, and a person has to sign in to the providers again
 
 ```bash
 scripts/host-state.sh          # containers, images, volumes, disk
-scripts/cleanup.sh             # removes what is safe, and names what it left alone
+scripts/cleanup.sh             # a preview: what would go, as whole runs, and what is protected
+scripts/cleanup.sh --apply     # removes it (--days N, --keep N to move the window)
 ```
 
 A soak is the way to tell growth from a leak: `scripts/soak.sh <cycles> <workflow>` samples memory,

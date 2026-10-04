@@ -10,7 +10,7 @@ Three layers, and only the first is automatic:
 
 | layer | cadence | what it does | who decides |
 |---|---|---|---|
-| **report** | weekly, automatic | `scripts/drift.sh` says what is pinned and what each registry has now; `cold-start-linux` runs the same cold start a second machine runs (`.github/workflows/`) | nobody — it changes nothing |
+| **report** | weekly | `cold-start-linux` runs the same cold start a second machine runs, automatically (`.github/workflows/`, Sunday 21:17 UTC); `scripts/drift.sh` says what is pinned and what each registry has now, and a person runs it — the runner has no registry access worth reading (§73) | nobody — it changes nothing |
 | **update day** | monthly, a person | this page | the operator |
 | **fix** | when something is wrong | the runbook | the operator |
 

@@ -20,8 +20,8 @@ the policy applied, the principals created and the runtime refused every write t
 | **x86_64**, or arm64 untried | the agent image picks its Node and CodexBar by `TARGETARCH`; every image pulled is multi-arch. amd64 is what this has been built and run on, arm64 is parameterized and has never been built — the host check says so rather than letting a build discover it |
 | ~11GB of images, plus volumes | measured |
 
-`install.sh --check` asks for each of these by name and stops on the first that is missing, rather
-than failing five minutes into a build.
+`install.sh --check` asks for each of these by name and reports every one that is missing, rather
+than failing five minutes into a build. It pulls one small image (`alpine`) to measure free disk.
 
 ## What the installer does
 

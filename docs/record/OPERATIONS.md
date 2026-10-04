@@ -4869,3 +4869,97 @@ update). #19 waits on CADP, not on them.
 
 **Measured.** The page's examples still parse and load (`doc_examples.py`), review_controls
 189/189 and static 13/13 here; the cold start — run number below.
+
+## 86. The hand-over audit, and the first fixes from it (2026-10-04)
+
+The maintainer changed without a hand-over. What a new one finds reading this tree is
+docs/record/HANDOVER-AUDIT-2026-10-03.md: what lives only on the previous machine, the defects
+verified by reading, the drift between the pages and the code. This section is the first round of
+fixes, each one a thing that would have cost an operator a run, a backup or a rollback.
+
+**`up.sh --check` changes nothing — now true.** The runbook, verify.sh and update-day.md all said
+it; `scripts/up.sh` guarded only the build, the policy scan and the grok posture. Unguarded in
+check mode: `principals.py apply` (a write to Preloop) and, when it minted a credential, the
+force-recreate of the agent and the broker — under a run in flight, which leaves no checkpoint;
+the guard's nginx reload; and the per-role egress block, which ended in `docker restart
+<stack>-egress`, the agent's only route to the providers. That block runs whenever a declared role
+has `egress:` hosts, and the platform's own `egress-probe` (config/principals.yaml) always has one
+— so **every `--check` restarted the egress proxy**, under whatever model call was going. All
+three are under `MODE != --check` now. What a check still writes: `evidence/checks/last.json` and
+`evidence/ops/host-state.json`, which are the check's own result.
+
+**A cycle that could not start was a cycle that ran.** `cycle.py` treated only exit 3 (a capability
+missing) as a refusal. `run_workflow.py start` answers **2** for a workflow that does not exist, a
+bad profile or id, a bad input, a reused id — and that fell through to `soak_outcome.py`, which
+found no run and wrote `{"state": null}` to `evidence/ops/cycles.jsonl` as an outcome, exit 0. A
+scheduler that misnamed its workflow saw success forever, and `ops_health.py` counted it as ran.
+Both codes are refusals now, recorded with `rc`; a runner that itself fails is recorded as
+`failed` and exits 1. And the default workflow `trading-b` — in `cycle.py`, `soak.sh` and the
+README's example — left this repository with its package: a scheduler that names nothing is now
+told the usage, exit 2, instead of starting a workflow the loader does not offer.
+
+**`trajectory.py` refused the runs it exists for.** `of_run` treated any `error` on the run's view
+as "no such run" and printed only the string. `runevents.py` fills `error` for every step that
+fails and the view fills it for an interrupted run — so the run reading-a-run.md sends you to
+`trajectory.py` for first ("when a step failed: 1.") was exactly the run it would not assemble,
+and `suite.py read` dropped such runs from every count. Only a missing run is refused now; a
+run's error is a field (`run_error`) beside its steps, calls and assertions.
+
+**Three smaller ones, read not measured.** `run_workflow.described()` left `logins` and `runbooks`
+unbound when the package tree half-read, so the panel's workflow tab answered a NameError (the
+except branch binds all four now). `steps/route.py` and `steps/admit_models.py` wrote their
+evidence to a literal `/work/evidence/p281/` while every reader and the cleanup use the settings'
+`evidence_root` (both go through `step.evidence_dir()` now). The broker's job token lived a fixed
+3600 s — exactly long-task's `timeout_ms` — and was born before the runner was contacted, so the
+last seconds of an hour-long brokered call answered 401 on MCP (the token lives the job's
+`timeout_s` plus 60 now).
+
+**`backup.sh` failed on a default install, and did not hold the secrets.** It required the
+observer's `quota-home` volume, which exists only on an instance that ran `up.sh --observer`
+(off by default since #16), and the `/research` mount, which only the research-r package has; a
+`--composition no-record` instance could not be backed up for lack of MLflow either. And nothing
+under `docker/` was a member — `preloop-owner.env`, the only copy of the console account `up.sh`
+claimed the instance with, `principals.env`, `operator.env`, `package.env` — while install.md
+calls those the secrets and the runbook calls the backup the only copy of the account. Now:
+quota-home, MLflow and research are members when the composition has them and reported as not
+members when it does not; `docker/*.env` is one member, `preloop-owner.env` required (a backup
+without the account's password is the case `--allow-missing` exists for); `restore.sh` puts the
+env files back at 0600 and creates no volume the backup does not hold. **Not measured here**:
+this host has no Docker. One backup and one `--verify-only` restore on the live instance is the
+measurement, and it is the operator's.
+
+**One host's root CA was in every image.** `docker/ca/kaspersky-root.crt` — the first host's
+endpoint-security product's *personal* root, needed there because it intercepts `claude.ai` and
+the build's `curl` failed without it (FINDINGS-278 F10, which calls it "not generalizable") —
+was tracked, and `agent.Dockerfile` installed it into the trust store of every agent image this
+tree built, the cold-start runner's included. §4's table called it "deliberately unversioned";
+it was versioned. The file is gone from git and `docker/ca/*.crt` is ignored; the Dockerfile
+copies the directory whether or not it holds a root, so an ordinary host builds without one and
+`release.sh update` copies the workspace's into the candidate worktree. **For the first host**:
+after pulling this, put the root back as `docker/ca/<name>.crt` before the next build, or the
+build fails with exit 60 again (unless the product's exception from F10's addendum still holds).
+
+**The pages, against the code.** README: compositions are `full | no-record | runtime` (not
+`minimal`), arm64 is parameterized, the images are ~11 GB, the run example names a workflow the
+tree has. commands.md and concepts.md: the panel starts and resumes nothing (#24). concepts.md:
+trading and devflow are declared, not carried; `stack/steps/` has admit_models, broker_dispatch
+and step as well. packages.md: `approvals` is a capability like the other four; the broker's
+address is `settings.url("broker", "url")`, not `runtime()["broker"]` (the generated file has no
+such key); `requires.principals` / `host_paths` are present tense; the `egress:` key is read and
+run, deprecated for packages, not retired. containers.md: the broker, the per-profile runners and
+proxies. commands.md: every flag the scripts take, `cleanup.sh` is a preview without `--apply`,
+`credentials.sh`, `admission.py` as the router's door, `packages.py`'s six other subcommands.
+update-day.md: `drift.sh` is a person's, the runner's registry access is not worth reading.
+install.md: the check reports every miss and pulls `alpine`.
+
+**Measured.** On this checkout (no Docker): review_controls 189/189, doc_examples 10/10,
+fanout 8/8, cleanup 17/17, `verify.sh --level static` 13/13; pin_kinds review 51, trial 167,
+both at their ratchets. trial_controls is the container's: with `/work` linked to the tree it
+runs its first groups and stops at the broker group (a live broker, by design); of what ran,
+one check failed for the host's reason (no generated profiles), identically on the code before
+this change. The text pins trial_controls holds on the files changed here (`cycle.py`'s lock and
+exit code, `soak.sh`'s no-cleanup, `up.sh`'s role block and recreate, the Dockerfile's sudoers)
+were read against the new text and hold; the suite itself runs on the cold start. What waits on
+the live instance: a `--check` under a running call (the proxy stays up), a backup and a
+`--verify-only` restore, one cycle with a misnamed workflow (exit 3, a `refused` row), and the
+cold start on this revision (run number below).

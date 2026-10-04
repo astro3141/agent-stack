@@ -81,8 +81,8 @@ It is a route restriction, not a rights restriction, and OPERATIONS §20–21 sa
 ## What the panel is for, and what it is not
 
 **Human decisions go on a screen; everything else is a command or a file.** The panel
-(`http://127.0.0.1:8780`) has provider login, approval decisions, stopping and resuming a run, and
-the state a person needs to make those calls. It has no button for anything an operator could type,
+(`http://127.0.0.1:8780`) has provider login, approval decisions, stopping a run, and the state a
+person needs to make those calls; starting and resuming are commands it shows (#24). It has no button for anything an operator could type,
 because a button for that is a second place for the truth to live.
 
 ## Records, and what an evaluation stands on
@@ -122,10 +122,11 @@ with the rights it declares. Nothing in the platform is edited, which is the poi
 that cannot be given to someone is not a workflow, it is a modification.
 
 **Every** workflow is a package, including the ones this stack was written with: `packages/auto`,
-`packages/research-r`, `packages/novel`, `packages/trading` (which carries three, because they
-share a deterministic step), and `packages/hello-lane` as the smallest example. `stack/steps/` holds
-only what any workflow may call — route, roles, agent_task, tasks, task_chain, fanout, record — and
-that list is the platform's surface.
+`packages/research-r`, `packages/novel`, and `packages/hello-lane` as the smallest example; the
+trading package (three workflows sharing a deterministic step) and devflow live in their own
+repositories and are declared, not carried ([docs/packages.md](packages.md)). `stack/steps/` holds
+only what any workflow may call — route, admit_models, roles, agent_task, broker_dispatch, tasks,
+task_chain, fanout, record, and the `step` helper — and that list is the platform's surface.
 
 ## Compositions
 

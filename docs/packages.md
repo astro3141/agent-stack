@@ -86,7 +86,7 @@ description: one line, shown in the panel's 워크플로 tab
 workflows:                    # or `entry: workflow.yaml` for a single one
   my-lane: workflow.yaml
 requires:
-  capabilities: [tool_rights, egress, record, admission]   # only what your steps use: a package with no model call declares [] and runs on a fresh install before any login (hello-lane)
+  capabilities: [tool_rights, egress, record, admission]   # only what your steps use (also `approvals`, probed with the rest): a package with no model call declares [] and runs on a fresh install before any login (hello-lane)
   python: [pydantic]          # modules you import that the image must already carry
 runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
 ```
@@ -268,7 +268,7 @@ whose package needs what the stack has not got. These are the keys something rea
 
 | key | what it declares | who reads it |
 |---|---|---|
-| `capabilities` | the stack capabilities a run needs (`tool_rights`, `egress`, `record`, `admission`) | `run_workflow.py start` refuses without them |
+| `capabilities` | the stack capabilities a run needs (`tool_rights`, `egress`, `record`, `admission`, `approvals`) | `run_workflow.py start` refuses without them |
 | `env` | environment variables, by name and purpose — never a value | `packages.py needs`, the panel |
 | `egress` | hosts the package's scripts reach | `packages.py egress` (an audit, not a control) |
 | `python` | modules the image must carry | `packages.py python`, `run_workflow.py start` |
@@ -282,10 +282,10 @@ stack fails on an older one in whatever way the missing feature fails — a brok
 not contain that commit, and `packages.py stack` reports a floor it cannot verify (a shallow clone,
 no git) without refusing anything, because that says nothing about the stack's age.
 
-**A key outside that table is a comment.** Two packages carried one for weeks — `principals`,
-`host_paths` — each believing the stack checked something it never looked at. `packages.py` now
-prints `note: requires.<key> is read by nothing in this stack` under the package, so the belief
-does not survive the first `list`.
+**A key outside that table is a comment.** Two packages carry one — `novel`'s `principals`,
+`research-r`'s `host_paths` — each written believing the stack checked something it never looked
+at. `packages.py` prints `note: requires.<key> is read by nothing in this stack` under the package,
+so the belief does not survive the first `list`.
 
 ## Binding a result to its input
 
@@ -481,8 +481,10 @@ principals:
 ```
 
 The profile's proxy carries the host list; the broker maps the role and holds its credential; your
-step's argv does not change (OPERATIONS §53–§55). The older `egress: [hosts]` key is retired — it
-belonged to the uid-based design, and every `principals.py apply` names roles still on it.
+step's argv does not change (OPERATIONS §53–§55). The older `egress: [hosts]` key is the uid-based
+design (§48): still read, still run — the platform's own `egress-probe` declares it, and
+`agent_task.py` takes the uid path for a role on it — but deprecated for a package, and every
+`principals.py apply` names roles still on it. Declare a profile.
 
 **Installing a package is a decision to trust it**: that is what gives its principals rights. Read a
 package before installing it, as you would a dependency.
@@ -550,8 +552,9 @@ behaviour you notice has a name.
   from a step sees its parent as `AGENTSTACK_PARENT_RUN`; `CONDUCTOR_SELF_RUN_ID` is always the
   run's own id. Read them through `step.run_id()` and `os.environ`; never set them.
 - **One place for providers, addresses and paths** (§80): the stack's provider list is
-  `settings.PROVIDERS`, the broker's address and every root are in `runtime.json`
-  (`step.runtime()["paths"]`, `step.runtime()["broker"]`). A package that carries its own copy
+  `settings.PROVIDERS`, every root is in `runtime.json` (`step.runtime()["paths"]`), and the
+  broker's address is `settings.url("broker", "url")` — the generated file carries only what
+  `config/environment.yaml` names, and `broker:` is a built-in default. A package that carries its own copy
   of a provider name, a port or `/work/...` root is one stack change away from breaking, and the
   break is silent. Nothing to change if yours reads them through `step`.
 - **The panel's command is built once and run by the checks** (§81): the 워크플로 tab shows

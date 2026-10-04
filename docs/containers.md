@@ -15,7 +15,11 @@ implied across several sections rather than stated once. This is the statement.
 | **fsmcp** | the MCP tool server the agent reaches **through Preloop**, never directly (the #278 marker tool server, `toolsvc`, was removed 2026-10-02: nothing called it, issue #16) | be reachable from the agent's network | that indirection is what makes a tool call governable |
 | **egress** | the allowlist proxy: the agent's only way out | — | an agent with a route to the internet is not isolated |
 | **mlflow** | the record | — | dual-homed so a browser can reach it; the agent stays single-homed |
-| **replay** | renders a past run's event log | hold credentials or Docker access | the live dashboard binds the agent's loopback and cannot be published (OPERATIONS §14) |
+| **replay** (compose profile `ui`) | renders a past run's event log | hold credentials or Docker access | the live dashboard binds the agent's loopback and cannot be published (OPERATIONS §14) |
+| **broker** (`<stack>-broker`) | takes a brokered model step from `agent_task.py`, holds the credentials of the roles that declare an egress profile, dispatches the step to that profile's runner and forwards its MCP calls under a job token | run a vendor CLI; share its uid with any step | one uid of its own, so no step can read its files or trace it; it alone receives `principals.env` (OPERATIONS §53–§55) |
+| **agent-probe**, **agent-closed** (`<stack>-agent-<profile>`) | the runners of the two egress profiles every instance has: a brokered step runs here, on that profile's network, behind that profile's proxy | hold a credential — they receive none | per-role egress is a container and a proxy per profile, not a uid (OPERATIONS §51–§55) |
+| **egress-probe**, **egress-closed** | the allowlist proxy of each profile, with that profile's list | — | the list is the profile's; the broker maps the role to it |
+| **agent-research**, **agent-research-review**, and their proxies (compose profiles `egress-research`, `egress-research-review`) | the same pair for a profile an instance provisions itself (`docker/egress/profiles/<name>.allow`, git-ignored); up only when the list exists | — | a profile is the operator's to create; a role mapped to one that is not provisioned is refused by name (OPERATIONS §57) |
 
 ## The rule behind the table
 
