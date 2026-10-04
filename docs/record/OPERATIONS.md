@@ -5548,4 +5548,4 @@ Nothing is guessed: an undeclared helper is not a check, `checks: 0`, and the pa
 **Measured.** review_controls 257/257: the same file undeclared reads 0; declared, its two
 `ok(...)` calls read as one source-text and one behaviour, and `print("…", True)` never counts.
 The stack's own suites' counts and ratchets unchanged (51 / 167). `verify.sh --level static`
-13/13.
+13/13; **cold-start run 125 green** on fe9b6d6.
