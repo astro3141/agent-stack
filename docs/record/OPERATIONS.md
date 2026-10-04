@@ -5020,3 +5020,79 @@ claude's role ineligible with the admission's own words; grok "not in the profil
 three cases are in trial_controls' roles group, run by the cold start: **run 91 green** on 2b37097
 (the stack level 24/24, novel's controls through `packages.sh verify` on the scratch root). That
 `packages.sh controls` sets the scratch root is measured there.
+
+## 88. The expired login, said as what it is (#44, 2026-10-04)
+
+The condition, measured three times in two days (§73, §84, §86): claude's OAuth token expires,
+CodexBar takes no new reading ("CodexBar CLI does not launch Claude to refresh credentials"),
+the last good reading kept beside the login (§64) ages past `max_age_s`, and the router calls
+claude `stale`. Every run whose roles include claude holds; `claude /route login` still says
+true; the panel shows a signed-in provider and a held run. #44 named three candidate fixes and
+asked where the fix belongs. Read against the rule: the **reason** is the platform's — a reading
+that cannot be refreshed because a person's login died is not the ordinary "stale" (a
+collection that has not run), it is a state the stack cannot determine and a duty that is due,
+and the stack said neither. Which vendor a role runs on is the workflow's.
+
+**What changed.**
+- `collect_obs.py`: when the live reading fails and the kept one stands in, the *kind* of the
+  failure travels with it (`live_failed_kind`: `login_expired`, `rate_limited`, `other`), read
+  from the vendor's own words.
+- `router.py`: a reading older than `max_age_s` behind `login_expired` is `unknown: the login's
+  token expired — the last reading is Ns old (> max) and nothing here refreshes it; sign in on
+  the panel`, with `login_expired: true` on the row; while the kept reading is still young it
+  is used, as before, and the row carries the flag. Any other reason for age is still `stale:`.
+  Because it is `unknown:`, the bring-up's "every provider's state is knowable" fails on it and
+  `ops_health` reports it as a standing risk, whose remedy (`fix_for`) now says why the login
+  check still says true.
+- The panel: `/api/accounts` carries `login_expired`, and the 계정 row shows `연결됨 · 토큰 만료`
+  beside the provider from the first failed refresh on — before the reading ages out.
+- `roles.py`: `author=claude|codex:novel-author` names the workflow's order of vendors for a
+  role; the first this run's admission admitted is bound, with the role's principal, and when
+  none is, every alternative and its reason are on one line. The order is the workflow's, as
+  the profile's candidate order is the caller's (CONTRACT.md); the platform only walks it. No
+  in-tree workflow was changed to use it: whether novel-a should write on codex when claude's
+  login is dead is novel's judgement, and the default stays "hold".
+
+**Not changed: refreshing the token (candidate 1).** Three ways were read, none taken here. (a)
+The stack refreshing the OAuth token itself against the vendor's token endpoint — it would
+reimplement the CLI's flow and write into the login store, the one thing the rule forbids a
+package and the stack should not do lightly either; fragile against the vendor. (b) A scheduled
+`claude` invocation so the CLI refreshes its own token — a model call made for no work, with
+cost, and outside the one door. (c) CodexBar's `--source cli` for claude, which may launch the
+CLI and so refresh — unmeasured; the one command that settles it, on the live instance when the
+token is next expired: `CLAUDE_CONFIG_DIR=/route/claude HTTPS_PROXY=http://egress:8888 codexbar
+usage --provider claude --source cli --json`, and whether `/route/claude/.credentials.json`
+changed. If it does, the collector can fall back to that source on `login_expired`; if it does
+not, (a) is the only automatic answer and the operator decides whether to want it. #44 stays
+open on that question.
+
+**Measured.** review_controls 212/212: the collector names the kind (expired, 429) beside the
+kept reading; the router uses a young kept reading and flags the dead login, calls an aged-out
+one `unknown: … sign in on the panel`, and keeps `stale:` for any other age; the remedy's words.
+trial_controls' roles group: the first admitted alternative bound with its principal, none
+admitted listed with every reason, unknown vendors still missing — run by the cold start: **run 93
+green** on 872b4f3 (the stack level 24/24). `verify.sh --level static` 13/13. What waits on the live instance: the next
+expiry, read on the panel (`토큰 만료`) and in `up.sh --check` (`FAIL every provider's state is
+knowable … token expired`), and the `--source cli` command above.
+
+**The variant trading measured, and the place it asked for (#44, same day).** On the live
+instance the observer said `claude=unknown: Claude OAuth token expired … Run claude login` while a
+call with the same credential answered *"Your organization has disabled Claude subscription
+access for Claude Code · Use an Anthropic API key instead, or ask your admin"* — the observer's
+hint was the wrong prescription, the call's sentence the right one, and nothing fed the second
+back to where the first is read. Now: the door (`agent_task.py`) leaves a call the vendor refused
+for the account's sake — an organisation setting, a dead login, a key it rejects
+(`execution.login_refusal`, by words) — as `<logins_root>/.quota/<provider>-<login>.refused.json`
+with its sentence, and takes it back on the next completed call; the collector carries it as
+`execution_refusal` when it is newer than the reading; the router holds on it, young reading or
+not, as `unknown: the last call was refused for the account's sake — "…" — follow that sentence`,
+and `fix_for` says the sentence is the remedy. review_controls 218/218 (the classifier, the note
+with a good and a kept reading, an old note not carried, the router's hold and wording), the note
+left and cleared by `execution.note_refusal` — the step itself deletes nothing, which the cold
+start's trial_controls pins (run 94 red on that, 512/513, before the move). **Cold-start run 95
+green** on a118059. Not measured live: the next refusal of that class on the instance. #61 (trading): the one sentence on
+docs/packages.md "Controls" — with the controls' root set the three roots are re-mapped whatever a
+fixture `runtime.json` says; take the workspace from the step's answer. #62 (trading): the door's
+three gaps for a schema-pinned harness — a stdin payload, the vendor's raw envelope, a per-call
+schema — are a design question on the adapter's ACP path, which carries none of the CLI's
+`--output-format json` envelope; left to the operator with the analysis on the issue.

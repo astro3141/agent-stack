@@ -244,4 +244,8 @@ rec = execution.record(**{
     "measurements": {k: v for k, v in meas.items() if isinstance(v, (int, float)) and not isinstance(v, bool)},
 })
 execution.write(evid, rec)
+# The refusal of a login, left where the quota observer looks (#44, trading's measurement): a
+# call the vendor turned away for the account's sake is written beside the login's kept reading,
+# with its own words, and the next completed call takes it back.
+execution.note_refusal(RT["paths"]["logins_root"], provider, login, rec)
 print(json.dumps(rec))

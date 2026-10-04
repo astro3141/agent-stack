@@ -506,7 +506,11 @@ one function per risk, a summary line. The roots a step writes to — workspace,
 are a temporary directory for the length of that process (`packages.sh controls` sets
 `AGENTSTACK_CONTROLS_ROOT` and removes it after, #54): your steps read them through `step` as
 always, and the instance's own trees are not written. Logins and the hand-in directory stay where
-they are; a control that needs a hand-in puts a fixture there under a name of its own.
+they are; a control that needs a hand-in puts a fixture there under a name of its own. **With
+`AGENTSTACK_CONTROLS_ROOT` set, those three roots are re-mapped whatever your own fixture
+`runtime.json` says** — a controls file that computed a workspace of its own and read the step's
+output from there found it empty (trading, #61). Take the workspace from the step's own answer
+(`workspace` in the execution record, `step.workspace()` in a step) rather than recomputing it.
 
 The platform's suite (`stack/trial_controls.py`) pins the platform and never imports a package to
 pin that package's rules. Until 2026-10 it did — novel's triage, evidence index and round semantics
@@ -543,6 +547,15 @@ the package is four steps, and the fourth is the one that pays for the other thr
 
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
+
+**§88 (2026-10-04 — #44, the expired login).**
+- **A role may name its order of vendors**: `author=claude|codex:novel-author` in the roles step
+  binds the first one this run's admission admitted, the way the router walks the profile's
+  candidates; the order is the workflow's. A role pinned to one vendor holds while that vendor's
+  login is dead — which is also a choice, and the default. Nothing to change unless you want it.
+- The router says `unknown: the login's token expired … sign in on the panel` for a reading
+  that aged out behind a dead login, where it said `stale:`; a hold's reason in your run's
+  evidence reads that way now.
 
 **§87 (2026-10-04 — the devflow author's findings, #51–#56).**
 - **A role binds against an admission by name** (#51): `roles.py` reads `decision.json` (from

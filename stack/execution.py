@@ -48,6 +48,51 @@ FIELDS = {
     "measurements": {},                  # a number the adapter did not report is left out, never 0
 }
 REQUIRED = ("run_id", "provider", "status")
+
+# A call the vendor refused before any work — the login, the account, the organisation — is a
+# fact about the *login*, not about this run, and the quota observer cannot see it: it reads a
+# token file and answers "expired, run `claude login`" while the call itself answers "your
+# organization has disabled … use an API key" (trading's measurement on #44). The door leaves the
+# sentence beside the login's kept reading, the collector carries it, the router says it, and a
+# completed call removes it. Only sentences of that class are kept; a model's own failure is not.
+REFUSAL_WORDS = ("organization has disabled", "not logged in", "token expired", "oauth",
+                 "authenticate", "api key", "unauthorized", "invalid_api_key", "credentials not found",
+                 "subscription", "403", "401")
+
+
+def login_refusal(text):
+    """True when a failure's words say the login or the account was refused, not the work."""
+    t = str(text or "").lower()
+    return any(w in t for w in REFUSAL_WORDS)
+
+
+def refusal_path(logins_root, provider, login):
+    """<logins_root>/.quota/<provider>-<login>.refused.json — beside the kept quota reading."""
+    import os
+    return os.path.join(logins_root, ".quota", f"{provider}-{login}.refused.json")
+
+
+def note_refusal(logins_root, provider, login, rec):
+    """Leave the door's note beside the login when this call was refused for the account's sake,
+    and take it back when a call completed. Returns "left" | "cleared" | "" — never raises: the
+    record is the deliverable, this is a note beside it."""
+    import json as _j, os, time
+    try:
+        p = refusal_path(logins_root, provider, login)
+        if rec.get("status") == "COMPLETED":
+            if os.path.exists(p):
+                os.remove(p)
+                return "cleared"
+            return ""
+        if not login_refusal(rec.get("failure")):
+            return ""
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        _j.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run_id": rec.get("run_id"),
+                 "failure": str(rec.get("failure"))[:300]}, open(p + ".tmp", "w"))
+        os.replace(p + ".tmp", p)
+        return "left"
+    except Exception:
+        return ""
 TYPES = {"produced": bool, "produced_stale": bool, "retryable_elsewhere": bool,
          "approvals_requested": int, "mcp_rule_denials": int, "attempts": int, "measurements": dict}
 

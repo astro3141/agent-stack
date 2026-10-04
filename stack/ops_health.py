@@ -136,6 +136,14 @@ def fix_for(e):
         return (f"no readable {who} login: sign in on the panel's 계정 tab (the routing login under "
                 f"/route/{who}). The quota observer is codex's optional second source, not the fix — "
                 f"only if you want it too: `docker exec -it $STACK-quota codex login`, the SAME account")
+    if "refused for the account's sake" in why:
+        return (f"the vendor refused the last {who} call for the account's sake — the sentence in the "
+                f"reason is the remedy (an organisation setting, an API key, a login), not the quota "
+                f"observer's hint. The note clears itself on the next completed call")
+    if "token expired" in why:
+        return (f"the {who} login's token expired and the stack does not refresh it (#44): sign in "
+                f"again on the panel's 계정 tab — the login file is still there, which is why the "
+                f"bring-up's login check still says true")
     return (f"sign in again for {who} (the panel's 계정 tab, or the provider's own login "
             f"under /route)")
 

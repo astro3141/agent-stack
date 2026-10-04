@@ -200,6 +200,8 @@ def kept_controls():
 echo x >> {root}/calls
 if [ "$(cat {root}/mode)" = ok ]; then
   printf '[{{"provider":"claude","source":"oauth","usage":{{"updatedAt":"%s","primary":{{"usedPercent":6,"windowMinutes":300}},"secondary":{{"usedPercent":43,"windowMinutes":10080}}}}}}]' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+elif [ "$(cat {root}/mode)" = expired ]; then
+  printf '[{{"provider":"claude","source":"oauth","error":{{"message":"Claude OAuth token expired. CodexBar CLI does not launch Claude to refresh credentials. Run `claude login`, then retry."}}}}]'
 else
   printf '[{{"provider":"claude","source":"oauth","error":{{"message":"Claude OAuth usage endpoint is rate limited by Anthropic right now"}}}}]'
 fi
@@ -231,6 +233,82 @@ fi
           d["source"] == "cache:codexbar:oauth" and "reused_after_s" in d and calls() == n, (d, calls(), n))
     check("kept: the reused reading keeps its own time, so the router judges its age as before",
           d["observed_at"] == b["observed_at"], (d["observed_at"], b["observed_at"]))
+    # #44: the login's token expired. The kept reading stands in, and *why* it will not be
+    # refreshed travels with it — so the router can say "sign in" instead of "stale".
+    e = collect("expired", 0)
+    check("#44: an expired login is named as the kind of failure beside the kept reading",
+          e["source"] == "cache:codexbar:oauth" and e.get("live_failed_kind") == "login_expired", e)
+    check("#44: a 429 is a different kind", c.get("live_failed_kind") == "rate_limited", c.get("live_failed_kind"))
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    pol = {"candidates": ["claude"], "max_age_s": 1800, "require_windows": {"claude": ["weekly"]},
+           "max_used_percent": {"session": 80, "weekly": 90}}
+    def route(age, kind):
+        d2 = Path(tempfile.mkdtemp(prefix="agentstack-r44-"))
+        json.dump(pol, open(d2 / "p.json", "w"))
+        o = {**e, "observed_at": (now - timedelta(seconds=age)).isoformat()}
+        if kind is None:
+            o.pop("live_failed_kind", None); o.pop("live_failed", None)
+        else:
+            o["live_failed_kind"] = kind
+        json.dump(o, open(d2 / "claude.json", "w"))
+        r = json.loads(subprocess.run([sys.executable, str(HERE / "router.py"), str(d2 / "p.json"), str(d2)],
+                                      capture_output=True, text=True, env={**os.environ, "ROUTER_NOW": now.isoformat()}).stdout)
+        shutil.rmtree(d2, ignore_errors=True)
+        return r["evaluated"][0]
+    young = route(60, "login_expired")
+    check("#44: a kept reading still young enough is used, and the dead login is said beside the verdict",
+          young["eligible"] is True and young.get("login_expired") is True, young)
+    old = route(27152, "login_expired")
+    check("#44: aged out behind an expired login it is unknown — a person's job — with the remedy",
+          old["eligible"] is False and old["why"].startswith("unknown: the login's token expired") and "sign in on the panel" in old["why"], old["why"])
+    check("#44: aged out for any other reason it is still stale, the ordinary word",
+          route(27152, None)["why"].startswith("stale:") and route(27152, "rate_limited")["why"].startswith("stale:"))
+    import importlib.util as il
+    spec = il.spec_from_file_location("oh_fb", str(HERE / "ops_health.py"))
+    oh = il.module_from_spec(spec); spec.loader.exec_module(oh)
+    check("#44: the standing risk's remedy names the expired token and why the login check still says true",
+          "token expired" in oh.fix_for({"provider": "claude", "why": old["why"]}) and "login check" in oh.fix_for({"provider": "claude", "why": old["why"]}))
+    # #44, trading's variant: the vendor refused the call for the account's sake while the
+    # observer still said "token expired, run claude login". The door leaves the sentence beside
+    # the login; the collector carries it when it is newer than the reading; the router says it.
+    spec = il.spec_from_file_location("ex_fb", str(HERE / "execution.py"))
+    ex = il.module_from_spec(spec); spec.loader.exec_module(ex)
+    check("#44: an organisation's refusal, a dead login and a key the vendor rejects are login refusals; a model's own failure is not",
+          (ex.login_refusal("Your organization has disabled Claude subscription access for Claude Code"),
+           ex.login_refusal("Claude OAuth token expired. Run `claude login`"), ex.login_refusal("Invalid API key"),
+           ex.login_refusal("ENOENT: ~/.codex/config.toml"), ex.login_refusal("")), (True, True, True, False, False))
+    sentence = "Your organization has disabled Claude subscription access for Claude Code · Use an Anthropic API key instead"
+    nr = Path(tempfile.mkdtemp(prefix="agentstack-note-"))
+    left = ex.note_refusal(str(nr), "claude", "claude", {"status": "FAILED", "failure": sentence, "run_id": "r1"})
+    ignored = ex.note_refusal(str(nr), "claude", "claude", {"status": "FAILED", "failure": "ENOENT: config.toml", "run_id": "r2"})
+    kept_note = json.load(open(ex.refusal_path(str(nr), "claude", "claude")))
+    cleared = ex.note_refusal(str(nr), "claude", "claude", {"status": "COMPLETED", "failure": "", "run_id": "r3"})
+    check("#44: the door leaves the note for an account refusal, not for a model's failure, and a completed call clears it",
+          (left, ignored, kept_note["failure"] == sentence and kept_note["run_id"] == "r1", cleared,
+           os.path.exists(ex.refusal_path(str(nr), "claude", "claude"))), ("left", "", True, "cleared", False))
+    shutil.rmtree(nr, ignore_errors=True)
+    rp = Path(ex.refusal_path(str(logins), "claude", "claude"))
+    rp.parent.mkdir(parents=True, exist_ok=True)
+    rp.write_text(json.dumps({"at": (now + timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ"), "run_id": "r1", "failure": sentence}))
+    f = collect("ok", 0)
+    check("#44: the door's note, newer than the reading, travels with a good reading",
+          (f.get("execution_refusal") or {}).get("failure") == sentence, f.get("execution_refusal"))
+    g = collect("expired", 0)
+    check("#44: and with a kept one", (g.get("execution_refusal") or {}).get("failure") == sentence and g["source"].startswith("cache:"), g.get("execution_refusal"))
+    rp.write_text(json.dumps({"at": "2020-01-01T00:00:00Z", "run_id": "r0", "failure": sentence}))
+    h = collect("ok", 0)
+    check("#44: a note older than the reading is not carried — a later reading outranks an old refusal", "execution_refusal" not in h, h.get("execution_refusal"))
+    d3 = Path(tempfile.mkdtemp(prefix="agentstack-r44b-"))
+    json.dump(pol, open(d3 / "p.json", "w"))
+    json.dump({**e, "observed_at": (now - timedelta(seconds=60)).isoformat(), "execution_refusal": {"at": "x", "failure": sentence}}, open(d3 / "claude.json", "w"))
+    rr = json.loads(subprocess.run([sys.executable, str(HERE / "router.py"), str(d3 / "p.json"), str(d3)],
+                                   capture_output=True, text=True, env={**os.environ, "ROUTER_NOW": now.isoformat()}).stdout)["evaluated"][0]
+    check("#44: the router holds on the call's own sentence, young reading or not, and says to follow it",
+          rr["eligible"] is False and rr.get("login_refused") is True and "organization has disabled" in rr["why"] and "follow that sentence" in rr["why"], rr["why"])
+    check("#44: the remedy for it is the sentence, not the observer's hint",
+          "sentence in the reason is the remedy" in oh.fix_for({"provider": "claude", "why": rr["why"]}))
+    shutil.rmtree(d3, ignore_errors=True)
     shutil.rmtree(root, ignore_errors=True)
 
 

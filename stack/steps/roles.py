@@ -78,27 +78,39 @@ def eligibility():
 elig = eligibility()
 out = {"profile": prof_name}
 missing, ineligible = [], []
-for arg in specs:
-    role, _, rest = arg.partition("=")
-    provider, _, principal = rest.partition(":")
-    why = ""
+def verdict(provider):
+    """Why this provider cannot be bound, or "" when it can."""
     # A provider the profile does not list may still be bound when this run's admission asked
     # about it by name and admitted it (admit_models.py, #51): the profile's thresholds judged
     # it, and its login and route are the profile's when it has them, the provider's own name
     # and the direct route otherwise. A provider nobody asked about is still "not in the profile".
     if provider not in candidates and not (elig and provider in elig):
-        # the profile does not carry this provider: say so, do not substitute another vendor
-        why, bucket = "not in the profile", missing
-    elif elig is None:
-        why, bucket = "no router evaluation to read", ineligible
-    elif provider not in elig:
-        why, bucket = "the router did not evaluate it", ineligible
-    elif not elig[provider][0]:
-        why, bucket = elig[provider][1], ineligible
-    if why:
+        return "not in the profile"          # say so; never substitute another vendor
+    if elig is None:
+        return "no router evaluation to read"
+    if provider not in elig:
+        return "the router did not evaluate it"
+    if not elig[provider][0]:
+        return elig[provider][1]
+    return ""
+
+
+for arg in specs:
+    role, _, rest = arg.partition("=")
+    spec, _, principal = rest.partition(":")
+    # `author=claude|codex`: the workflow's own order of vendors for a role, walked here the way
+    # the router walks the profile's candidates — the first that this run's admission admitted
+    # wins, and the order is the workflow's (#44: a role pinned to one vendor held every run
+    # while that vendor's login was dead; a workflow that would rather run on another names it).
+    alternatives = [p.strip() for p in spec.split("|") if p.strip()]
+    whys = {p: verdict(p) for p in alternatives}
+    provider = next((p for p in alternatives if not whys[p]), None)
+    if provider is None:
         out[f"{role}_provider"] = out[f"{role}_login"] = out[f"{role}_route"] = ""
         out[f"{role}_principal"] = ""
-        bucket.append(f"{role}:{provider} ({why})")
+        # one line per role: every alternative and why; "missing" only when none is in reach
+        bucket = missing if all(w == "not in the profile" for w in whys.values()) else ineligible
+        bucket.append(", ".join(f"{role}:{p} ({w})" for p, w in whys.items()))
         continue
     out[f"{role}_provider"] = provider
     out[f"{role}_login"] = logins.get(provider, provider)

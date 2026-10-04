@@ -203,6 +203,18 @@ def controls_roles():
           (r["reviewer_provider"], r["reviewer_login"], r["reviewer_route"], r["reviewer_principal"]),
           ("codex", "codex", "direct", "devflow-research-reviewer"))
     check("#51: one nobody asked about is still not in the profile", r["missing"], "cold:grok (not in the profile)")
+    # #44: `role=a|b` — the workflow's own order of vendors, walked like the profile's candidates
+    os.remove(f"{ev}/admission.json")
+    r = run([{"provider": "claude", "eligible": False, "why": "unknown: the login's token expired — sign in on the panel"},
+             {"provider": "codex", "eligible": True, "why": "within limits"},
+             {"provider": "grok", "eligible": False, "why": "exhausted: weekly 99% >= 90%"}],
+            args=("author=claude|codex:novel-author", "cold=grok|claude", "x=gemini|mistral"))
+    check("#44: the first alternative this run admitted is bound, with the role's principal",
+          (r["author_provider"], r["author_principal"]), ("codex", "novel-author"))
+    check("#44: no alternative admitted → every one and its reason, on one line",
+          r["ineligible"], "cold:grok (exhausted: weekly 99% >= 90%), cold:claude (unknown: the login's token expired — sign in on the panel)")
+    check("#44: alternatives nobody carries are still missing, not substituted",
+          r["missing"], "x:gemini (not in the profile), x:mistral (not in the profile)")
     shutil.rmtree(root, ignore_errors=True)
 
 
