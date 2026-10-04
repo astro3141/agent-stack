@@ -148,7 +148,7 @@ JSON의 장점은. acpx가 그쪽으로 갈 것인가. 아래는 공식 문서·
 | | Claude Code 2.1.287 | Codex 0.160.0 | Grok 1.0.46 |
 |---|---|---|---|
 | headless JSON 출력 | `-p --output-format json` | `exec --json` (JSONL 이벤트 스트림) | `-p --output-format json` (docs.x.ai) |
-| schema 제약 출력 | `--json-schema` → `structured_output`. 위반 시 내부 재시도, 소진되면 `subtype: error_max_structured_output_retries` | `--output-schema FILE` → 최종 메시지가 schema에 맞는 JSON 문자열 | **UNVERIFIED** — 공식 문서·npm에 없음. 오픈소스 repo 문서에 `--json-schema`가 지나가듯 언급될 뿐 |
+| schema 제약 출력 | `--json-schema` → `structured_output`. 위반 시 내부 재시도, 소진되면 `subtype: error_max_structured_output_retries` | `--output-schema FILE` → 최종 메시지가 schema에 맞는 JSON 문자열 | `--json-schema` 있음 (`grok --help`, 7절) — 공식 문서에는 없고 바이너리에 있음 |
 | payload를 stdin으로 | 가능 (10 MB) | 가능 (`-` 또는 파이프) | **불가** — "headless mode does not read piped stdin"; `--prompt-file` 사용 |
 | 모델 이름(pin) | `modelUsage` | **없음** — 어떤 이벤트에도 model 필드 없음 | `modelUsage` (repo 문서) |
 | 턴 수 | `num_turns` | `turn.*` 이벤트 수를 세면 됨 | `num_turns` |
@@ -162,7 +162,7 @@ developers.openai.com/codex/noninteractive, github.com/openai/codex `rust-v0.160
 
 **읽는 법.** trading이 얼린 envelope(`modelUsage`, `num_turns`, `permission_denials`,
 `structured_output`)은 **Claude Code CLI 하나에만 그 모양으로 존재**한다. Codex는 모델 이름과
-denial이 없고, Grok은 schema 자체가 미확인이고 stdin을 안 읽는다. 즉 "CLI envelope를 문이
+denial이 없고, Grok은 denial이 없고 stdin을 안 읽는다. 즉 "CLI envelope를 문이
 그대로 내줘라"(선택지 C)는 세 provider에 같은 보증을 줄 수 없다. 플랫폼 계약이 될 수 없는 모양이다.
 
 ### 2. API 레벨 (CLI 아래)
@@ -240,3 +240,66 @@ query 종류는 ACP 위에서 지금 만들 수 있다(프롬프트로 JSON을 �
 - claude-agent-acp의 `emitRawSDKMessages` 경로로 `structured_output`이 acpx의 journal까지는
   오는가: 측정 전까지 우회로 치지 않는다.
 - trading freeze guard의 다섯 필드 중 재인증 가능한 것: 저자의 답.
+
+### 7. 6절의 미확인 셋, 답이 옴 (같은 날)
+
+- **Grok 1.0.46에 `--json-schema` 있음.** 운영자가 `grok --help`로 확인: "JSON Schema for
+  structured output. When set, the model is constrained to produce JSON matching this schema.
+  Implies --output-format json." `--prompt-file`, `--prompt-json`, `-p`도 있음. 1절 표의
+  "UNVERIFIED"는 "있음"으로 고친다. stdin은 여전히 안 읽는다(`--prompt-file`로).
+- **claude-agent-acp의 raw 메시지 우회는 죽은 길.** 운영자의 라이브 확인: 어댑터가 `createAcpRuntime`로
+  acpx를 쓰면 journal(`*.stream.ndjson`)은 **아예 만들어지지 않는다**(journal을 쓰는 코드는 acpx
+  CLI 쪽에만). claude-agent-acp가 붙인 `_meta.claudeCode`는 acpx의 이벤트 변환에서 빠진다. 남는
+  곳은 둘: permission 요청(`permissions.jsonl`, `_meta.claudeCode.mcpServer`)과 turn 결과의
+  `_meta.quota`(`result.json`). 즉 3절의 결론 그대로 — 모델 단 schema 제약은 우리 경로에 닿지
+  않고, 우회도 없다.
+- **trading 저자의 답: 재인증 가능, 조건 셋.** (원문은 #62 스레드와 운영자 메시지.)
+  1. *schema*: 모델측 제약 제거는 등가. 하네스는 이미 `contract_errors()`로 사후 검증을 또 하고
+     있어서 하류가 받는 보장(적합 출력만 유효)은 불변. 단 **재시도 정의**가 계약 결정이다 — 동결
+     계약은 "부적합 출력 = INVALID_OUTPUT, 무재질의"이고 이는 모델 신뢰도의 측정값이라, schema
+     miss에 재시도를 주면 관측량의 정의가 바뀐다. 권고: 재시도는 transport 실패에만. 펜스 제거
+     같은 결정론 추출 규칙은 사전 등록.
+  2. *턴·도구*: "1 prompt = 1 turn + 도구 0"은 지금보다 **강한** 불변식. 지금 `num_turns=2`가
+     정상인 유일한 이유가 `--json-schema`의 내부 왕복이었다.
+  3. *문의 기록이 실어야 할 최소 필드*: 턴 수, server tool use(웹 검색 포함), 모델 식별. 그리고
+     모델별 usage/cache 분해는 `measurements(total_tokens/wall_ms)`로는 대체가 안 된다(관측 축
+     하나 약화, 승인 필요).
+
+**세 번째 조건을 기록된 run으로 재 본 것** (`stack/fixtures/run-agent/*`, 2026-10-03 실측):
+
+| | claude | codex | grok |
+|---|---|---|---|
+| 모델 식별 (`_meta.quota.model_usage[].model`) | `claude-haiku-4-5-20251001`, `claude-opus-5-5` (둘 — 하나는 Claude Code의 내부 호출) | `gpt-6.1-sol` | **없음** (`model_usage` 비어 있음) |
+| 모델별 토큰 분해 (`token_count`: input/cached/write/output/reasoning) | 있음 | 있음 | 없음 |
+| 도구 호출 이벤트 (auto 워크플로, 쓰기 1건이 목적) | 10 (`ToolSearch` 1, `mcp__preloop__write_file` 1, 그 외 Claude Code 내부) | 2 | 6 |
+
+읽는 법. (a) 저자가 "측정 1회로 판정해야" 한다던 모델 식별은 claude·codex에서 **이미 채워진다**
+— 다만 `execution.json`의 `model_adapter_reported`가 그걸 옮겨 담는 자리인데, 기록된 run 셋 모두
+`execution.json`이 그 필드를 비워 두었거나 없다(이 fixture들은 §74 때 것; 지금 코드는
+`model_usage`를 합쳐 넣는다 — **라이브 run 하나로 확인할 것**). grok은 어댑터가 모델을 보고하지
+않으므로 **grok 역할의 모델 pin은 지금 경로에서 불가**. (b) 저자가 "약화"라고 한 모델별 usage/cache
+분해는 **이미 `result.json`의 `turn._meta.quota.model_usage`에 있다**(claude·codex). 문의 기록에
+그 블록을 `measurements.model_usage`로 옮겨 담으면 약화가 아니다. (c) "도구 0"은 이벤트의
+`tool_call`을 세면 되는데, Claude Code는 내부 `ToolSearch`를 도구 호출로 올린다. query 종류는
+acpx의 `sessionOptions.allowedTools`(통과되는 옵션 중 하나)를 빈 목록으로 주고 `permissions.deny`로
+막은 뒤 **`tool_call` 이벤트 0건**을 불변식으로 기록하면 된다 — 라이브 측정 1회.
+
+### 8. 그래서 B의 정확한 모양 (query 종류)
+
+| 항목 | 결정 |
+|---|---|
+| 입력 | 요청에 `payload`(inline) 또는 prompt 파일 `-`(stdin). 바이트 그대로 `request.json`에 기록 |
+| 도구 | `allowedTools: []` + `permissions.deny` 전부. 불변식: `tool_call` 이벤트 0 → 기록에 `tool_calls: 0`, 아니면 `TOOLS_USED` |
+| 턴 | ACP는 1 prompt = 1 turn. 기록에 `turns: 1` |
+| 답 | 모델의 `text`(또는 지정 파일). 사전 등록된 결정론 추출(펜스 제거) 뒤 JSON 파싱 → 선언된 schema로 검증. 통과 → `COMPLETED` + `answer`; 실패 → `INVALID_OUTPUT`, **재시도 없음** |
+| 재시도 | CONTRACT 그대로: 인프라 결함(로그인 refresh, 프로세스 사망, 비-JSON 응답)만 1회, 모델이 만든 실패는 절대 아님. 저자의 transport-only 권고와 같은 문장 |
+| 기록 | 기존 execution record + `turns`, `tool_calls`, `server_tool_use`(웹 검색 도구 호출 수), `measurements.model_usage`(모델별 토큰 분해), `schema_sha256` |
+| 모델 pin | `model_adapter_reported`(claude·codex). grok은 보고 안 됨 — grok 역할은 pin 불가로 명시 |
+
+이 모양이면 trading 저자의 조건 1·2·3이 모두 충족되고, "약화" 한 건은 사라진다. 남는 것은
+trading의 절차(segment 경계에서 새 바인딩 버전, prompt sha, 동결 corpus 재주행, pins 갱신)인데
+그건 패키지의 일이다.
+
+**운영자에게 남은 결정은 하나: B(query 종류)를 만들 것인가.** 근거는 다 모였다. 만든다면
+순서는 (1) 문에 query 종류 + 컨트롤, (2) 라이브 측정 2회(claude·codex에서 `model_adapter_reported`가
+채워지는지, `allowedTools: []`로 `tool_call` 0이 되는지), (3) trading 저자에게 재인증 시작 신호.
