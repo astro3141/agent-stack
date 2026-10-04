@@ -28,15 +28,40 @@ DEFAULT_RUNTIME = {
     "egress": {"proxy": "http://egress:8888", "no_proxy": ["console", "api", "gateway", "mlflow", "localhost", "127.0.0.1"]},
     "broker": {"url": "http://broker:8791", "mcp_url": "http://broker:8791/mcp/v1"},
     "paths": {"workspace_root": "/ws", "evidence_root": "/work/evidence/p281", "observations": "/obs", "logins_root": "/route",
-              "state_root": "/work/state"},
+              "state_root": "/work/state",
+              # data handed in by name (handoff/README.md) and the instance's configuration a
+              # package may read (config/<package>/…) — asked for by devflow (#55)
+              "handoff_root": "/work/handoff", "config_root": "/work/config"},
 }
+
+# A package's controls drive its real steps with fake inputs (docs/packages.md, "Controls"). The
+# steps reach the roots through here, so until #54 the controls wrote into the instance's real
+# state_root and workspace_root. `scripts/packages.sh controls` points this at a temporary
+# directory in the agent; the roots a step writes to are then under it, and the instance's are
+# untouched. Nothing else sets it, and a run's environment never carries it.
+CONTROLS_ROOT = "AGENTSTACK_CONTROLS_ROOT"
+_SCRATCH_ROOTS = ("workspace_root", "evidence_root", "state_root")
 
 
 def runtime():
+    """The generated settings, with every section and path key the defaults know filled in — a
+    runtime.json generated from an environment.yaml that predates a key still answers for it
+    (`broker`, `handoff_root`), rather than a KeyError in a step."""
     try:
-        return json.loads((GEN / "runtime.json").read_text())
+        rt = json.loads((GEN / "runtime.json").read_text())
     except Exception:
-        return DEFAULT_RUNTIME
+        rt = {}
+    out = {}
+    for sect, defaults in DEFAULT_RUNTIME.items():
+        got = rt.get(sect) if isinstance(rt.get(sect), dict) else {}
+        out[sect] = {**defaults, **got}
+    for sect, v in rt.items():
+        out.setdefault(sect, v)
+    scratch = os.environ.get(CONTROLS_ROOT)
+    if scratch:
+        out["paths"] = {**out["paths"],
+                        **{k: os.path.join(scratch, k.replace("_root", "")) for k in _SCRATCH_ROOTS}}
+    return out
 
 
 def url(section, key):

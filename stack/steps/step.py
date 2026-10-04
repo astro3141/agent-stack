@@ -78,11 +78,14 @@ def refuse(reason, **fields):
     sys.exit(0)
 
 
-def main(fn, **shape):
+def main(fn, failure_key="reason", **shape):
     """Run `fn()`; an exception becomes the step's answer in the declared shape, exit 0.
 
     `shape` is every key the workflow's `output:` declares, with the value it holds when the
-    step did not get to compute one. A SystemExit (a refusal) passes through unchanged.
+    step did not get to compute one. A SystemExit (a refusal) passes through unchanged. The
+    message goes under `failure_key` — `reason` unless the step says otherwise: a step whose
+    `reason` means something of its own (why a task waits) names the key it reports machinery
+    failures under (`error`, say), and the declared shape decides every other key (#52).
     """
     try:
         return fn()
@@ -91,9 +94,36 @@ def main(fn, **shape):
     except Exception as e:                   # noqa: BLE001 — the point is to report, not to hide
         answer = dict(shape)
         answer["status"] = "TOOL_FAILURE"
-        answer["reason"] = f"{type(e).__name__}: {e}"[:300]
+        answer[failure_key] = f"{type(e).__name__}: {e}"[:300]
         out(**answer)
         return 0
+
+
+def handoff(name):
+    """The path of a file handed in by name (handoff/README.md): <handoff_root>/<name>, or a
+    ValueError for a name that escapes that directory. Existence is the caller's question — a
+    step refuses in its output when the file is not there (contract item 5)."""
+    root = os.path.realpath(runtime()["paths"]["handoff_root"])
+    p = os.path.realpath(os.path.join(root, str(name)))
+    if p == root or not p.startswith(root + os.sep):
+        raise ValueError(f"a hand-in is a name inside the hand-in directory, not {name!r}")
+    return p
+
+
+def egress_hosts(profile=""):
+    """What a role's egress profile lets it reach, as the proxy reads it: the patterns of
+    config/generated/egress/profiles/<profile>.allow (the shared list when `profile` is empty),
+    comments and blanks dropped. An answer for a prompt ("you can fetch from …"), not a file a
+    package parses (#55). Empty when the instance has no such profile — a role mapped to one
+    that is not provisioned is refused by the broker, by name (OPERATIONS §57)."""
+    import settings
+    gen = settings.GEN / "egress"
+    path = gen / "profiles" / f"{profile}.allow" if profile else gen / "allow"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [l.strip() for l in lines if l.strip() and not l.strip().startswith("#")]
 
 
 # ---- binding a result to the input it was made from --------------------------------------

@@ -1038,6 +1038,73 @@ def firstuse_controls():
 
 
 # ---------------------------------------------------------------- 15. what the controls pin (§82)
+# ---------------------------------------------------------------- 21. the package feedback round (#51–#55)
+def feedback_controls():
+    """What the devflow author's findings asked of the stack (issues #51–#55), as behaviour."""
+    import importlib.util as il
+    spec = il.spec_from_file_location("step_fb", str(HERE / "steps" / "step.py"))
+    st = il.module_from_spec(spec); spec.loader.exec_module(st)
+    # #52: the crash's key is the step's to name; the shape decides every other key
+    rc, out = quiet(lambda: st.main(lambda: 1 / 0, "error", decision="", reason=""))
+    row = json.loads(out.strip().splitlines()[-1])
+    check("#52: step.main puts the crash under the key the step names",
+          (row["status"], row["error"].startswith("ZeroDivisionError"), row["reason"]), ("TOOL_FAILURE", True, ""))
+    rc, out = quiet(lambda: st.main(lambda: 1 / 0, decision=""))
+    check("#52: and under `reason` when it names none", "reason" in json.loads(out.strip().splitlines()[-1]))
+    # #53: requires.state in every form
+    spec = il.spec_from_file_location("pk_fb", str(HERE / "packages.py"))
+    pk = il.module_from_spec(spec); spec.loader.exec_module(pk)
+    check("#53: state: true is here", pk.state_declared(True), (True, ""))
+    check("#53: state: \"<where>\" is with the work", pk.state_declared("github issue comments"), (False, "github issue comments"))
+    check("#53: {here, with_the_work} is both", pk.state_declared({"here": True, "with_the_work": "github issue comments"}),
+          (True, "github issue comments"))
+    check("#53: [true, \"<where>\"] is both", pk.state_declared([True, "gh"]), (True, "gh"))
+    check("#53: nothing declared is neither", (pk.state_declared(None), pk.state_declared(False)), ((False, ""), (False, "")))
+    # #54 / #55: the roots, filled in from the defaults, and the controls' scratch root
+    import settings as se
+    importlib.reload(se)
+    rt = se.runtime()
+    check("#55: handoff_root and config_root are roots like the others",
+          all(k in rt["paths"] for k in ("handoff_root", "config_root", "state_root", "workspace_root")), sorted(rt["paths"]))
+    check("the broker's address is answered even by a runtime.json that predates it", bool(rt.get("broker", {}).get("url")))
+    old = os.environ.get(se.CONTROLS_ROOT)
+    os.environ[se.CONTROLS_ROOT] = "/tmp/fb-scratch"
+    try:
+        p = se.runtime()["paths"]
+        check("#54: under the controls' root the three roots a step writes to move there, the rest stay",
+              (p["workspace_root"], p["evidence_root"], p["state_root"], p["logins_root"] == rt["paths"]["logins_root"]),
+              ("/tmp/fb-scratch/workspace", "/tmp/fb-scratch/evidence", "/tmp/fb-scratch/state", True))
+    finally:
+        if old is None:
+            os.environ.pop(se.CONTROLS_ROOT, None)
+        else:
+            os.environ[se.CONTROLS_ROOT] = old
+    # (that scripts/packages.sh sets the root for a package's controls is measured by the cold
+    # start: `packages.sh verify` runs novel's controls through it, in the container)
+    # #55: a hand-in is a name, never a path
+    check("#55: a hand-in name resolves under handoff_root",
+          st.handoff("acyc-2026-04-10.json") == os.path.join(os.path.realpath(rt["paths"]["handoff_root"]), "acyc-2026-04-10.json"))
+    for bad in ("../x", "/etc/passwd", ".", ""):
+        try:
+            st.handoff(bad); ok_ = False
+        except ValueError:
+            ok_ = True
+        check(f"#55: a hand-in that escapes is refused ({bad!r})", ok_)
+    # #55: the hosts of an egress profile are an answer, read from what the proxy reads
+    root = Path(tempfile.mkdtemp(prefix="agentstack-fb-"))
+    (root / "config" / "generated" / "egress" / "profiles").mkdir(parents=True)
+    (root / "config" / "generated" / "egress" / "profiles" / "probe.allow").write_text("# generated\n^example\\.com$\n\n^api\\.anthropic\\.com$\n")
+    old_root = se.GEN
+    se.GEN = root / "config" / "generated"
+    try:
+        check("#55: step.egress_hosts(profile) answers the profile's patterns, comments and blanks dropped",
+              st.egress_hosts("probe") == ["^example\\.com$", "^api\\.anthropic\\.com$"], st.egress_hosts("probe"))
+        check("#55: and nothing for a profile the instance has not provisioned", st.egress_hosts("nope") == [], st.egress_hosts("nope"))
+    finally:
+        se.GEN = old_root
+    shutil.rmtree(root, ignore_errors=True)
+
+
 def pinkind_controls():
     """pin_kinds.py counts the controls that pin a source file's text rather than a behaviour; the
     count may fall and may not rise. Raise the bound only with a sentence in OPERATIONS."""
@@ -1072,6 +1139,7 @@ update_controls()
 review3_controls()
 ease_controls()
 firstuse_controls()
+feedback_controls()
 pinkind_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")

@@ -73,8 +73,15 @@ run_controls() {   # [name] — 0 when every controls.py passed
       continue
     fi
     echo "== $name: controls"
-    docker exec "$STACK-agent" $PY_IN_AGENT "/work/packages/$name/controls.py" \
-      || { echo "  FAILED   $name — controls.py reported failures" >&2; exit 1; }
+    # The steps a package's controls drive reach the roots through the stack's settings, so the
+    # controls used to write into the instance's real state and workspace (#54, devflow: 821 KB of
+    # fixture trees under /work/state). A temporary directory in the agent stands in for the three
+    # roots a step writes to, for this one process, and is removed after.
+    scratch="/tmp/agentstack-controls-$name-$$"
+    docker exec "$STACK-agent" sh -c "mkdir -p '$scratch'" 2>/dev/null || true
+    docker exec -e "AGENTSTACK_CONTROLS_ROOT=$scratch" "$STACK-agent" $PY_IN_AGENT "/work/packages/$name/controls.py"; crc=$?
+    docker exec "$STACK-agent" sh -c "rm -rf '$scratch'" 2>/dev/null || true
+    [ "$crc" = 0 ] || { echo "  FAILED   $name — controls.py reported failures" >&2; exit 1; }
   done || rc=1
   return "$rc"
 }

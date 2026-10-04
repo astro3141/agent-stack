@@ -418,6 +418,25 @@ def state_root():
         return "/work/state"
 
 
+def state_declared(v):
+    """(here, where) from a manifest's `requires.state`, in any of its forms (#53):
+    `true` — here, under the root; `"<where>"` — with the work, elsewhere;
+    `{here: true, with_the_work: "<where>"}` or `[true, "<where>"]` — both, as devflow keeps a
+    cache here and the task's state on its issue. Anything else declares nothing."""
+    here, where = False, ""
+    items = v if isinstance(v, list) else [v]
+    for x in items:
+        if x is True:
+            here = True
+        elif isinstance(x, str) and x.strip():
+            where = x.strip()
+        elif isinstance(x, dict):
+            here = here or x.get("here") is True
+            w = x.get("with_the_work") or x.get("where")
+            where = str(w).strip() if isinstance(w, str) and w.strip() else where
+    return here, where
+
+
 def state_of():
     """<state_root>/<package>/ — on disk, and whether the package declared it.
 
@@ -432,9 +451,9 @@ def state_of():
     # `state: true` — here, under the root. `state: "<where>"` — with the work, somewhere else
     # (devflow: the task's GitHub issue, because a person must read it where the work is and
     # it must outlive this machine). The stack keeps neither kind's content; it says where each is.
-    declared = {n for n, r in pk.items() if (r.get("requires") or {}).get("state") is True}
-    remote = {n: str(v) for n, r in pk.items()
-              if isinstance((v := (r.get("requires") or {}).get("state")), str) and v}
+    decl = {n: state_declared((r.get("requires") or {}).get("state")) for n, r in pk.items()}
+    declared = {n for n, (here, _) in decl.items() if here}
+    remote = {n: where for n, (_, where) in decl.items() if where}
     rows = {}
     if os.path.isdir(root):
         for entry in sorted(os.listdir(root)):
