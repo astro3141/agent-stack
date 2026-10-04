@@ -5383,6 +5383,6 @@ path kept; the Windows arm stays first (its `?` takes a one-letter segment only)
 control runs `norm_host` on the four shapes — the two Windows spellings, the macOS form, a plain
 Linux path — so the next host form that appears is one line and one measurement.
 
-**Measured.** review_controls 251/251; `verify.sh --level static` 13/13; pins at the ratchets.
-The Mac host's own measurement (a recorded update through the fixed script) is the operator's,
+**Measured.** review_controls 251/251; `verify.sh --level static` 13/13; pins at the ratchets;
+**cold-start run 112 green** on dcee9f8. The Mac host's own measurement (a recorded update through the fixed script) is the operator's,
 with the `/bin/bash scripts/verify.sh` run §93 waits on.
