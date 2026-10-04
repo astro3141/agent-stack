@@ -452,7 +452,7 @@ at 0600 (OPERATIONS §25).
 scripts/backup.sh                          # stops the writers, dumps, restarts, encrypts
 scripts/restore.sh --archive <file> …      # brings the backup up as a SEPARATE instance
 scripts/release.sh record                  # keep what is running now
-scripts/release.sh update --to <rev>       # record, move, rebuild, check
+scripts/release.sh update --to <rev>       # record; then <rev>'s own script moves, rebuilds, checks (§90)
 scripts/release.sh rollback --to <tag>     # put a kept release back
 ```
 

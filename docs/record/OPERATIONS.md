@@ -5171,3 +5171,39 @@ read `tool_calls`, `model_adapter_reported`, `status` from the printed record an
 `events.jsonl` in the evidence directory. If a vendor makes a tool call despite the ask, the
 record says `TOOLS_USED` and the provider's `queryEnv` is where the next switch goes. Then
 trading is told to start its re-qualification (#62).
+
+## 90. Whose script performs an update (#48, DECISIONS-2026-10-04 decision 3, 2026-10-04)
+
+The fact (#48, §84): `release.sh` copies itself to `/tmp` and runs from the copy, so an update is
+always performed by the **workspace's** script — the revision being left — which knows nothing
+of what the target changed. When the tools moved to `/opt` (#34) the old script moved the
+workspace and then looked for them where they no longer were, leaving new code on old images and
+a mislabelled release; the next change of layout would do the same. §84's mitigation printed the
+way back after a pre-#34 rollback (`git show <rev>:scripts/release.sh`, `RELEASE_SH_HOME`). The
+operator chose the general form: the target revision's script performs the update.
+
+**What changed.** `release.sh update --to X` still does, with the running revision's script, the
+two things only it can do safely — build the candidate from X's own Dockerfile, keep the release
+in use as the rollback point — and then **hands over** (`hand_over_update`): X's
+`scripts/release.sh` is taken with `git show`, run against this workspace with
+`RELEASE_SH_PINNED=1 RELEASE_SH_HOME=<workspace> RELEASE_SH_HANDED=<this revision>`, and its
+exit code is the update's. Handed over, the target's `cmd_update` skips the build and the record
+and goes to `update_move` (checkout, rebuild, `up.sh --recreate`, policy), saying `handed over
+by  the script of <rev>`. A target whose script does not know the marker — any revision before
+this — would build and record a second time, so it is not handed to: the update goes on in the
+workspace's script as before and says `performed by  this workspace's script`. The candidate
+worktree and image are cleaned by the script that made them, after the child returns. The trust
+model is the one DECISIONS named: "the new one installs", with the cold start and the release
+record as the safety net either way.
+
+**Measured.** review_controls, the update group +4, at function level on a throw-away repository
+with three revisions (a script that knows the marker, one that does not, none): the hand-over
+runs the target's script against this workspace with the handing revision named and keeps its
+exit code; the two targets that cannot take a hand-over are not handed to; handed over, the
+target's `cmd_update` moves the workspace without building or recording (a `docker` stand-in
+that would fail the shell is never called); the target's copy is removed. docs/update-day.md
+says who performs the update and what the printed line means; the pre-#34 paragraph now says
+the manual command is the same hand-over made by hand from a workspace older than this rule.
+`verify.sh --level static` 13/13. **Not measured:** a live update — the cold start has no update
+path (DECISIONS decision 3); the next update day is the measurement, read in `update`'s own
+`performed by` line and the release record it leaves.
