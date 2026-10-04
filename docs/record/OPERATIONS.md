@@ -5386,3 +5386,40 @@ Linux path — so the next host form that appears is one line and one measuremen
 **Measured.** review_controls 251/251; `verify.sh --level static` 13/13; pins at the ratchets;
 **cold-start run 112 green** on dcee9f8. The Mac host's own measurement (a recorded update through the fixed script) is the operator's,
 with the `/bin/bash scripts/verify.sh` run §93 waits on.
+
+## 95. The uid path's refusal said a remedy nobody can perform (2026-10-04, evening)
+
+**What happened.** For §91's last live measurement (a brokered query's `request.json`), the
+trading author's session ran a query as `egress-probe`, met the §50 refusal (`the login 'claude'
+belongs to uid 1000. Connect a login named for this role`), and went to connect one: `claude
+login` ran on the host, the credential landed in the host's `~/.claude`, `/route/egress-probe`
+stayed empty, and the guard refused again — rightly, since it reads the login's **owner**, not its
+validity. The session's diagnosis of that was exact. What it could not know is that the remedy
+sentence pointed nowhere: nothing in the stack makes a login a role owns. The panel's login flow
+(`login_helper.py`, driven by the ops API) writes `<logins_root>/<name>` as the agent's own uid
+and chowns nothing; `role-exec` runs a step as a role but is not a login flow; the one way is by
+hand, inside the container, with a chown to the role's uid — and the vendor's own refresh keeps
+the file the role's only because the role ran it.
+
+**Why the measurement picked the one role that hits this.** `egress-probe` is the platform's
+probe identity and declares both forms: `egress_profile: probe` (the broker design, §53–§55) and
+the deprecated `egress:` hosts (the uid design, §48–§50). So its step goes through the broker and
+then, in the profile's runner, takes the uid path with the §50 ownership guard. A role that
+declares `egress_profile:` alone — `novel-reviewer`, `closed` — takes the broker only, runs in the
+profile's runner as the agent uid, and uses the shared login: the recorded `grok-allow` run is
+exactly that, COMPLETED. §91's measurement is one brokered query as such a role; no login to
+connect.
+
+**What changed.** The refusal now says the way out that exists: declare `egress_profile:` and drop
+`egress:` (the uid path is deprecated, nothing on the panel makes a login a role owns, a brokered
+role needs none); the by-hand way for a role that must stay on the uid path. docs/packages.md says
+the same where the deprecated key is described. The control that pinned the refusal's remedy pins
+the new words (one text pin replaced, none added).
+
+**Not changed.** The guard itself: a role on the uid path without a login it owns is still
+refused, and `egress-probe` keeps both declarations — it is the probe of the deprecated
+mechanism, named as such by every `principals.py apply`. A login flow that runs as a role is not
+built: the path it would serve is the one §51 retired.
+
+**Measured.** `verify.sh --level static` 13/13; pins at the ratchets (51 / 167). The role-egress
+group that carries the pin runs only where `up.sh` wrote `/role-egress` — the cold start.

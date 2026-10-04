@@ -1491,8 +1491,8 @@ def controls_role_egress():
           "rewrite it on every token refresh" in at6, True)
     check("and a step it refuses is refused, not quietly run on the shared allowlist",
           "raise SystemExit(0)" in at6.split('owner != role_uid')[1][:1400], True)
-    check("the refusal says how to fix it, not only that it failed",
-          "Connect a login named for this role" in at6, True)
+    check("the refusal says how to fix it, not only that it failed — the profile, not a login nobody can make (§95)",
+          "declare `egress_profile:`" in at6 and "nothing on the panel makes a login a role owns" in at6, True)
     # a principal may now travel with the call even where the vendor keeps its own credential file
     ra = open("/work/stack/run-agent.mjs", encoding="utf-8").read()
     check("a principal is no longer refused for a vendor that reads its own config file",
