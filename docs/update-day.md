@@ -84,6 +84,9 @@ own `scripts/release.sh`** (`git show <rev>:scripts/release.sh`, run against thi
 of its own layout. `update` prints `performed by  the target revision's scripts/release.sh (<rev>)`
 when it hands over, and `performed by  this workspace's script` when the target's script is older
 than this rule and would build and record a second time — then the update runs as it did before.
+Its exit code is the checks': an update whose every step is done still exits 1 when `up.sh
+--recreate` fails a check, and the script says which kind — a check the update cannot have caused
+(a login whose token expired, §100) is yours to fix on the panel, any other is the rollback's.
 
 4. `verify.sh --level full` makes the cheap runs (`hello-lane`, `auto`, `novel-a`). For a provider
    CLI change, add the N7 native-tool check on the vendor that changed (OPERATIONS §7) by hand:

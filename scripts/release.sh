@@ -336,7 +336,9 @@ update_move() {
   UP_RC=0
   (cd "$HERE" && bash scripts/up.sh --recreate) || UP_RC=1
   [ "$UP_RC" = 0 ] || {
-    echo; echo "the checks did not pass after the update. Go back with:" >&2
+    echo; echo "the checks did not pass after the update — every step of it is done. Read the FAIL lines above:" >&2
+    echo "  a login whose token expired ('every provider's state is knowable') is not the update's and a" >&2
+    echo "  rollback will not pass it — sign in on the panel (docs/runbook.md). Anything else, go back with:" >&2
     echo "  scripts/release.sh rollback --to <tag>   (scripts/release.sh list)" >&2
     exit 1; }
   # A policy that could not be applied means the account still enforces the previous one: that is
