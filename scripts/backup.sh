@@ -29,8 +29,10 @@
 # Losing the key file means losing the backup: keep a copy of it, and of the archive, elsewhere.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
-u() { if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
-m() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+# An empty path stays empty: Git Bash's cygpath refuses '' ("can't convert empty path") and under
+# set -e that ended restore.sh --verify-only on the first host (§86, measured live).
+u() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+m() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$HERE/config/instance.env" ] && . "$HERE/config/instance.env"

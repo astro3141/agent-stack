@@ -23,8 +23,10 @@
 # script refuses to start while the live instance is up, and says how to stop it.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
-u() { if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
-m() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+# An empty path stays empty: Git Bash's cygpath refuses '' ("can't convert empty path") and under
+# set -e that ended restore.sh --verify-only on the first host (§86, measured live).
+u() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+m() { [ -n "$1" ] || return 0; if command -v cygpath >/dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
 ARCHIVE=""; WORKSPACE=""; CLONE_FROM=""; REV=""; VERIFY_ONLY=0; INTO_EXISTING=0
 STACK="${STACK:-agentstackr}"

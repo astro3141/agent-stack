@@ -4979,3 +4979,11 @@ The three measurements §86 left open, and what each one found:
 file existed cannot have one, the dump carries the user with its hash, and the password is the
 operator's to write into the file (the backup says so, with the keys). `restore.sh --verify-only`
 takes the archive and the key and nothing else. The stale claude reading is #44, unchanged.
+
+**Measured again on 5e4143c (the operator).** `scripts/backup.sh` with no flag: exit 0, 16 members,
+986 MB, the owner file reported absent with the keys to write. `restore.sh --archive … --verify-only`
+with no `--workspace`: **exit 1, `cygpath: can't convert empty path`** — Git Bash's cygpath refuses
+an empty argument, `u ""` called it, and `set -e` ended the script; Linux has no cygpath and the
+cold start never sees it. The two helpers return an empty path unchanged now, in backup.sh,
+restore.sh and release.sh alike (backup.sh had the same call for an instance with no `/research`
+mount). One more `--verify-only` on the first host is the measurement.
