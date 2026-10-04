@@ -5285,9 +5285,15 @@ without its id refused; **the brokered door end to end** — `novel-reviewer` wi
 `--model` and a stdin payload is handed to a recorder at the broker's address, and the job
 carries the role, the payload, the schema text and the model; the broker's answer is the step's.
 The same control on the pre-fix door: no job, `prompt unreadable`. `verify.sh --level static`
-13/13; pins at the ratchets; **cold-start run 105 green** on b4af006. Not measured: the broker's
-and the runner's two lines on a live brokered query — the first query a confined role makes on the instance measures them; read
-`request.json` in that call's evidence for `kind: query` and `model`.
+13/13; pins at the ratchets; **cold-start run 105 green** on b4af006. **Measured live** (the
+novel-v2 author, 2026-10-04, instance at fb8ebc9): two queries as `novelv2-reviewer`
+(`egress_profile: closed`, so the door's §54 branch hands it to `broker_dispatch`; the broker's
+`/health` shows the role mapped to `closed` and the profile provisioned). The payload survived
+(the answer addressed the question, `verdict: PASS`), the schema survived (`kind: query`,
+`schema_sha256`, the answer validated and carried as `answer`, `tool_calls: 0`, `turns: 1`), and
+the model survived (`--model gpt-6-luna` → `model_adapter_reported: gpt-6-luna`, the row in
+`measurements.model_usage`). All three options through the broker hand-over, which is what this
+section fixed; the §50 refusal of §95 did not arise, the role being on the profile path alone.
 
 ## 92. The tree `install` leaves is one an author can commit on (#70); the schema in the payload (#62, 2026-10-04)
 
@@ -5524,4 +5530,6 @@ a test that reads a repository file is `source-text`, a `not in` of one `absence
 
 **Measured.** review_controls 255/255 — a controls file of three asserts and one `check`
 classifies 4 (one source-text, two behaviour, one absence) and lists the assert's message by
-name; `verify.sh --level static` 13/13; **cold-start run 122 green** on ac13811.
+name; `verify.sh --level static` 13/13; **cold-start run 122 green** on ac13811. On the instance,
+novel-v2's controls read `checks: 2, behaviour: 2` where they read 0 (its author notes a helper
+under another name — `ok(...)` — is still not a check to the tool; the page says as much).
