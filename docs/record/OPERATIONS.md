@@ -5162,15 +5162,33 @@ when said). `verify.sh --level static` 13/13. Pins: review 51/51, trial 167/167 
 **Cold-start run 99 green** on 32e79be (run 98 red on one trial pin, the door's literal
 `"failure": execution.failure_of(r)`, which the verdict line had reworded; kept).
 
-**What waits on the live instance (the two measurements the decision named):** on claude and
-codex, a query whose `model_adapter_reported` is filled, and whose `tool_calls` is 0 with the
-vendor asked `allowedTools: []`. One command each, from the admin container with a login signed
-in: `printf '%s' '<payload>' | /opt/venv/bin/python /work/stack/steps/agent_task.py claude direct
-q1 - q1.json research-default claude "" --query /work/<schema.json>` and the same with `codex`;
-read `tool_calls`, `model_adapter_reported`, `status` from the printed record and
-`events.jsonl` in the evidence directory. If a vendor makes a tool call despite the ask, the
-record says `TOOLS_USED` and the provider's `queryEnv` is where the next switch goes. Then
-trading is told to start its re-qualification (#62).
+**Measured live (the two measurements the decision named, 2026-10-04, after the instance moved to
+94fc735).** Run from the **agent** container — the one with the provider logins; the admin
+container has none, and the first attempt there failed both ways (claude `Authentication
+required`, codex `CODEX_HOME points to "/route/codex", but that path does not exist`), which is
+what this paragraph said to do before it was measured:
+
+```
+printf '%s' '<payload>' | docker exec -i <stack>-agent /opt/venv/bin/python /work/stack/steps/agent_task.py \
+  claude direct q1 - q1.json research-default claude "" --query /work/evidence/q89-schema.json
+```
+
+and the same with `codex`, a schema requiring `answer` (string) and `confidence` (number) and
+nothing else:
+
+| | claude | codex |
+|---|---|---|
+| status · kind | COMPLETED · query | COMPLETED · query |
+| `model_adapter_reported` | `claude-haiku-4-5-20251001,claude-opus-5-5` | `gpt-6.1-sol` |
+| `tool_calls` · events' tool_call · permission requests | 0 · 0 · 0 | 0 · 0 · 0 |
+| `answer` (schema passed, written to `q1.json`) | `{"answer": "Paris", "confidence": 0.99}` | `{"answer": "Paris", "confidence": 1}` |
+
+Both as the decision wanted: the model reported, no tool call under the ask, so neither
+provider's `queryEnv` needs another switch. One thing to carry to trading: **Claude Code reports
+two models for one query** — a helper model (haiku) beside the one that answered (opus), each
+with its own token row in `measurements.model_usage`. A harness that pins a prompt to a model
+reads the rows, not the joined string, and decides which row is the pin. Evidence on the
+instance under `evidence/q89*`. Trading was told to start its re-qualification (#62).
 
 ## 90. Whose script performs an update (#48, DECISIONS-2026-10-04 decision 3, 2026-10-04)
 
@@ -5206,4 +5224,8 @@ says who performs the update and what the printed line means; the pre-#34 paragr
 the manual command is the same hand-over made by hand from a workspace older than this rule.
 `verify.sh --level static` 13/13. **Not measured:** a live update — the cold start has no update
 path (DECISIONS decision 3); the next update day is the measurement, read in `update`'s own
-`performed by` line and the release record it leaves.
+`performed by` line and the release record it leaves. The instance's move to 94fc735 (the same
+day, `ALL CHECKS PASSED`, rollback point `20261004-071229-6dbbcb7`, no `cand-` image left, the
+host's root certificate intact) was performed by the script of 6dbbcb7, which predates this
+section and so printed no `performed by` line — as the rule says of a workspace older than it.
+The first update *from* 94fc735 or later is the one that measures the hand-over.

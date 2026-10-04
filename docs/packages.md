@@ -306,7 +306,10 @@ What a **query** is, and what the door does with it (§89, DECISIONS-2026-10-04 
   `server_tool_use`, `schema_sha256`, `answer`, and `measurements.model_usage` — the per-model
   token rows the adapter reported, so a prompt pinned to one model can read which model answered
   (`model_adapter_reported` lists them; Claude and Codex report, Grok reports none — a query on
-  Grok cannot be pinned to a model).
+  Grok cannot be pinned to a model). Claude Code reports **two** models for one query — a helper
+  model beside the one that answered (measured: `claude-haiku-4-5-20251001,claude-opus-5-5`,
+  §89) — so a pin reads the rows of `measurements.model_usage` and decides which row is the pin,
+  rather than comparing the joined string.
 - **Where it runs** is as for a task: a role that declares an egress profile is handed to the
   broker, schema and payload with it. A chain step (`steps/task_chain.py`) is a query with
   `"query": "<schema path>"` beside its `prompt`.
