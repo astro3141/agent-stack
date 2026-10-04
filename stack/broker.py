@@ -160,6 +160,8 @@ class H(BaseHTTPRequestHandler):
                "expected": str(req.get("expected") or "out.txt"),
                "run_id": str(req.get("run_id") or f"broker-{int(time.time())}"),
                "timeout_s": timeout_s,
+               # a query's schema (§89): text, bounded like the prompt; the runner makes it a file
+               **({"schema": str(req["schema"])[:200000]} if req.get("schema") else {}),
                # the retry number, digits or nothing: it names the call's evidence in the runner
                "attempt": str(req.get("attempt") or "") if re.fullmatch(r"\d{0,3}", str(req.get("attempt") or "")) else "",
                "job_token": token, "mcp_url": SELF_MCP}

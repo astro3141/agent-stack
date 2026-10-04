@@ -80,6 +80,12 @@ class H(BaseHTTPRequestHandler):
                                          encoding="utf-8") as f:
             f.write(prompt)
             pf = f.name
+        # a query (§89): the schema the broker carried, as a file, and the same --query the caller gave
+        sf = ""
+        if job.get("schema"):
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+                f.write(str(job["schema"]))
+                sf = f.name
         env = {**os.environ,
                "CONDUCTOR_SELF_RUN_ID": str(job["run_id"]),
                # the adapter's brokered path (run-agent.mjs): MCP goes to the broker's forward,
@@ -90,7 +96,7 @@ class H(BaseHTTPRequestHandler):
                **({"AGENTSTACK_ATTEMPT": str(job["attempt"])} if re.fullmatch(r"\d{1,3}", str(job.get("attempt") or "")) else {})}
         argv = [PY, STEP, job["provider"], str(job.get("model_route") or "direct"),
                 job["label"], pf, job["expected"], job["profile_name"], job["login"],
-                job["role"]]
+                job["role"], *(["--query", sf] if sf else [])]
         try:
             r = subprocess.run(argv, capture_output=True, text=True,
                                timeout=int(job.get("timeout_s") or 900), env=env)
@@ -103,10 +109,12 @@ class H(BaseHTTPRequestHandler):
         except subprocess.TimeoutExpired:
             return self._send(200, {"result": {"status": "TIMED_OUT"}, "profile": PROFILE})
         finally:
-            try:
-                os.unlink(pf)
-            except OSError:
-                pass
+            for tmp in (pf, sf):
+                try:
+                    if tmp:
+                        os.unlink(tmp)
+                except OSError:
+                    pass
 
 
 if __name__ == "__main__":

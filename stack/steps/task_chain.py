@@ -46,7 +46,9 @@ for i, st in enumerate(member["steps"], 1):
         # itself (§54), so this chain — like the fan-out — never has to know there are two
         argv = [PY, os.path.join(STEPS, "agent_task.py"), st["provider"], st.get("route", "direct"),
                 name, st["prompt"], st["expected"], prof, st.get("login", st["provider"]),
-                st.get("principal", "")]
+                st.get("principal", ""),
+                # `query: <schema path>` makes this model step a query (§89): same door, same argv
+                *(["--query", str(st["query"])] if st.get("query") else [])]
     else:
         argv = st["argv"]
     p = subprocess.run(argv, capture_output=True, text=True)

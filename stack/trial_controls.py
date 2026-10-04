@@ -361,7 +361,7 @@ def controls_lanes_step():
           open(f"{ws}/lane_ai.json", encoding="utf-8").read() if os.path.isfile(f"{ws}/lane_ai.json") else None, doc)
     rec = json.load(open(f"{ws}/lanes_round.json"))
     check("the receipt carries the cycle's context unchanged", rec.get("context"), "packet-sha")
-    check("and the contract version", rec.get("contract"), 1)
+    check("and the contract version", rec.get("contract"), 2)
     shutil.rmtree(root, ignore_errors=True)
     shutil.rmtree(ws, ignore_errors=True)
 
@@ -1829,10 +1829,13 @@ def controls_retry():
             f"c={ws}/.c; n=$(cat $c 2>/dev/null || echo 0); n=$((n+1)); echo $n > $c; "
             f"if [ $n -ge 2 ]; then echo '{{}}' > {ws}/heal.json; fi; "
             "echo '{\"status\":\"COMPLETED\",\"produced\":true}'"]
+    invalid = ["/bin/sh", "-c", "echo '{\"status\":\"INVALID_OUTPUT\",\"produced\":false}'; exit 0"]
     plan = {"members": [member("never", fail, retries=2), member("noretry", fail),
                         member("heal", heal, retries=2),
                         member("denied", deny, retries=2),
-                        member("deniedok", deny, retries=2, retry_when=["failed", "denied"])]}
+                        member("deniedok", deny, retries=2, retry_when=["failed", "denied"]),
+                        member("invalid", invalid, retries=2),
+                        member("invalidok", invalid, retries=2, retry_when=["invalid"])]}
     for f in (f"{ws}/heal.json", f"{ws}/.c"):
         if _os.path.exists(f):
             _os.remove(f)
@@ -1852,6 +1855,124 @@ def controls_retry():
           m["deniedok"]["attempt_outcomes"], ["denied", "denied", "denied"])
     check("the routed call's own retry is kept apart from the member's",
           "call_attempts" in m["never"], True)
+    check("a query's answer that broke its schema is the model's doing: `invalid`, not retried by default",
+          (m["invalid"]["attempts"], m["invalid"]["attempt_outcomes"]), (1, ["invalid"]))
+    check("and retried when the member says `invalid`", m["invalidok"]["attempts"], 3)
+
+
+STAND_IN = r"""
+// a recorded vendor behind the door (§89): answers what the payload says, leaves the events a
+// turn would leave, and counts every call it was asked for
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+const req = JSON.parse(readFileSync(process.argv[2], "utf8"));
+let p; try { p = JSON.parse(req.prompt); if (typeof p !== "object" || p === null || !("say" in p)) p = { say: req.prompt }; } catch { p = { say: req.prompt }; }
+mkdirSync(req.evidence_dir, { recursive: true });
+if (process.env.CTL_CALLS) appendFileSync(process.env.CTL_CALLS, req.run_id + "\n");
+const ev = [{ type: "status", tag: "usage_update" }];
+for (let i = 0; i < (p.tool_calls || 0); i++) {
+  ev.push({ type: "tool_call", tag: "tool_call", title: i === 0 && p.web ? "WebSearch" : "Read", toolCallId: "t" + i, status: "pending" });
+  ev.push({ type: "tool_call", tag: "tool_call_update", toolCallId: "t" + i, status: "completed" });
+}
+ev.push({ type: "text_delta", text: p.say });
+writeFileSync(join(req.evidence_dir, "events.jsonl"), ev.map((e) => JSON.stringify(e)).join("\n") + "\n");
+const out = { run_id: req.run_id, status: p.status || "COMPLETED", provider: req.provider, text: p.say, wall_ms: 7,
+  permissions: [], mcp_denials: [], model_route: req.model_route, native_tools: req.native_tools, kind: req.kind,
+  turn: { _meta: { quota: { token_count: { totalTokens: 11 }, model_usage: [{ model: "m-1", token_count: { totalTokens: 11 } }] } } } };
+writeFileSync(join(req.evidence_dir, "result.json"), JSON.stringify(out));
+process.stdout.write(JSON.stringify(out) + "\n");
+"""
+
+
+def controls_query():
+    """§89: the door's query kind, with a recorded vendor standing in for the adapter — what the
+    step itself does with a turn's text and events, no vendor on the line."""
+    print("")
+    print("a query: one prompt, no tools, an answer in a declared shape (§89)")
+    import hashlib as _h, subprocess as _sp
+    root = tempfile.mkdtemp(prefix="agentstack-query-")
+    stand_in = os.path.join(root, "stand-in.mjs")
+    open(stand_in, "w").write(STAND_IN)
+    calls = os.path.join(root, "calls.log")
+    schema = {"type": "object", "properties": {"verdict": {"type": "string", "enum": ["buy", "sell", "wait"]},
+                                               "confidence": {"type": "number", "minimum": 0, "maximum": 1}},
+              "required": ["verdict", "confidence"], "additionalProperties": False}
+    sfile = os.path.join(root, "schema.json")
+    open(sfile, "w").write(json.dumps(schema))
+    env = {**os.environ, "AGENTSTACK_CONTROLS_ROOT": os.path.join(root, "roots"), "AGENTSTACK_ADAPTER": stand_in,
+           "CTL_CALLS": calls, "CONDUCTOR_SELF_RUN_ID": "ctl-query"}
+    env.pop("AGENTSTACK_ATTEMPT", None)
+
+    def door(label, payload, provider="claude", query=True, stdin=None):
+        open(calls, "w").close()
+        pf = "-" if stdin is not None else os.path.join(root, label + ".payload")
+        if stdin is None:
+            open(pf, "wb").write(payload)
+        argv = [sys.executable, "/work/stack/steps/agent_task.py", provider, "direct", label, pf, label + ".json",
+                "research-default", provider, ""] + (["--query", sfile] if query is True else ["--query", query] if query else [])
+        p = _sp.run(argv, capture_output=True, text=True, env=env, input=stdin)
+        try:
+            return json.loads(p.stdout.strip().splitlines()[-1]), sum(1 for _ in open(calls))
+        except Exception as e:                       # the step's own failure is the finding
+            return {"status": f"{type(e).__name__}: {(p.stderr or p.stdout)[-300:]}"}, -1
+    ev = lambda label, provider="claude": os.path.join(root, "roots", "evidence", f"ctl-query-{label}-{provider}")
+    ws = os.path.join(root, "roots", "workspace", "ctl-query")
+
+    r, n = door("v1", json.dumps({"say": '{"verdict":"buy","confidence":0.7}'}).encode())
+    check("a valid answer: COMPLETED, kind query, produced, the answer carried, one call",
+          (r.get("status"), r.get("kind"), r.get("produced"), r.get("answer"), r.get("attempts"), n),
+          ("COMPLETED", "query", True, {"verdict": "buy", "confidence": 0.7}, 1, 1))
+    check("… written to the expected file as JSON",
+          json.load(open(os.path.join(ws, "v1.json"))) if os.path.isfile(os.path.join(ws, "v1.json")) else None,
+          {"verdict": "buy", "confidence": 0.7})
+    check("… with no tool call, one turn, and the schema named by content",
+          (r.get("tool_calls"), r.get("server_tool_use"), r.get("turns"), r.get("schema_sha256")),
+          (0, 0, 1, _h.sha256(open(sfile, "rb").read()).hexdigest()))
+    check("… and the per-model usage the adapter reported, under measurements",
+          (r.get("measurements") or {}).get("model_usage"), [{"model": "m-1", "token_count": {"totalTokens": 11}}])
+    check("the record says which model the adapter reported", r.get("model_adapter_reported"), "m-1")
+    r, n = door("v2", json.dumps({"say": '```json\n{"verdict":"wait","confidence":0.2}\n```'}).encode())
+    check("a fenced answer is the JSON inside the fence", (r.get("status"), r.get("answer")),
+          ("COMPLETED", {"verdict": "wait", "confidence": 0.2}))
+    r, n = door("v3", json.dumps({"say": '{"verdict":"hold","confidence":2,"x":1}'}).encode())
+    check("an answer that breaks the schema: INVALID_OUTPUT, nothing produced, the answer empty, and no retry",
+          (r.get("status"), r.get("produced"), r.get("answer"), r.get("attempts"), n), ("INVALID_OUTPUT", False, {}, 1, 1))
+    check("… every break named by its place", [x.split(":")[0] for x in (r.get("failure") or "").split("; ")],
+          ["$.verdict", "$.confidence", "$"])
+    check("… the raw text kept beside the evidence", os.path.isfile(os.path.join(ev("v3"), "answer.raw.txt")), True)
+    check("… and the expected file not written", os.path.exists(os.path.join(ws, "v3.json")), False)
+    r, n = door("v4", json.dumps({"say": '{"verdict":"buy","confidence":0.7}', "tool_calls": 2, "web": True}).encode())
+    check("a tool call the vendor made anyway: TOOLS_USED whatever the text, the calls counted, the web one told apart",
+          (r.get("status"), r.get("tool_calls"), r.get("server_tool_use"), r.get("answer"), r.get("produced")),
+          ("TOOLS_USED", 2, 1, {}, False))
+    r, n = door("v5", json.dumps({"say": "I think buy."}).encode())
+    check("a text that is not JSON at all is a cut stream: one retry, then INVALID_OUTPUT",
+          (r.get("status"), r.get("attempts"), n, r.get("attempt_outcomes")), ("INVALID_OUTPUT", 2, 2, ["COMPLETED", "COMPLETED"]))
+    check("… both attempts kept: result and events of the first beside the second's",
+          sorted(f for f in os.listdir(ev("v5")) if ".a1." in f), ["events.a1.jsonl", "result.a1.json"])
+    check("… and both attempts' cost summed", (r.get("measurements") or {}).get("total_tokens"), 22)
+    r, n = door("v6", b"", provider="codex", stdin="ask about {WS} and \ud55c\uae00\n")
+    req = json.load(open(os.path.join(ev("v6", "codex"), "request.json"), encoding="utf-8"))
+    check("the payload from stdin goes as it is: no {WS}, nothing added, the kind on the request",
+          (req.get("prompt"), req.get("kind"), req.get("native_tools")), ("ask about {WS} and \ud55c\uae00\n", "query", False))
+    bad = os.path.join(root, "bad.json")
+    open(bad, "w").write(json.dumps({"type": "object", "properties": {"d": {"type": "string", "format": "date"}}}))
+    r, n = door("v7", b'{"say":"{}"}', query=bad)
+    check("a schema with a keyword the door does not check is refused before the call: FAILED, attempts 0, no call, the keyword named",
+          (r.get("status"), r.get("attempts"), n, "format" in (r.get("failure") or "")), ("FAILED", 0, 0, True))
+    arr = os.path.join(root, "arr.json")
+    open(arr, "w").write(json.dumps({"type": "array"}))
+    r, n = door("v8", b'{"say":"[]"}', query=arr)
+    check("a schema whose root is not an object is refused the same way", (r.get("status"), r.get("attempts"), n), ("FAILED", 0, 0))
+    r, n = door("v9", b'{"say":"{}"}', query="/nonexistent/schema.json")
+    check("a schema that cannot be read is refused the same way", (r.get("status"), r.get("attempts"), n), ("FAILED", 0, 0))
+    r, n = door("t1", json.dumps({"say": "done", "tool_calls": 1}).encode(), query=False)
+    check("a task through the same door is a task: its tool calls counted, its status the adapter's",
+          (r.get("kind"), r.get("status"), r.get("tool_calls"), r.get("schema_sha256"), r.get("answer")),
+          ("task", "COMPLETED", 1, "", {}))
+    req = json.load(open(os.path.join(ev("t1"), "request.json"), encoding="utf-8"))
+    check("… and the request says so", req.get("kind"), "task")
+    shutil.rmtree(root, ignore_errors=True)
 
 
 def declare_temp(pk, root, extra=()):
@@ -2696,6 +2817,7 @@ if __name__ == "__main__":
     controls_review_findings()
     controls_package_sources()
     controls_retry()
+    controls_query()
     controls_packages()
     controls_docs()
     controls_template()

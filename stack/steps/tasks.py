@@ -108,6 +108,10 @@ def outcome_of(res, produced):
         return "produced"
     # a member that is a chain reports its own FAILED; the step that failed says what it was
     status = str(res.get("failed_status") or res.get("status") or "FAILED").upper()
+    # a query's answer that broke its schema, or a tool call it made, is the model's doing: not a
+    # "failed" a member's default retry runs again (§89) — a workflow that wants it says `invalid`
+    if status in ("INVALID_OUTPUT", "TOOLS_USED"):
+        return "invalid"
     return "denied" if status in ("DENIED", "CONTROL_UNAVAILABLE", "TIMED_OUT") else "failed"
 
 

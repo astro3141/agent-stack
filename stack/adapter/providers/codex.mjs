@@ -56,6 +56,16 @@ export default function codex(ctx) {
         } },
       }) };
     },
+    // A query (§89): shell off, web search off (`web_search = "disabled"`, the top-level key of
+    // Codex's config; the `features.web_search*` toggles are its deprecated spellings), and no MCP
+    // server defined — on the direct route CODEX_HOME=/route/codex carries none of its own.
+    // apply_patch has no off switch (above): a use of it is a tool_call event, and TOOLS_USED.
+    queryEnv() {
+      return { CODEX_CONFIG: JSON.stringify({
+        features: { shell_tool: false, unified_exec: false },
+        web_search: "disabled",
+      }) };
+    },
     // Codex gets the Preloop MCP server from CODEX_CONFIG above; attaching it over ACP as well
     // would define it twice.
     mcpViaConfig: true,

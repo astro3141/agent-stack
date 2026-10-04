@@ -5096,3 +5096,78 @@ fixture `runtime.json` says; take the workspace from the step's answer. #62 (tra
 three gaps for a schema-pinned harness — a stdin payload, the vendor's raw envelope, a per-call
 schema — are a design question on the adapter's ACP path, which carries none of the CLI's
 `--output-format json` envelope; left to the operator with the analysis on the issue.
+
+## 89. The query kind of a call (#62, DECISIONS-2026-10-04, 2026-10-04)
+
+The gap, as the trading author put it (#62) and the decision document measured (§1–§8 there): a
+harness that pins a prompt to a schema calls a vendor CLI with `--json-schema` and reads the
+CLI's envelope — and the one door (`agent_task.py`) carries none of that: it is a *task* (a prompt
+that may use tools and writes an artifact), the prompt is read from a file and `{WS}`-substituted,
+and the adapter's ACP path has no vendor-side schema mode (acpx forwards `model`, `allowedTools`,
+`maxTurns`, `systemPrompt`, `env`; claude-agent-acp never surfaces `structured_output`; the raw-SDK
+bypass leaves no journal). The three vendors' CLI envelopes differ, so the shape could not be
+"the CLI's" anyway. The operator chose B: the door gains a second kind of call, and the shape is
+the door's, after the call, the same for every vendor.
+
+**What changed.**
+- `agent_task.py --query <schema.json>`: a **query**. The payload goes byte for byte (`-` reads
+  stdin), no `{WS}`, nothing added; the request carries `kind: query` and `schema_sha256`. The
+  schema is read *before* the call and refused at no cost when it is not an object at its root
+  or uses a keyword the door's validator does not check (`FAILED`, `attempts: 0`, the keywords
+  named) — an answer called valid against a half-read schema is worse than no call. After the
+  call: a tool call in the events is `TOOLS_USED` whatever the text; a completed call's text,
+  one fence removed, is read as JSON and checked (`stack/query.py`, the subset listed in
+  docs/packages.md "A query"); valid → `COMPLETED`, the answer written to the expected file and
+  carried as `answer`; invalid → `INVALID_OUTPUT`, every break named by its place, the raw text
+  kept as `answer.raw.txt`, and no retry. Retried once, as a task is: a login refresh, and a text
+  that is not JSON at all (a cut stream); both attempts' `result` and `events` are kept.
+- `run-agent.mjs`: on `kind: query` the session is asked for `allowedTools: []` and `maxTurns: 1`,
+  no Preloop MCP server is handed over, and every permission request is refused locally
+  (`permissions.refusedLocally`, `denial: query_no_tools`) instead of waiting on an approval
+  that cannot be given. Each provider says how it asks for no tools (`queryEnv`): Claude a
+  project deny list of every tool by name and `mcp__preloop`; Codex shell off, `web_search:
+  "disabled"` (the current top-level key; `features.web_search*` are its deprecated spellings),
+  no MCP server; Grok nothing — its posture is the login's. The result shape is unchanged: the
+  four recorded runs replay as before.
+- `execution.py`: the record gains `kind`, `turns`, `tool_calls`, `server_tool_use`,
+  `schema_sha256`, `answer`, and `measurements.model_usage` (the adapter's per-model rows, as
+  they came — summed across a retry by concatenation); `contract` is **2**. `tool_calls` is
+  counted for a task too, from the adapter's events (`query.tool_counts`: one per `tool_call`
+  start, a permission request counted when no event named it).
+- The brokered path carries the schema as text (`broker_dispatch.py` → `broker.py` →
+  `profile_runner.py`, which writes it back and starts the step with the same `--query`); a
+  chain step is a query with `"query": "<schema path>"`; a fan-out member's outcome word for the
+  two verdicts is `invalid`, which the default `retry_when` does not retry.
+- `AGENTSTACK_ADAPTER` names the adapter by path, so a control can stand a recorded vendor in
+  its place and measure the step's own reading of a turn's text and events.
+- docs/packages.md "A query" and the `output:` block; CONTRACT.md's retry row narrowed to say
+  the two faults; DECISIONS-2026-10-04 §8 is the shape built.
+
+**Not built, on purpose.** No schema is sent to the model — what it is told about the shape is
+the payload's. No repair of a broken answer, no search for a brace in prose. No auto refresh of a
+login (decision 2). `turns` is 1 by construction (one prompt is one turn over ACP) and is a
+record field so a reader of two kinds of record reads one shape, not a measurement.
+
+**Measured.** review_controls 235/235: the fence, the schema subset (type, enum, const, required,
+additionalProperties, items by `$ref`, min/max, pattern, anyOf/oneOf/allOf), the unchecked
+keywords named at any depth, the tool count on the four recorded runs (claude 2, codex 1, grok
+2 and 2, none a web lookup), a web lookup told apart, the record's keys and contract 2, the
+adapter's local refusal; provider checks 24/24 (each provider's `queryEnv`; the four runs replay
+4/4). trial_controls, the query group (20) with a recorded vendor behind the door: the valid, the
+fenced, the invalid (no retry, the breaks by place, the raw text kept, nothing produced), the
+tool call (TOOLS_USED, the web one told apart), the non-JSON text (one retry, both attempts
+kept, the cost summed), the stdin payload byte for byte, the three refused schemas (no call),
+and a task through the same door; the retry group +2 (`invalid` not retried by default, retried
+when said). `verify.sh --level static` 13/13. Pins: review 51/51, trial 167/167 at the ratchets.
+**Cold-start run 99 green** on 32e79be (run 98 red on one trial pin, the door's literal
+`"failure": execution.failure_of(r)`, which the verdict line had reworded; kept).
+
+**What waits on the live instance (the two measurements the decision named):** on claude and
+codex, a query whose `model_adapter_reported` is filled, and whose `tool_calls` is 0 with the
+vendor asked `allowedTools: []`. One command each, from the admin container with a login signed
+in: `printf '%s' '<payload>' | /opt/venv/bin/python /work/stack/steps/agent_task.py claude direct
+q1 - q1.json research-default claude "" --query /work/<schema.json>` and the same with `codex`;
+read `tool_calls`, `model_adapter_reported`, `status` from the printed record and
+`events.jsonl` in the evidence directory. If a vendor makes a tool call despite the ask, the
+record says `TOOLS_USED` and the provider's `queryEnv` is where the next switch goes. Then
+trading is told to start its re-qualification (#62).
