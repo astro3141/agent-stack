@@ -5017,6 +5017,6 @@ list); doc_examples 10/10; `verify.sh --level static` 13/13; pin_kinds review 51
 their ratchets. `roles.py` against an `admission.json` on this checkout: the codex reviewer bound
 on `long-task` (candidates `[claude]`) with login `codex`, route `direct`, its principal carried;
 claude's role ineligible with the admission's own words; grok "not in the profile". The same
-three cases are in trial_controls' roles group, run by the cold start — run number below. That
-`packages.sh controls` sets the scratch root is measured there too: `packages.sh verify` runs
-novel's controls through it.
+three cases are in trial_controls' roles group, run by the cold start: **run 91 green** on 2b37097
+(the stack level 24/24, novel's controls through `packages.sh verify` on the scratch root). That
+`packages.sh controls` sets the scratch root is measured there.
