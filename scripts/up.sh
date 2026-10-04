@@ -193,6 +193,17 @@ if [ "$MODE" != "--check" ]; then
     echo "== applying this stack's policy to the new instance"
     docker exec "$STACK-agent" $PY_IN_AGENT /work/stack/cfg.py generate >/dev/null 2>&1 || true
     apply_policy "  "
+  else
+    # An instance claimed earlier gets this checkout's policy too, on every bring-up. It used to
+    # be applied on the claim and when the tool probe failed (below), so a policy-only change — a
+    # new deny, a re-read tool list — on an instance brought up with this script rode along
+    # unapplied until something else broke: novel-v2 measured the first `..` write reaching the
+    # filesystem on an instance updated to e929362, and the denial only after `cfg.py apply` by
+    # hand (#78, OPERATIONS §97). `release.sh update` applied it; a plain bring-up did not. `cfg.py
+    # apply` answers "already applied" when the account carries this content, so this costs one
+    # question, and `--check` below says when the account enforces an older policy.
+    echo "== policy"
+    apply_policy "  "
   fi
 fi
 
@@ -330,6 +341,10 @@ check "provider host via proxy (TLS up)" yes "$(in_agent 'c=$(curl -s -o /dev/nu
 # recreated keeps its listing while every call answers "MCP server <old id> not found"
 # (OPERATIONS §28). The probe calls a read-only tool.
 check "fsmcp tools work through Preloop"  yes "$(in_agent 'python3 /work/stack/mcp_list.py claude --probe | grep -q "PROBE OK" && echo yes || echo no')"
+# The policy the account enforces is this checkout's: `cfg.py status` compares what was last
+# applied with the file as it is now (changed_since_apply, replaced, unknown, apply_failed are the
+# other answers). A checkout whose policy moved on without an apply is governed by the old one (§97).
+check "the account enforces this checkout's policy" applied "$(in_agent "$PY_IN_AGENT"' /work/stack/cfg.py status 2>/dev/null | python3 -c "import json,sys; r=[t for t in json.load(sys.stdin).get(\"targets\",[]) if t[\"target\"].startswith(\"preloop-policy:\")]; print(r[0][\"state\"] if r else \"none\")"')"
 # The approval boundary is a route, so it is checked from the position it constrains: the agent
 # may read what is waiting and may not answer it (OPERATIONS.md §20).
 check "runtime may read approvals"       200 "$(in_agent 'curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $(cat $(ls /home/agent/.preloop/agents/*/permission_hook.json | head -1) | python3 -c "import json,sys;print(json.load(sys.stdin)[\"token\"])")" "'"$RT_API"'/api/v1/approval-requests?status=pending&limit=1"')"

@@ -66,6 +66,7 @@ jobs:
               ("ok    runtime may not decide approvals", "the runtime cannot decide approvals"),
               ("ok    runtime may not rewrite them", "the runtime cannot rewrite its rights"),
               ("ok    fsmcp tools work through Preloop", "tools are served through Preloop"),
+              ("ok    the account enforces this checkout's policy", "the policy in effect is this checkout's (§97)"),
           ]
           missing = [why for needle, why in required if needle not in log]
 

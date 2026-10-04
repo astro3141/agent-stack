@@ -67,6 +67,14 @@ no flag. Until §76 the first three lived in the home volume, which a rebuild di
 still carries that unused copy in its volume, and `up.sh --check` says so with the command that
 removes it.
 
+**A policy change rides with the update, and with any bring-up.** `scripts/up.sh` applies
+`policy/` to the account on every bring-up of a claimed instance (one question when nothing
+changed, "already applied"), and `release.sh update` does so after its own bring-up; `up.sh
+--check` fails `the account enforces this checkout's policy` when the file moved on without an
+apply. Until §97 a plain bring-up applied it only on the claim and when the tool probe failed:
+novel-v2 measured a new deny (#78) not in effect on an updated instance until `cfg.py apply` was
+run by hand.
+
 **Whose script performs the update (§90, #48).** The script you run is the workspace's — the
 revision being left — and it knows nothing of what the target changed. So it does the two things
 only the running revision can do safely, builds the candidate from the target's Dockerfile and
