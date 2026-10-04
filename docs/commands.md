@@ -21,7 +21,8 @@ docker exec agentstack-admin /opt/venv/bin/python /work/stack/<script>.py …   
 | `scripts/up.sh [--composition full\|no-record\|runtime] [--observer] [--check] [--recreate]` | build, start, claim, apply policy and principals, check; `--observer` adds codex's optional second quota source |
 | `scripts/down.sh [--volumes] [--now]` | stop the runs first, then the containers. `--volumes` also deletes logins, the Preloop database and the agent home |
 | `scripts/backup.sh [--out DIR] [--key FILE] [--no-stop] [--allow-missing]` | one consistent, encrypted archive of everything that cannot be regenerated — Preloop's database, the login volumes, MLflow, evidence, `config/`, `policy/`, `state/`, Preloop's install directory and `docker/*.env` |
-| `scripts/restore.sh --archive FILE --workspace DIR [--stack NAME] [--key FILE] [--clone-from REPO --rev REV] [--verify-only] [--into-existing]` | bring a backup up as a *separate* instance, and verify it against the live one |
+| `scripts/restore.sh --archive FILE --workspace DIR [--stack NAME] [--key FILE] [--clone-from REPO --rev REV] [--into-existing]` | bring a backup up as a *separate* instance, and verify it against the live one |
+| `scripts/restore.sh --archive FILE --verify-only [--key FILE]` | unpack the archive and check every member against its manifest; writes nothing |
 | `scripts/release.sh record [--tag NAME]\|list\|update --to REV\|rollback --to TAG` | keep what is running, move to something else, go back |
 | `scripts/verify.sh [--level static\|stack\|full]` | verify this tree as far as this machine allows: a checkout, a running stack with nobody signed in, or an instance with logins — the level picks itself unless named |
 | `scripts/drift.sh [--json] [--offline]` | what is pinned and what each registry has now; reports, changes nothing ([update-day.md](update-day.md)) |

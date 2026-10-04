@@ -257,8 +257,14 @@ if [ -n "$ENV_FILES" ]; then
 else
   say "docker/*.env" "none (the instance was not claimed by up.sh, or the files were moved)"
 fi
+# The console account's password is the one thing the archive cannot regenerate: Preloop's dump
+# holds the user with its hash, and a restore signs in with the password. An instance claimed
+# before up.sh wrote this file (the live one, 2026-09-20) has no such file and never will unless
+# the operator writes it — so its absence is said, with the remedy, and is not a failure: the
+# archive is complete for everything the stack itself can give (§86, measured live).
 case " $ENV_FILES " in *" preloop-owner.env "*) ;;
-  *) MISSING="$MISSING docker/preloop-owner.env"; say "preloop-owner.env" "MISSING — the console account has no other copy";;
+  *) say "preloop-owner.env" "absent — the console account's password is in nobody's backup; write it to"
+     say "" "docker/preloop-owner.env (PRELOOP_OWNER_USERNAME=, PRELOOP_OWNER_EMAIL=, PRELOOP_OWNER_PASSWORD=, mode 0600)";;
 esac
 
 if [ -n "$MISSING" ]; then

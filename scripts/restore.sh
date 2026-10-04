@@ -3,7 +3,8 @@
 # project and its own ports. The instance in use is never written to.
 #
 #   scripts/restore.sh --archive FILE --workspace DIR [--stack NAME] [--key FILE]
-#                      [--clone-from REPO --rev REV] [--verify-only] [--into-existing]
+#                      [--clone-from REPO --rev REV] [--into-existing]
+#   scripts/restore.sh --archive FILE --verify-only [--key FILE]      unpack and check; write nothing
 #
 #   --workspace DIR    where the restored instance's /work lives. With --clone-from it is created
 #                      as a fresh clone (the repository layout: <clone>/poc/281-routing).
@@ -55,8 +56,11 @@ done
 say()    { printf '  %-42s %s\n' "$1" "$2"; }
 refuse() { echo "refusing: $*" >&2; exit 2; }
 
-[ -n "$ARCHIVE" ] && [ -n "$WORKSPACE" ] || { echo "need --archive and --workspace" >&2; exit 2; }
-ARCHIVEU="$(u "$ARCHIVE")"; KEYU="$(u "$KEY")"; WORKSPACEU="$(u "$WORKSPACE")"
+# --verify-only unpacks and checks the manifest and writes nothing: it needs no workspace (§86:
+# it asked for one and was given a scratch path; the usage and the behaviour disagreed)
+[ -n "$ARCHIVE" ] || { echo "need --archive (and --workspace, unless --verify-only)" >&2; exit 2; }
+[ -n "$WORKSPACE" ] || [ "$VERIFY_ONLY" = 1 ] || { echo "need --archive and --workspace" >&2; exit 2; }
+ARCHIVEU="$(u "$ARCHIVE")"; KEYU="$(u "$KEY")"; WORKSPACEU="$(u "${WORKSPACE:-}")"
 PRELOOP_RESTORE_DIRU="$(u "$PRELOOP_RESTORE_DIR")"; LIVE_PRELOOP_DIRU="$(u "$LIVE_PRELOOP_DIR")"
 [ -f "$ARCHIVEU" ] || { echo "no such archive: $ARCHIVE" >&2; exit 2; }
 [ -f "$KEYU" ] || { echo "no key file: $KEY" >&2; exit 2; }

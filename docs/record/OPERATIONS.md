@@ -4964,3 +4964,18 @@ the live instance: a `--check` under a running call (the proxy stays up), a back
 `--verify-only` restore, one cycle with a misnamed workflow (exit 3, a `refused` row). **Cold-start run 88 green** on 57e0458: the stack
 level 24/24, trial_controls 507/507 in the container, review_controls 189/189, hello-lane, the
 first-use cycle and the child run to completion; the image built with an empty `docker/ca/`.
+
+**Measured on the live instance (the operator, 2026-10-04, logs in `evidence/m86-*` there).**
+The three measurements §86 left open, and what each one found:
+
+| | |
+|---|---|
+| `release.sh update --to cebf296` | ALL CHECKS PASSED. Before it, the host's root was copied to the untracked name `docker/ca/host-root.crt` (the original kept outside the tree): the update removes the tracked file with the revision, and this host's Kaspersky does intercept the containers' TLS, so without the copy the build's `curl` fails. After it the file is in the live image (`/usr/local/share/ca-certificates/host/host-root.crt`) and no `cand-` image is left — #47, measured |
+| `scripts/backup.sh` | **exit 1: "required members missing: docker/preloop-owner.env"**. The live Preloop was claimed on 2026-09-20, before `up.sh` wrote that file; it does not exist there and nothing can mint the password after the fact. `--allow-missing`: exit 0, 16 members, 986 MB. Fixed below |
+| `scripts/restore.sh --verify-only` | exit 0 — 17 members unpacked, manifest 16 members, all match, taken from cebf296. It demanded `--workspace` and was given a scratch path; it writes nothing. Fixed below |
+| `up.sh --check` under a run | novel-a held before any model call (`claude stale: 37525s`, #44 again), so `auto`, which routes to codex: `--check` started at 09:39:38 while `execute` was calling the model, ALL CHECKS PASSED at 09:39:49; the five egress containers kept their start times, restart count 0; the run went on to `completed_ok: true`, PASS. **`--check` does not restart the proxy** |
+
+**Fixed from it.** `preloop-owner.env` is not a required member: an instance claimed before the
+file existed cannot have one, the dump carries the user with its hash, and the password is the
+operator's to write into the file (the backup says so, with the keys). `restore.sh --verify-only`
+takes the archive and the key and nothing else. The stale claude reading is #44, unchanged.
