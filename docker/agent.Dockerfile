@@ -19,10 +19,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates git jq procps iproute2 dnsutils sudo bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
-# This host runs Kaspersky, which terminates TLS for claude.ai with its own root CA.
-# That root is trusted by Windows but not by the container, so curl fails with exit 60
-# without it. Recorded as a host-environment fact in FINDINGS.md (F10), not hidden.
-COPY ca/kaspersky-root.crt /usr/local/share/ca-certificates/kaspersky-root.crt
+# A host that intercepts TLS (an endpoint-security product with a root of its own; the first
+# host did, FINDINGS-278 F10) gives the build that root as docker/ca/<name>.crt, git-ignored
+# (docker/ca/README.md). The directory is copied whether or not it holds one, so an ordinary
+# host builds without it and no image trusts a root its host did not give it. Until §86 one
+# host's personal root was tracked and baked into every image this tree built.
+COPY ca/ /usr/local/share/ca-certificates/host/
 RUN update-ca-certificates
 
 RUN useradd -m -u 1000 -s /bin/bash agent && groupadd -g 1099 roles && usermod -aG roles agent

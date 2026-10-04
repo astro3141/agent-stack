@@ -91,7 +91,9 @@ def described():
         runbooks = {p["name"]: p.get("runbook") or "" for p in packages.installed().values()
                     if p["usable"]}
     except Exception:
-        needs, owner = {}, {}
+        # every name the loop below reads: a package tree that half-reads used to leave `logins`
+        # and `runbooks` unbound here, and the panel's workflow tab got a NameError (§86)
+        needs, owner, logins, runbooks = {}, {}, {}, {}
     def caps_of(name):
         try:
             import packages

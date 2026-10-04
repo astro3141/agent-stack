@@ -22,8 +22,10 @@ command -v cygpath >/dev/null && HERE="$(cygpath -m "$HERE")"
 export MSYS_NO_PATHCONV=1
 
 CYCLES="${1:-5}"
-WORKFLOW="${2:-trading-b}"
+# no default workflow: the one this had (trading-b) left with its package (§86)
+WORKFLOW="${2:-}"
 PROFILE="${3:-research-default}"
+[ -n "$WORKFLOW" ] || { echo "usage: scripts/soak.sh <cycles> <workflow> [profile]" >&2; exit 2; }
 STACK="${STACK:-agentstack}"
 PY=/opt/venv/bin/python
 

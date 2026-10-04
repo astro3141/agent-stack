@@ -122,8 +122,12 @@ def children_of(conductor_run):
 
 def of_run(ui):
     view = _view(ui)
-    if not view or view.get("error"):
-        return {"ui": ui, "error": (view or {}).get("error", "no such run")}
+    # Only a run that is not there is refused. A run that *has* an error — a step that failed, a
+    # launcher that died, a finished run with no output — is exactly the run this is for, and
+    # until §86 it was turned away with its error string and nothing else ("when a step failed:
+    # 1. trajectory.py", reading-a-run.md). The error travels as a field now.
+    if not view or not view.get("ui_id"):
+        return {"ui": ui, "error": (view or {}).get("error") or "no such run"}
     calls = calls_of(view)
     steps = [s["step"] for s in view.get("steps") or []]
     loop = loop_of(view)
@@ -133,6 +137,9 @@ def of_run(ui):
         "ui": ui, "workflow": view.get("workflow"), "profile": view.get("profile"),
         "suite": view.get("suite") or "", "case": view.get("case") or "",
         "state": view.get("state"), "ended_at": view.get("terminated_at"),
+        # what went wrong, when something did: a step's failure event, or the launcher's end.
+        # A fact about the run, beside the others, never a reason to show nothing.
+        "run_error": view.get("error") or None,
         "decision": (view.get("output") or {}).get("decision"),
         "steps": steps,
         "model_calls": len(calls),
@@ -186,6 +193,8 @@ def _print(t):
           + (f"  suite={t['suite']}" if t["suite"] else "")
           + (f"  case={t['case']}" if t["case"] else ""))
     print(f"  steps            {' → '.join(t['steps'])}")
+    if t.get("run_error"):
+        print(f"  error            {str(t['run_error'])[:200]}")
     if t.get("parent") or t.get("children"):
         print(f"  runs             " + (f"parent {t['parent']}  " if t.get("parent") else "")
               + (f"children {', '.join(t['children'])}" if t.get("children") else ""))

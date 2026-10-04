@@ -13,8 +13,15 @@
 #   5. writes a manifest (sizes and SHA-256 of every member), then encrypts the archive with
 #      AES-256 and removes the plaintext.
 #
+# What is in it: the release in use, Preloop's database (a transactional dump), the volumes that
+# hold logins and the enrolment (route-creds, agent-home; the observer's quota-home when the
+# instance has one), MLflow (when the composition has it), the evidence trees, config/, policy/,
+# state/, Preloop's install directory, and docker/*.env — the host-written credential files,
+# among them the console account up.sh claimed the instance with, which exists nowhere else.
+#
 # A required member that is missing is a failure, not a warning: a backup that quietly holds
 # nothing is worse than no backup. --allow-missing downgrades that to a warning, deliberately.
+# A member the composition does not have (no observer, no MLflow, no /research) is not missing.
 #
 # The archive holds provider logins, the Preloop enrolment token and Preloop's key file, so it is
 # always encrypted and never written inside the workspace or the repository. The staging directory
@@ -189,8 +196,18 @@ done
 say "release recorded" "$(grep -o '"workspace_revision": "[^"]*"' "$WORKU/release.json" | cut -d'"' -f4 | cut -c1-8)"
 
 echo "== volumes"
+# route-creds and agent-home are required: the provider logins and the Preloop enrolment. The
+# observer's quota-home exists only on an instance that ever ran `up.sh --observer` (the
+# observer is off by default, issue #16), so its absence is a composition, not a missing member
+# — until §86 it failed every backup of a default install.
 for v in route-creds agent-home quota-home; do
-  docker volume inspect "$STACK-$v" >/dev/null 2>&1 || { MISSING="$MISSING volume:$STACK-$v"; say "$v" "MISSING"; continue; }
+  if ! docker volume inspect "$STACK-$v" >/dev/null 2>&1; then
+    case "$v" in
+      quota-home) say "$v" "not in this composition (no observer login) — not a member";;
+      *) MISSING="$MISSING volume:$STACK-$v"; say "$v" "MISSING";;
+    esac
+    continue
+  fi
   docker run --rm -v "$STACK-$v:/v:ro" -v "$WORK/volumes:/out" alpine \
     tar czf "/out/$v.tar.gz" -C /v . 2>/dev/null || fail "could not copy volume $STACK-$v"
   say "$v" "$(du -h "$WORKU/volumes/$v.tar.gz" | cut -f1)"
@@ -207,7 +224,13 @@ copy_dir() {  # source (POSIX path), name, required(yes/no)
   tar czf "$WORKU/host/$2.tar.gz" -C "$(dirname "$1")" "$(basename "$1")" || fail "could not copy $1"
   say "$2" "$(du -h "$WORKU/host/$2.tar.gz" | cut -f1)"
 }
-copy_dir "$MLFLOW_DIRU" mlflow yes                   # SQLite database and artifacts together
+# MLflow is a composition (`--composition no-record` has none): required when its container
+# exists, otherwise not a member.
+if docker inspect "$STACK-mlflow" >/dev/null 2>&1; then
+  copy_dir "$MLFLOW_DIRU" mlflow yes                 # SQLite database and artifacts together
+else
+  say "mlflow" "not in this composition — not a member"
+fi
 copy_dir "$POC_DIRU/evidence/p281" evidence-p281 no
 copy_dir "$POC_DIRU/evidence/ui-runs" evidence-ui-runs no
 copy_dir "$POC_DIRU/evidence/runs" evidence-runs no
@@ -216,8 +239,27 @@ copy_dir "$POC_DIRU/config" config yes               # sources and generated/sta
 copy_dir "$POC_DIRU/state" state no                   # package state that outlives a run (docs/packages.md); the default
                                                      # state_root — an operator who moved it adds that path here
 copy_dir "$POC_DIRU/policy" policy yes
-copy_dir "$RESEARCH_DIRU" research yes
+copy_dir "$RESEARCH_DIRU" research no                # the research-r package's mount; only an instance that has it
 copy_dir "$PRELOOPU" preloop-dir yes                 # compose files and .env (keys!)
+
+# The credential files the host wrote (docker/*.env, git-ignored, 0600): the console account
+# up.sh claimed the instance with — its only copy —, the role principals' credentials, the
+# operator's own, a package's. Until §86 none of them was in the archive, while docs/install.md
+# called them the secrets and the runbook called the backup the only copy of the account.
+# Staged as copies, packed as one member, the copies removed so they are not in the archive twice.
+ENV_FILES="$(ls "$POC_DIRU"/docker/*.env 2>/dev/null | xargs -n1 basename 2>/dev/null | tr '\n' ' ')"
+if [ -n "$ENV_FILES" ]; then
+  (umask 077; mkdir -p "$WORKU/docker-env")
+  for f in $ENV_FILES; do cp "$POC_DIRU/docker/$f" "$WORKU/docker-env/$f"; done
+  tar czf "$WORKU/host/docker-env.tar.gz" -C "$WORKU" docker-env || fail "could not copy docker/*.env"
+  rm -rf "$WORKU/docker-env"
+  say "docker/*.env" "$ENV_FILES"
+else
+  say "docker/*.env" "none (the instance was not claimed by up.sh, or the files were moved)"
+fi
+case " $ENV_FILES " in *" preloop-owner.env "*) ;;
+  *) MISSING="$MISSING docker/preloop-owner.env"; say "preloop-owner.env" "MISSING — the console account has no other copy";;
+esac
 
 if [ -n "$MISSING" ]; then
   if [ "$ALLOW_MISSING" = 1 ]; then

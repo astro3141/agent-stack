@@ -73,12 +73,22 @@ def run(workflow, profile="research-default", allow_unrecorded=False,
         t0 = time.time()
         p = subprocess.run(argv, capture_output=True, text=True, cwd="/work")
         seconds = round(time.time() - t0)
-        if p.returncode == 3:                     # the stack cannot run this now, and said why
+        # 3: the stack cannot run this now (a capability missing), and said why. 2: the start was
+        # invalid — no such workflow, a bad profile, a bad input, a reused id — and the runner said
+        # which. Both are refusals. Until §86 only 3 was: an rc-2 start fell through to the
+        # outcome reader, which found no run and wrote `{"state": null}` as a cycle that ran,
+        # exit 0 — a scheduler that misnamed its workflow saw success forever.
+        if p.returncode in (2, 3):
             try:
                 why = json.loads(p.stdout.strip().splitlines()[-1])
             except Exception:
                 why = {"error": (p.stderr or p.stdout)[-200:]}
-            return record({"workflow": workflow, "by": by, "ui": ui, "refused": why})
+            return record({"workflow": workflow, "by": by, "ui": ui, "refused": why,
+                           "rc": p.returncode})
+        if p.returncode != 0:                     # the runner itself failed; say so, not "ran"
+            return record({"workflow": workflow, "by": by, "ui": ui, "seconds": seconds,
+                           "failed": {"rc": p.returncode,
+                                      "error": (p.stderr or p.stdout)[-300:]}})
 
         out = subprocess.run([PY, os.path.join(STACK, "soak_outcome.py"), ui],
                              capture_output=True, text=True, cwd="/work").stdout
@@ -129,7 +139,9 @@ def parse_args(argv):
              if not x.startswith("--") and (i == 0 or argv[i - 1] not in OPTS)]
     inputs = dict(w.split("=", 1) for w in words if "=" in w)      # key=value → a workflow input
     bare = [w for w in words if "=" not in w]
-    return {"workflow": bare[0] if bare else "trading-b",
+    # No default workflow: the one this had (trading-b) left with its package, and a scheduler
+    # that names nothing is asking for nothing (§86).
+    return {"workflow": bare[0] if bare else None,
             "profile": bare[1] if len(bare) > 1 else "research-default",
             "allow_unrecorded": "--allow-unrecorded" in argv,
             "retain_days": opt("--retain-days"), "retain_keep": opt("--retain-keep"),
@@ -137,7 +149,13 @@ def parse_args(argv):
 
 
 if __name__ == "__main__":
-    row = run(**parse_args(sys.argv[1:]))
+    args = parse_args(sys.argv[1:])
+    if not args["workflow"]:
+        print(json.dumps({"error": "no workflow named",
+                          "usage": __doc__.strip().splitlines()[2].strip()}))
+        raise SystemExit(2)
+    row = run(**args)
     print(json.dumps(row, ensure_ascii=False))
-    # exit codes are for a scheduler: 0 = a cycle ran or one was already running, 3 = refused
-    raise SystemExit(3 if "refused" in row else 0)
+    # exit codes are for a scheduler: 0 = a cycle ran or one was already running, 3 = refused,
+    # 1 = the runner itself failed (nothing to read back)
+    raise SystemExit(3 if "refused" in row else 1 if "failed" in row else 0)

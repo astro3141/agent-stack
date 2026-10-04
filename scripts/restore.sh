@@ -226,6 +226,17 @@ replace_with evidence-conductor-events conductor-events "$WORKSPACEU/evidence"
 replace_with config config "$WORKSPACEU"
 replace_with policy policy "$WORKSPACEU"
 replace_with state state "$WORKSPACEU"            # package state (docs/packages.md, "State that outlives a run")
+# the credential files the host wrote (docker/*.env): the console account, the principals'
+# credentials, the operator's, a package's — a member since §86. Restored at 0600, as written.
+if untar_host docker-env "$STAGE/x-docker-env"; then
+  mkdir -p "$WORKSPACEU/docker"
+  for f in "$STAGE/x-docker-env/docker-env"/*.env; do
+    [ -f "$f" ] || continue
+    cp "$f" "$WORKSPACEU/docker/$(basename "$f")"
+    chmod 600 "$WORKSPACEU/docker/$(basename "$f")" 2>/dev/null || true
+  done
+  say "docker/*.env" "$(ls "$STAGE/x-docker-env/docker-env" | tr '\n' ' ')"
+fi
 if untar_host research "$STAGE/x-research"; then
   RES_SRC="$STAGE/x-research/$(ls "$STAGE/x-research" | head -1)"
   rm -rf "$WORKSPACEU/evidence/research"; mkdir -p "$WORKSPACEU/evidence"
@@ -236,6 +247,9 @@ fi
 # ---------------------------------------------------------------- 3. volumes
 echo "== volumes"
 for v in route-creds agent-home quota-home; do
+  # a volume the backup does not hold (quota-home on an instance with no observer, §86) is not
+  # created: the restored instance then has the same composition as the one backed up
+  [ -f "$STAGE/volumes/$v.tar.gz" ] || { say "$v" "not in the backup — not created"; continue; }
   docker volume create "$STACK-$v" >/dev/null
   docker run --rm -v "$STACK-$v:/v" -v "$STAGEM/volumes:/in:ro" alpine tar xzf "/in/$v.tar.gz" -C /v
   say "$v" "restored"

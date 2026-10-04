@@ -81,8 +81,8 @@ scripts/install.sh                   # install Preloop OSS if needed, then bring
 | Docker, and a running daemon | everything here is containers |
 | **Docker Compose 2.24 or newer** | the composition uses `env_file: required: false`; an older compose fails with a parse error that does not say which feature it did not know |
 | bash, git, curl | the scripts, and Preloop's own installer |
-| **x86_64** | `docker/agent.Dockerfile` installs a linux-x64 Node and an x86_64 CodexBar. Every image this stack pulls is multi-arch, so arm64 needs those two lines parameterized — it has not been done or tried |
-| ~20GB free | images and volumes |
+| **x86_64**, or arm64 untried | the agent image picks its Node and CodexBar by `TARGETARCH`; every image this stack pulls is multi-arch. amd64 is what has been built and run; arm64 is parameterized and has never been built ([docs/install.md](docs/install.md)) |
+| ~11GB of images, plus volumes | measured; `install.sh --check` asks for 20GB free to leave room for the build cache |
 
 The installer runs **Preloop's own installer** (`https://preloop.ai/install/oss`) into
 `~/.preloop-oss` when that directory is not there, and `--preloop-dir` puts it elsewhere. From then
@@ -98,8 +98,8 @@ bring-up now says out loud rather than reporting a login file's existence as a l
 
 Choices worth making before installing, none of which the script decides for you:
 
-- **Which composition.** The full stack, or `--composition no-record` (no MLflow) / `minimal` —
-  `scripts/up.sh` prints what each one costs in capabilities.
+- **Which composition.** The full stack, or `--composition no-record` (no MLflow) / `runtime`
+  (no MLflow and no panel) — `scripts/up.sh` prints what each one costs in capabilities.
 - **Where Preloop lives.** `--preloop-dir`, if `~/.preloop-oss` is not where you want it.
 - **The instance's name and ports.** `config/instance.env` (`STACK`, `OPS_PORT`, `HUB_PORT`,
   `PRELOOP_*_PORT`) — a second instance on the same machine needs its own.
@@ -109,7 +109,7 @@ Choices worth making before installing, none of which the script decides for you
 ```bash
 scripts/up.sh                        # everything, then check it
 scripts/up.sh --composition no-record   # without MLflow, and be told what that costs
-scripts/cycle.sh trading-b           # one unattended cycle, for a scheduler to call
+scripts/cycle.sh novel-a             # one unattended cycle, for a scheduler to call
 docker exec agentstack-agent /opt/venv/bin/python /work/stack/ops_health.py
 ```
 

@@ -10,9 +10,11 @@ caller of the router goes through.
 REPEATABLE = "yes"   # re-observes quota and decides again; writes its own evidence directory
 import json, os, sys
 sys.path.insert(0, "/work/stack")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
-d = f"/work/evidence/p281/route-{run}"
+import step
+run = step.run_id()
+d = step.evidence_dir(f"route-{run}")      # <evidence_root>/route-<run>, where every reader looks
 os.makedirs(d, exist_ok=True)
 import admission
 # The profile's routing policy, generated from config/profiles/<name>.yaml. ROUTING_POLICY

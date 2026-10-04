@@ -30,13 +30,15 @@ import os
 import sys
 
 sys.path.insert(0, "/work/stack")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import settings
+import step
 
-run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
+run = step.run_id()
 prof_name = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else "research-default"
 wanted = [p.strip() for p in (sys.argv[2] if len(sys.argv) > 2 else "").split(",") if p.strip()]
 
-d = f"/work/evidence/p281/admit-{run}"
+d = step.evidence_dir(f"admit-{run}")      # <evidence_root>/admit-<run>, where every reader looks
 os.makedirs(d, exist_ok=True)
 
 
