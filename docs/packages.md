@@ -266,8 +266,13 @@ A harness that pins its prompts to a schema — a prompt's answer is parsed, che
 else may have happened in between (trading, #62) — calls the same door with one more argument:
 
 ```
-agent_task.py <provider> <route> <label> <payload|-> <answer.json> [<profile> [<login> [<principal>]]] --query <schema.json>
+agent_task.py <provider> <route> <label> <payload|-> <answer.json> [<profile> [<login> [<principal>]]] --query <schema.json> [--model <id>]
 ```
+
+`--model <id>` asks the vendor for that model by name (the adapter forwards it as the session's
+`model` option); without it the login's default answers. A pinned binding passes its pin here AND
+still reads `measurements.model_usage` to see what answered — the ask and the check are separate
+facts, and a helper model's row (Claude reports one) is judged by the reader, not merged away.
 
 What a **query** is, and what the door does with it (§89, DECISIONS-2026-10-04 §8):
 

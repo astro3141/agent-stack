@@ -1,7 +1,13 @@
 """Conductor script step: one model task through the routing/execution layer.
 
 usage: agent_task.py <provider> <model_route> <label> <prompt-file> <expected-file>
-       [<profile> [<login> [<principal>]]] [--query <schema.json>]
+       [<profile> [<login> [<principal>]]] [--query <schema.json>] [--model <id>]
+
+`--model <id>` asks the vendor for that model by name — the adapter already forwards `req.model`
+as a session option (run-agent.mjs); without it the login's default answers, which a pinned
+binding cannot accept after the fact (#62: a pin enforced only post-hoc is a refusal the call
+already paid for). What actually answered is still read from the record's `model_usage` rows —
+the ask and the check stay separate.
 The prompt file may use {WS} for the run's shared workspace (/ws/<conductor run id>), which
 every model step of the run shares, so a later step can read what an earlier one wrote.
 Writes are only possible through the Preloop MCP server (native write/shell are removed);
@@ -31,8 +37,18 @@ import execution
 import query as queryk
 import settings
 
-# `--query <schema>` may stand anywhere after the positional arguments; the re-executions below
-# (the broker, the role's uid) pass sys.argv[1:] on unchanged, so it travels with them
+# `--query <schema>` and `--model <id>` may stand anywhere after the positional arguments; the
+# re-executions below (the broker, the role's uid) pass sys.argv[1:] on unchanged, so they travel
+# with them
+model_id = ""
+if "--model" in sys.argv:
+    i = sys.argv.index("--model")
+    model_id = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+    del sys.argv[i:i + 2]
+    if not model_id:
+        print(json.dumps(execution.record(status="FAILED", produced=False,
+                                          failure="--model needs the model id")))
+        raise SystemExit(0)
 schema_file = ""
 if "--query" in sys.argv:
     i = sys.argv.index("--query")
@@ -207,6 +223,7 @@ req = {"run_id": run_id, "provider": provider, "model_route": model_route or "pr
        "native_tools": (PROF.get("tools") or {}).get("native_tools", False), "evidence_dir": evid,
        "native_allow": list((PROF.get("tools") or {}).get("native_allow") or []),
        **({"schema_sha256": schema_sha} if kind == "query" else {}),
+       **({"model": model_id} if model_id else {}),
        "prompt": prompt}
 rp = os.path.join(evid, "request.json")
 json.dump(req, open(rp, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
