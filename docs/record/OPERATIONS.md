@@ -5245,3 +5245,46 @@ ALL CHECKS PASSED
 The workspace's script built the candidate and recorded the release in use, then the target's
 script moved the workspace, rebuilt and checked. One rollback point recorded, not two; no
 `cand-` image left. #48 closed on it.
+
+## 91. The door's options travel with it; `--model` through the broker (#62, 2026-10-04)
+
+**What trading asked, and PR #68.** Re-qualification possible, with one thing missing on the way:
+a request-level model pin. `run-agent.mjs` forwarded `req.model` as the session's `model` option
+and nothing filled it, so a binding pinned to one model could only refuse a mismatch after paying
+for the call — §89's own measurement answered with the login's default, opus, not a pin. Trading's
+PR #68 (merged, 36212ba) adds `--model <id>` to `agent_task.py`: the ask lands on the request
+(`request.json`, byte for byte), the check stays where it was (`measurements.model_usage` rows;
+the helper row allowed). Measured live by its author in the agent container: `--model
+claude-sonnet-5` → COMPLETED, turns 1, tool_calls 0, rows `[claude-sonnet-5,
+claude-haiku-4-5-20251001]`. Trading then reported its re-qualification complete (d5ff0a5: three
+workflows cut over to the door binding from Monday; the pin on the answering model's row;
+`door_contract=2` compared with `execution.CONTRACT`).
+
+**What reading #68 found in §89's own code.** `agent_task.py` deleted `--query` (and now
+`--model`) from `sys.argv` to read its positionals, and the two re-executions after that — the
+broker for a role that declares an egress profile, the role's uid — pass `sys.argv[1:]` on. The
+comment said they travel; they did not. Measured here with a recorder standing where the broker
+listens: a query for `novel-reviewer` (profile `closed`) reached `broker_dispatch.py` as a task
+with `-` for a prompt file and died there, `prompt unreadable: FileNotFoundError`, before any
+job was posted. The broker path did not know `--model` at all.
+
+**What changed.**
+- `agent_task.py`: `split_options()` parts the options from the positionals and puts them back
+  into argv *behind* the positionals; the positionals are read from the parted list, the
+  re-executions pass argv as before, and the options arrive. An option without its value is
+  refused before anything runs, as before.
+- `broker_dispatch.py` carries `model` on the job beside `schema`; `broker.py` passes it,
+  bounded; `profile_runner.py` checks its shape (a vendor's model name, not a path) and starts
+  the step with the same `--model`.
+- docs/packages.md "Where it runs": payload, schema and model travel to the broker.
+
+**Measured.** review_controls 243/243: `split_options` on the full argv, on options standing
+where the optional positionals would be, on an option without its value, on none. trial_controls'
+query group +4: `--model` on the request with the adapter's word still the adapter's; `--model`
+without its id refused; **the brokered door end to end** — `novel-reviewer` with `--query` and
+`--model` and a stdin payload is handed to a recorder at the broker's address, and the job
+carries the role, the payload, the schema text and the model; the broker's answer is the step's.
+The same control on the pre-fix door: no job, `prompt unreadable`. `verify.sh --level static`
+13/13; pins at the ratchets; **cold-start run 105 green** on b4af006. Not measured: the broker's
+and the runner's two lines on a live brokered query — the first query a confined role makes on the instance measures them; read
+`request.json` in that call's evidence for `kind: query` and `model`.

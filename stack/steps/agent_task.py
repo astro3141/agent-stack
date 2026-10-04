@@ -37,33 +37,45 @@ import execution
 import query as queryk
 import settings
 
-# `--query <schema>` and `--model <id>` may stand anywhere after the positional arguments; the
-# re-executions below (the broker, the role's uid) pass sys.argv[1:] on unchanged, so they travel
-# with them
-model_id = ""
-if "--model" in sys.argv:
-    i = sys.argv.index("--model")
-    model_id = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
-    del sys.argv[i:i + 2]
-    if not model_id:
-        print(json.dumps(execution.record(status="FAILED", produced=False,
-                                          failure="--model needs the model id")))
-        raise SystemExit(0)
-schema_file = ""
-if "--query" in sys.argv:
-    i = sys.argv.index("--query")
-    schema_file = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
-    del sys.argv[i:i + 2]
-    if not schema_file:
-        print(json.dumps(execution.record(status="FAILED", kind="query", produced=False,
-                                          failure="--query needs the schema file")))
-        raise SystemExit(0)
+
+def split_options(argv):
+    """The door's options, parted from its positionals.
+
+    `--query <schema>` and `--model <id>` may stand anywhere after the positional arguments, so the
+    positionals are read without them — and the options stay in argv, moved behind the
+    positionals, because the two re-executions below (the broker, the role's uid) pass argv on as
+    it is: deleted for the positional parse, they did not travel, and a confined role's query
+    reached the dispatch step as a task with `-` for a prompt file (`prompt unreadable`, §91).
+    Returns (positionals, options as given, schema file, model id, why) — `why` names an option
+    that was given without its value.
+    """
+    pos, opts, vals, why = [], [], {"--query": "", "--model": ""}, ""
+    rest = list(argv)
+    while rest:
+        a = rest.pop(0)
+        if a in vals:
+            v = rest.pop(0) if rest else ""
+            if not v:
+                why = f"{a} needs {'the schema file' if a == '--query' else 'the model id'}"
+            vals[a] = v
+            opts += [a, v]
+        else:
+            pos.append(a)
+    return pos, opts, vals["--query"], vals["--model"], why
+
+
+POSITIONAL, PASSTHROUGH, schema_file, model_id, _why = split_options(sys.argv[1:])
+if _why:
+    print(json.dumps(execution.record(status="FAILED", kind="query" if "--query" in PASSTHROUGH else "task",
+                                      produced=False, failure=_why)))
+    raise SystemExit(0)
+sys.argv[1:] = POSITIONAL + PASSTHROUGH          # the positionals first, the options behind them, nothing lost
 kind = "query" if schema_file else "task"
-provider, model_route, label, prompt_file, expected = sys.argv[1:6]
-prof_name = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else "research-default"
-login = sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else provider
+provider, model_route, label, prompt_file, expected = POSITIONAL[:5]
+prof_name = POSITIONAL[5] if len(POSITIONAL) > 5 and POSITIONAL[5] else "research-default"
+login = POSITIONAL[6] if len(POSITIONAL) > 6 and POSITIONAL[6] else provider
 # the principal whose tool rights this step runs with; empty means the adapter's own credential
-principal = sys.argv[8] if len(sys.argv) > 8 and sys.argv[8] else ""
+principal = POSITIONAL[7] if len(POSITIONAL) > 7 and POSITIONAL[7] else ""
 RT, PROF = settings.runtime(), settings.profile(prof_name) or {}
 run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 ws = f"{RT['paths']['workspace_root']}/{run}"

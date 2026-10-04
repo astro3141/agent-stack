@@ -1972,6 +1972,48 @@ def controls_query():
           ("task", "COMPLETED", 1, "", {}))
     req = json.load(open(os.path.join(ev("t1"), "request.json"), encoding="utf-8"))
     check("… and the request says so", req.get("kind"), "task")
+    # #62 / §91: the model asked for travels on the request, and the ask is separate from the check
+    argv = [sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "m1", os.path.join(root, "v1.payload"),
+            "m1.json", "research-default", "claude", "", "--query", sfile, "--model", "m-pin"]
+    p = _sp.run(argv, capture_output=True, text=True, env=env)
+    r = json.loads(p.stdout.strip().splitlines()[-1])
+    req = json.load(open(os.path.join(ev("m1"), "request.json"), encoding="utf-8"))
+    check("--model: the ask is on the request, byte for byte, and what answered is still the adapter's word",
+          (req.get("model"), r.get("status"), r.get("model_adapter_reported")), ("m-pin", "COMPLETED", "m-1"))
+    p = _sp.run(argv[:-1], capture_output=True, text=True, env=env)
+    r = json.loads(p.stdout.strip().splitlines()[-1])
+    check("--model without its id is refused before anything runs", (r.get("status"), "model id" in r.get("failure", "")), ("FAILED", True))
+    # the brokered door (§54): a role that declares an egress profile is handed to the broker with
+    # payload, schema and model — measured with a recorder standing where the broker listens
+    import http.server as _hs, threading as _th
+    got = {}
+    class Rec(_hs.BaseHTTPRequestHandler):
+        def do_POST(self):
+            got["path"] = self.path
+            got["job"] = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"{}")
+            body = json.dumps({"result": {"status": "COMPLETED", "kind": "query", "run_id": "brokered", "provider": "claude",
+                                          "dispatched": {"role": got["job"].get("role")}}}).encode()
+            self.send_response(200); self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *a):
+            pass
+    srv = _hs.HTTPServer(("127.0.0.1", 0), Rec)
+    _th.Thread(target=srv.serve_forever, daemon=True).start()
+    benv = {**env, "AGENTSTACK_BROKER_URL": f"http://127.0.0.1:{srv.server_port}"}
+    benv.pop("AGENTSTACK_EGRESS_PROFILE", None); benv.pop("AGENTSTACK_ROLE", None)
+    p = _sp.run([sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "b1", "-", "b1.json",
+                 "research-default", "claude", "novel-reviewer", "--query", sfile, "--model", "m-pin"],
+                capture_output=True, text=True, env=benv, input="brokered payload {WS}")
+    srv.shutdown()
+    try:
+        r = json.loads(p.stdout.strip().splitlines()[-1])
+    except Exception:
+        r = {"status": (p.stderr or p.stdout)[-300:]}
+    job = got.get("job") or {}
+    check("brokered: a role with an egress profile is handed to the broker, and the payload, the schema and the model travel with the job",
+          (got.get("path"), job.get("role"), job.get("prompt"), job.get("schema"), job.get("model")),
+          ("/dispatch", "novel-reviewer", "brokered payload {WS}", open(sfile).read(), "m-pin"))
+    check("brokered: the broker's answer is the step's answer", (r.get("status"), (r.get("dispatched") or {}).get("role")), ("COMPLETED", "novel-reviewer"))
     shutil.rmtree(root, ignore_errors=True)
 
 

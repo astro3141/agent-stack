@@ -316,7 +316,8 @@ What a **query** is, and what the door does with it (§89, DECISIONS-2026-10-04 
   §89) — so a pin reads the rows of `measurements.model_usage` and decides which row is the pin,
   rather than comparing the joined string.
 - **Where it runs** is as for a task: a role that declares an egress profile is handed to the
-  broker, schema and payload with it. A chain step (`steps/task_chain.py`) is a query with
+  broker, payload, schema and model with it (§91 — before it, the two options did not survive
+  the hand-over). A chain step (`steps/task_chain.py`) is a query with
   `"query": "<schema path>"` beside its `prompt`.
 
 **Where a call runs is not the workflow's to choose.** A role that declares an egress profile is

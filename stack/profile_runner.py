@@ -25,6 +25,8 @@ STEP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steps", "agent_
 PROFILE = os.environ.get("AGENTSTACK_EGRESS_PROFILE", "")
 NAME = re.compile(r"[a-z][a-z0-9-]{0,39}")
 SAFE = re.compile(r"[A-Za-z0-9._\- ]{1,200}")
+# a model id as the vendors spell them (claude-sonnet-5, gpt-6.1-sol, grok-4-fast): a name, not a path
+MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,119}")
 
 
 class H(BaseHTTPRequestHandler):
@@ -73,6 +75,9 @@ class H(BaseHTTPRequestHandler):
         exp = str(job.get("expected") or "")
         if not re.fullmatch(r"[A-Za-z0-9._\- /]{1,200}", exp) or exp.startswith("/") or ".." in exp:
             return self._send(400, {"error": "invalid expected"})
+        model = str(job.get("model") or "")
+        if model and not MODEL.fullmatch(model):
+            return self._send(400, {"error": "invalid model"})
         prompt = str(job.get("prompt") or "")
         if not prompt or len(prompt) > 200000:
             return self._send(400, {"error": "prompt text is required (and bounded)"})
@@ -96,7 +101,7 @@ class H(BaseHTTPRequestHandler):
                **({"AGENTSTACK_ATTEMPT": str(job["attempt"])} if re.fullmatch(r"\d{1,3}", str(job.get("attempt") or "")) else {})}
         argv = [PY, STEP, job["provider"], str(job.get("model_route") or "direct"),
                 job["label"], pf, job["expected"], job["profile_name"], job["login"],
-                job["role"], *(["--query", sf] if sf else [])]
+                job["role"], *(["--query", sf] if sf else []), *(["--model", model] if model else [])]
         try:
             r = subprocess.run(argv, capture_output=True, text=True,
                                timeout=int(job.get("timeout_s") or 900), env=env)
