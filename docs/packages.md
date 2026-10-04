@@ -149,8 +149,9 @@ for a human; the last line is the contract. A step that cannot do its work print
 rather than raising — `step.refuse(reason, **fields)` does exactly that and exits 0 — and a step
 that crashes should still answer: `step.main(fn, **shape)` turns an exception into the same line,
 with every declared key present (Conductor refuses a line that lacks one), `status: TOOL_FAILURE`
-and the reason. A machinery failure is then something the graph routes on, not a traceback the
-operator finds in a log.
+and the message under `reason` — or under the key you name, `step.main(fn, failure_key="error",
+**shape)`, when `reason` means something of its own in your step (#52). A machinery failure is
+then something the graph routes on, not a traceback the operator finds in a log.
 
 **3. Say what a repeat of this step does.** Every step declares it, and a control fails if one does
 not:
@@ -196,7 +197,9 @@ cp acyc-2026-04-10.json <repo>/handoff/
 run_workflow.py start r1 trading-port research-default mode=live packet_from=acyc-2026-04-10.json
 ```
 
-The step resolves the name inside that directory and refuses anything that escapes it. Fixtures
+`step.handoff(name)` resolves the name inside that directory — `<handoff_root>`, a root like the
+others — and raises for anything that escapes it; whether the file is there is your step's to say
+(item 5). Fixtures
 that travel with the package live in `fixtures/` instead; the hand-in directory is for data that
 arrives from outside a run.
 
@@ -273,7 +276,7 @@ whose package needs what the stack has not got. These are the keys something rea
 | `egress` | hosts the package's scripts reach | `packages.py egress` (an audit, not a control) |
 | `python` | modules the image must carry | `packages.py python`, `run_workflow.py start` |
 | `stack` | the oldest stack revision the package runs on: `stack: {min: <commit>}` | `packages.py stack`, `run_workflow.py start` |
-| `state` | `state: true` — the package keeps state outside any run, under its own directory (below); `state: "<where>"` — it keeps state with the work, elsewhere, and this says where | `packages.py state` |
+| `state` | `state: true` — the package keeps state outside any run, under its own directory (below); `state: "<where>"` — it keeps state with the work, elsewhere, and this says where; `state: {here: true, with_the_work: "<where>"}` — both (#53) | `packages.py state` |
 
 A package calls the stack's steps by absolute path and argv order, so one written against a newer
 stack fails on an older one in whatever way the missing feature fails — a brokered step refused as
@@ -327,9 +330,11 @@ X9). It names one place now:
 - **The package owns it.** What is in there, its shape, and when it is pruned are the package's;
   a step reaches it through the stack's settings (`step.runtime()["paths"]["state_root"]`), never
   by a path of its own.
-- **It is declared.** `requires: {state: true}` in the manifest. `packages.py state` lists every
-  directory under the root with who declared it; one nobody declared is reported as a question,
-  not deleted — the stack removes runs, not a package's memory.
+- **It is declared.** `requires: {state: true}` in the manifest; a package that keeps both kinds
+  — a cache here and the task's state with the work, as devflow does — declares
+  `state: {here: true, with_the_work: "github issue comments"}` (#53). `packages.py state` lists
+  every directory under the root with who declared it; one nobody declared is reported as a
+  question, not deleted — the stack removes runs, not a package's memory.
 - **It is not a hand-in.** Input still arrives through `handoff/` by name; state is what the
   package writes for its own next run.
 - **It is not in git, and it is in the backup.** `state/` is ignored by git and copied by
@@ -481,7 +486,9 @@ principals:
 ```
 
 The profile's proxy carries the host list; the broker maps the role and holds its credential; your
-step's argv does not change (OPERATIONS §53–§55). The older `egress: [hosts]` key is the uid-based
+step's argv does not change (OPERATIONS §53–§55). What that list *is* — to tell a model which hosts
+its role can fetch from — is an answer, `step.egress_hosts("closed")`: the patterns the profile's
+proxy reads, from the generated list, not a file your package parses (#55). The older `egress: [hosts]` key is the uid-based
 design (§48): still read, still run — the platform's own `egress-probe` declares it, and
 `agent_task.py` takes the uid path for a role on it — but deprecated for a package, and every
 `principals.py apply` names roles still on it. Declare a profile.
@@ -495,7 +502,11 @@ A package's rules are pinned by the package: `packages/<name>/controls.py`, run 
 container by `scripts/packages.sh verify` (or `controls [name]` alone), exit 1 on a failure. It
 drives the package's real steps with fake inputs and no model call — `packages/novel/controls.py`
 is the shape: a `load()` that points the step at a temporary workspace, a `check(name, got, want)`,
-one function per risk, a summary line.
+one function per risk, a summary line. The roots a step writes to — workspace, evidence, state —
+are a temporary directory for the length of that process (`packages.sh controls` sets
+`AGENTSTACK_CONTROLS_ROOT` and removes it after, #54): your steps read them through `step` as
+always, and the instance's own trees are not written. Logins and the hand-in directory stay where
+they are; a control that needs a hand-in puts a fixture there under a name of its own.
 
 The platform's suite (`stack/trial_controls.py`) pins the platform and never imports a package to
 pin that package's rules. Until 2026-10 it did — novel's triage, evidence index and round semantics
@@ -533,6 +544,23 @@ the package is four steps, and the fourth is the one that pays for the other thr
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
 
+**§87 (2026-10-04 — the devflow author's findings, #51–#56).**
+- **A role binds against an admission by name** (#51): `roles.py` reads `decision.json` (from
+  `route.py`) or `admission.json` (from `admit_models.py`) in the evidence directory it is given,
+  and a provider the profile does not list is bound when that admission says it is eligible —
+  login and route from the profile's tables when it has them, the provider's own name and the
+  direct route otherwise. A provider nobody asked about is still "not in the profile".
+  `roles.py <profile> <evidence dir of admit_models> reviewer=codex:my-reviewer`.
+- **`step.main` takes `failure_key`** (#52); `requires.state` takes both kinds (#53); a package's
+  controls run on scratch roots (#54); `handoff_root` and `config_root` are roots, `step.handoff`
+  resolves a hand-in by name, `step.egress_hosts` answers a profile's hosts (#55).
+- **The printed first-run line for a workflow whose inputs name something real** (#56): declare
+  such an input `required: true` with no default. The line then carries a quoted placeholder
+  (`project='<project>' issue='<issue>'`), a person replaces it, and `verify --level stack` does
+  not run that line — it runs hello-lane's, the one workflow whose first run is about nothing in
+  particular. A default that makes the line "a real first run" is for a workflow that has one; a
+  fixture default that calls models against nothing real is worse than a placeholder.
+
 **ec628d4 (2026-10-03, §84 — stop, resume, rollback measured live).**
 - A stop leaves a checkpoint and `run_workflow.py resume` **re-enters the unfinished step from
   its start**; the steps before it do not run again. A step is therefore entered twice in one run
@@ -552,15 +580,17 @@ behaviour you notice has a name.
   from a step sees its parent as `AGENTSTACK_PARENT_RUN`; `CONDUCTOR_SELF_RUN_ID` is always the
   run's own id. Read them through `step.run_id()` and `os.environ`; never set them.
 - **One place for providers, addresses and paths** (§80): the stack's provider list is
-  `settings.PROVIDERS`, every root is in `runtime.json` (`step.runtime()["paths"]`), and the
+  `settings.PROVIDERS`, every root is in `runtime.json` (`step.runtime()["paths"]`: workspace,
+  evidence, observations, logins, state, hand-in, configuration — the last two since §87), and the
   broker's address is `settings.url("broker", "url")` — the generated file carries only what
   `config/environment.yaml` names, and `broker:` is a built-in default. A package that carries its own copy
   of a provider name, a port or `/work/...` root is one stack change away from breaking, and the
   break is silent. Nothing to change if yours reads them through `step`.
 - **The panel's command is built once and run by the checks** (§81): the 워크플로 tab shows
   `scripts/cycle.sh <workflow> <profile> key=<default>` for every input your workflow declares
-  with a default, and `verify --level stack` runs that line as printed. Declare inputs with
-  defaults that make the printed line a real first run.
+  with a default, and `verify --level stack` runs hello-lane's line as printed. Declare inputs
+  with defaults that make the printed line a real first run — or `required: true` with no
+  default for an input that names something only the operator knows (#56, §87).
 - **Controls** (§82–§83): a check that pins your own source text (`"…" in open(step).read()`)
   passes when the behaviour is wrong and fails when the wording changes; the stack converted its
   own and holds the count with a ratchet. Yours are yours; `pin_kinds.py` classifies any
