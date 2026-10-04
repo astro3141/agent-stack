@@ -123,6 +123,13 @@ docker exec <stack>-agent sh -c 'HTTPS_PROXY=http://egress:8888 CLAUDE_CONFIG_DI
 ```
 
 Without the proxy variables the same call hangs (the refresh cannot leave the governed network).
+CodexBar's `--source cli` for claude refreshes nothing (measured §100: it answers `Could not parse
+Claude usage: Missing Current session` and the credentials file is byte-for-byte what it was), so
+the call above is the only remedy short of signing in again.
+
+An update made while the login is expired ends the same way: every step done, `FAIL  every
+provider's state is knowable`, exit 1 — the update's checks are the bring-up's. The script says so;
+a rollback would fail the same check. Sign in, then `up.sh --check`.
 It is a model call made for no work, and the stack does not make it for you (decision 2,
 DECISIONS-2026-10-04); it is the operator's remedy when a sign-in on the panel is more than the
 situation needs. The org-disabled variant (§88) answers that call with the sentence that is the

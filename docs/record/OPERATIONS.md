@@ -5549,3 +5549,54 @@ Nothing is guessed: an undeclared helper is not a check, `checks: 0`, and the pa
 `ok(...)` calls read as one source-text and one behaviour, and `print("…", True)` never counts.
 The stack's own suites' counts and ratchets unchanged (51 / 167). `verify.sh --level static`
 13/13; **cold-start run 125 green** on fe9b6d6.
+
+## 100. The expired login, measured live; §88 closed (#44, 2026-10-04, night)
+
+The operator took the live instance 6c354af → 0b2c037 while claude's OAuth token was expired —
+`expiresAt` 08:56:49Z, fourteen hours gone, the last good reading 56,265 s old — which is the
+one condition §88 was built for and could not measure until it happened again. Both open items
+of §88 are answered.
+
+**What §88 said would happen, happened, word for word.**
+- `up.sh --check`: `claude: unknown: the login's token expired — the last reading is 56265s old
+  (> 1800s) and nothing here refreshes it; sign in on the panel`; `FAIL  every provider's state
+  is knowable   expected 0, got 1`.
+- `/api/accounts`: claude `connection: connected`, `login_expired: true`, `eligible: false` —
+  the row the 계정 tab renders as `연결됨 · 토큰 만료` (hub/index.html, read against the
+  payload; the screen itself was not photographed). codex and grok eligible.
+- A run that needs claude holds, and only a person signing in clears it.
+
+**Candidate (c) is out: CodexBar's `--source cli` refreshes nothing.** The one command §88
+left to measure, run on the instance with the token expired:
+
+```
+CLAUDE_CONFIG_DIR=/route/claude HTTPS_PROXY=http://egress:8888 codexbar usage --provider claude --source cli --json
+→ [{"provider":"claude","source":"cli","error":{"message":"Could not parse Claude usage: Missing Current session.","kind":"provider","code":1}}]
+/route/claude/.credentials.json   before: 2026-10-04 00:56:49, sha 39680e52…   after: identical
+```
+
+It does not launch the CLI's refresh; it reads a session that is not there and says so. So of
+the three ways §88 read, (a) a model call for no work is the only automatic one (measured by
+novel-v2, §96, as the operator's manual remedy), and the operator keeps **decision 2: the stack
+does not refresh a person's login**. #44 closes on that: candidates 2 and 3 are in (§88), the
+refresh is a person's or a deliberate call's, never the collector's. The runbook's expired-login
+entry now says `--source cli` is not a remedy.
+
+**The hand-over's fourth measurement, and an exit code read right.** `release.sh update --to
+0b2c037`: `recording release 20261004-225705-6c354af` (the rollback point, named after the
+release in use), `performed by  the target revision's scripts/release.sh (0b2c037)`, `handed over
+by  the script of 6c354af (candidate built, release in use kept)`, `now at  0b2c037`; images
+rebuilt, containers recreated, 19 up, no `cand-` left, root certificates unchanged — and **exit
+1**, because the update's checks are the bring-up's and the bring-up fails on a provider it
+cannot determine (§88, by design). Every step was done; the script's words were "the checks did
+not pass after the update. Go back with: rollback" — a prescription a rollback cannot fill, since
+the previous release fails the same check on the same login. Now the message reads the kind: a
+check the update cannot have caused (the expired login) is the panel's to fix and a rollback will
+not pass it; anything else is the rollback's. `docs/update-day.md` carries the same sentence.
+No control pins that text (it is a sentence to a person, read on the terminal), and the exit
+code is unchanged: an update that ends with a provider nobody can determine still says 1.
+
+**Measured.** On the instance, by the operator, evidence `evidence/m88-*` there: the token's
+`expiresAt`, the check line, the API row, the `--source cli` answer, the credentials file's hash
+before and after. Here: `bash -n scripts/release.sh`; `verify.sh --level static` 13/13; pins at
+the ratchets (51 / 167); **cold-start run 127 green** on d8517e2.
