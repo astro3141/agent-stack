@@ -279,6 +279,15 @@ fi
            ex.login_refusal("Claude OAuth token expired. Run `claude login`"), ex.login_refusal("Invalid API key"),
            ex.login_refusal("ENOENT: ~/.codex/config.toml"), ex.login_refusal("")), (True, True, True, False, False))
     sentence = "Your organization has disabled Claude subscription access for Claude Code · Use an Anthropic API key instead"
+    nr = Path(tempfile.mkdtemp(prefix="agentstack-note-"))
+    left = ex.note_refusal(str(nr), "claude", "claude", {"status": "FAILED", "failure": sentence, "run_id": "r1"})
+    ignored = ex.note_refusal(str(nr), "claude", "claude", {"status": "FAILED", "failure": "ENOENT: config.toml", "run_id": "r2"})
+    kept_note = json.load(open(ex.refusal_path(str(nr), "claude", "claude")))
+    cleared = ex.note_refusal(str(nr), "claude", "claude", {"status": "COMPLETED", "failure": "", "run_id": "r3"})
+    check("#44: the door leaves the note for an account refusal, not for a model's failure, and a completed call clears it",
+          (left, ignored, kept_note["failure"] == sentence and kept_note["run_id"] == "r1", cleared,
+           os.path.exists(ex.refusal_path(str(nr), "claude", "claude"))), ("left", "", True, "cleared", False))
+    shutil.rmtree(nr, ignore_errors=True)
     rp = Path(ex.refusal_path(str(logins), "claude", "claude"))
     rp.parent.mkdir(parents=True, exist_ok=True)
     rp.write_text(json.dumps({"at": (now + timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ"), "run_id": "r1", "failure": sentence}))

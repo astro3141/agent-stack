@@ -70,6 +70,29 @@ def refusal_path(logins_root, provider, login):
     """<logins_root>/.quota/<provider>-<login>.refused.json — beside the kept quota reading."""
     import os
     return os.path.join(logins_root, ".quota", f"{provider}-{login}.refused.json")
+
+
+def note_refusal(logins_root, provider, login, rec):
+    """Leave the door's note beside the login when this call was refused for the account's sake,
+    and take it back when a call completed. Returns "left" | "cleared" | "" — never raises: the
+    record is the deliverable, this is a note beside it."""
+    import json as _j, os, time
+    try:
+        p = refusal_path(logins_root, provider, login)
+        if rec.get("status") == "COMPLETED":
+            if os.path.exists(p):
+                os.remove(p)
+                return "cleared"
+            return ""
+        if not login_refusal(rec.get("failure")):
+            return ""
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        _j.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run_id": rec.get("run_id"),
+                 "failure": str(rec.get("failure"))[:300]}, open(p + ".tmp", "w"))
+        os.replace(p + ".tmp", p)
+        return "left"
+    except Exception:
+        return ""
 TYPES = {"produced": bool, "produced_stale": bool, "retryable_elsewhere": bool,
          "approvals_requested": int, "mcp_rule_denials": int, "attempts": int, "measurements": dict}
 

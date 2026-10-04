@@ -247,17 +247,5 @@ execution.write(evid, rec)
 # The refusal of a login, left where the quota observer looks (#44, trading's measurement): a
 # call the vendor turned away for the account's sake is written beside the login's kept reading,
 # with its own words, and the next completed call takes it back.
-try:
-    import time as _t
-    rp_ = execution.refusal_path(RT["paths"]["logins_root"], provider, login)
-    if rec["status"] == "COMPLETED":
-        if os.path.exists(rp_):
-            os.remove(rp_)
-    elif execution.login_refusal(rec.get("failure")):
-        os.makedirs(os.path.dirname(rp_), exist_ok=True)
-        json.dump({"at": _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime()), "run_id": run_id,
-                   "failure": str(rec.get("failure"))[:300]}, open(rp_ + ".tmp", "w"))
-        os.replace(rp_ + ".tmp", rp_)
-except Exception:
-    pass                                   # the record is the deliverable; this is a note beside it
+execution.note_refusal(RT["paths"]["logins_root"], provider, login, rec)
 print(json.dumps(rec))
