@@ -249,6 +249,11 @@ cmd_update() {
   PREFIX="$(git_here rev-parse --show-prefix)"
   CAND_DOCKER="$(m "$CAND_DIR")/${PREFIX}docker"
   [ -f "$(u "$CAND_DOCKER")/agent.Dockerfile" ] || fail "the candidate has no ${PREFIX}docker/agent.Dockerfile"
+  # a host that needs its own TLS root for the build keeps it untracked (docker/ca/README.md);
+  # the worktree is clean, so the candidate gets this workspace's copy
+  for _crt in "$HERE"/docker/ca/*.crt; do
+    [ -f "$_crt" ] && mkdir -p "$(u "$CAND_DOCKER")/ca" && cp "$_crt" "$(u "$CAND_DOCKER")/ca/"
+  done
   docker build --quiet -t "$CAND_IMAGE" -f "$CAND_DOCKER/agent.Dockerfile" "$CAND_DOCKER" >/dev/null \
     || fail "the candidate build failed; nothing was changed"
   say "built" "$CAND_IMAGE"

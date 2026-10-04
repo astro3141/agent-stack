@@ -13,6 +13,9 @@ evidence/incident-20260920/
 # scratch
 *.tmp
 
+# a host's own TLS root, given to the image build only on the host that needs it (docker/ca/README.md)
+docker/ca/*.crt
+
 # #281 run evidence (raw ACP events, permission requests)
 evidence/p281/
 
