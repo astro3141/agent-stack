@@ -1966,6 +1966,14 @@ def controls_query():
     check("a schema whose root is not an object is refused the same way", (r.get("status"), r.get("attempts"), n), ("FAILED", 0, 0))
     r, n = door("v9", b'{"say":"{}"}', query="/nonexistent/schema.json")
     check("a schema that cannot be read is refused the same way", (r.get("status"), r.get("attempts"), n), ("FAILED", 0, 0))
+    # #79: a profile yaml without its generated file used to run as an empty profile; refused now
+    open(calls, "w").close()
+    p = _sp.run([sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "np", os.path.join(root, "v1.payload"),
+                 "np.json", "zz-not-generated", "claude", ""], capture_output=True, text=True, env=env)
+    r = json.loads(p.stdout.strip().splitlines()[-1])
+    check("a profile with no generated file is refused before any call, naming cfg.py generate and the profiles that exist",
+          (r.get("status"), r.get("attempts"), sum(1 for _ in open(calls)), "cfg.py generate" in r.get("failure", ""),
+           "research-default" in r.get("failure", "")), ("FAILED", 0, 0, True, True))
     r, n = door("t1", json.dumps({"say": "done", "tool_calls": 1}).encode(), query=False)
     check("a task through the same door is a task: its tool calls counted, its status the adapter's",
           (r.get("kind"), r.get("status"), r.get("tool_calls"), r.get("schema_sha256"), r.get("answer")),

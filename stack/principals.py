@@ -123,6 +123,28 @@ def credential_name(aid, name):
     return next(f"{base}-{n}" for n in range(2, 99) if f"{base}-{n}" not in taken)
 
 
+def rule_problems(name, spec):
+    """What is wrong with a principal's declared tool rules, as sentences; [] when nothing.
+
+    Preloop evaluates a rule's condition by its type: under `simple` an empty expression means
+    "anything else" (the shape every catch-all deny here is written in); under `cel` an empty
+    expression is an empty program and **matches nothing** — an allow written that way lets
+    nothing through, and the step's requests fall to approval until it times out (novel-v2, #77,
+    measured on a Search rule: 600 s and `reject_once` on every request). Written once, here,
+    so `apply` refuses the declaration instead of Preloop accepting it quietly.
+    """
+    out = []
+    for tool, rules in ((spec or {}).get("tool_rules") or {}).items():
+        for i, r in enumerate(rules if isinstance(rules, list) else []):
+            if not isinstance(r, dict):
+                continue
+            if str(r.get("condition_type") or "simple") == "cel" and not str(r.get("condition_expression") or "").strip():
+                out.append(f"{name}: {tool} rule {i + 1} ({r.get('action')}) has condition_type cel and an empty "
+                           "expression, which matches nothing — write condition_type simple for 'anything else', "
+                           "or give the CEL rule an expression (#77)")
+    return out
+
+
 def declared():
     """What this stack declares, plus what each installed package brings with it.
 
@@ -159,6 +181,10 @@ def cmd_apply(dry_run=False):
     changes, env_lines = [], []
     for name, spec in sorted(want.items()):
         rules = spec.get("tool_rules") or {}
+        bad = rule_problems(name, spec)
+        if bad:
+            print(json.dumps({"ok": False, "principal": name, "stage": "rules", "detail": bad}, ensure_ascii=False))
+            return 1
         aid = have.get(name)
         if not aid:
             if dry_run:

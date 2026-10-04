@@ -5429,3 +5429,59 @@ instance moved 837ea2a → 7ac3f1a (the operator had taken #72–#74 live the da
 recorded update of its own), `performed by  the target revision's scripts/release.sh (7ac3f1a)`
 — the hand-over's third measurement — ALL CHECKS PASSED; trading's door DRY_OK re-read, Tuesday's
 cutover untouched. Recorded by the operator on #48.
+
+## 96. The novel-v2 author's findings (#77–#79), the refresh that clears the hold (#44), and the move (#50) (2026-10-04)
+
+**The move (#50).** novel-v2 at agent-stack-novel `2a19f5a`, `requires.stack.min: 7cdb2e4`;
+`packages.sh verify` 112/112, `packages.py stack` ok, state declared; one real run read back
+(`nv2move3`, novel-arc on the seeded store, MLflow `dcefcd4b…`). All three external packages are
+now on the current contract — devflow (§87), trading (§89–§92), novel-v2 — and #50's checklist is
+complete. Three findings came back, each with a measurement, and one more on #44.
+
+**#77 — an allow with `condition_type: cel` and an empty expression matches nothing.** Preloop's
+rule layer: under `simple` an empty expression is "anything else" (every catch-all deny in this
+tree), under `cel` it is an empty program. The author's Search allow written that way fell to
+approval on every request until the step timed out (600 s, `reject_once`). The stack's:
+`principals.rule_problems()` names such a rule, and `apply` refuses the declaration with the
+sentence instead of Preloop accepting it quietly; the header of `config/principals.yaml` and
+docs/packages.md "Identities" say it.
+
+**#78 — `contains()` is a substring, and the rule layer does no path normalization.** Measured on
+Preloop's own condition-test endpoint: `args.path.contains('draft.md')` is true of
+`draft.md/../review_story.json`; `endsWith`/`matches` refuse every variant (7/7). The in-tree
+examples (hello-lane, novel) use `contains`. Not the stack's to normalize — the rule runs in
+Preloop — but the stack owns the account policy: `policy/b-fsmcp.yaml` now denies `..` in the
+path of every write, edit, create and move for every principal, so the traversal row is closed
+category-wide; the substring rows are the rule author's, and the page says how (name the file by
+its end, keep the catch-all deny). The in-tree example rules are left as they are: `simple`
+rules' support for `endsWith` is not measured here, and the policy covers the row that matters.
+
+**#79 — how a role gets web tools was on no page, and a profile yaml that was never generated ran
+as an empty profile.** The switch is the execution profile's `tools.native_allow` (WebSearch,
+WebFetch; `routed: profile_native_allow`), WebFetch's hosts are the egress profile's at the proxy,
+WebSearch runs at the provider — written on docs/packages.md "Identities" now. The second half
+was the stack's defect: `agent_task.py` (and `broker_dispatch.py`, for the timeout) took
+`settings.profile(name) or {}`, so a profile yaml written after the last `cfg.py generate` ran
+with `native_allow: []`, every Search waited for a person, and three runs timed out before the
+author read the adapter's source. The door now refuses a profile with no generated file,
+naming `cfg.py generate` and the profiles that exist — the same refusal admission and the
+runner already made. `roles.py` and `record.py` keep the empty fallback: the first only reads
+routing tables (and binds nothing from an empty one), the second must not fail a run over its
+record.
+
+**#44 — the hold clears with one call inside the container, through the proxy** (novel-v2's
+measurement, 2026-09-28): `HTTPS_PROXY=http://egress:8888 CLAUDE_CONFIG_DIR=/route/claude claude
+-p 'say OK'` refreshes the token because `console.anthropic.com` is on the shared allowlist;
+without the proxy variables the call hangs. That is candidate (a) of §88, measured: a model call
+made for no work. The stack does not make it (decision 2 stands); the runbook's expired-login
+entry now carries it as the operator's manual remedy, and says the org-disabled variant answers
+that call with the real remedy's sentence.
+
+**Measured.** review_controls' new group on `rule_problems` (the refused shape, the two fine
+shapes, no rules); trial_controls' query group +1 (a profile with no generated file: FAILED,
+attempts 0, no call, `cfg.py generate` and the existing names in the sentence); `verify.sh
+--level static`'s policy check now also asks that every write tool denies `..`. Pins at the
+ratchets; **cold-start run 118 green** on 1959d8b (the policy with the new conditions `"applied"`
+on a fresh Preloop). Not measured here: the policy's new conditions on a live Preloop (the cold start
+applies the policy — `"applied"` is its acceptance; the denial itself is one write with `..` on
+the instance, the author's probe endpoint will do).

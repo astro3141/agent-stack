@@ -15,7 +15,11 @@
 # Rules are Preloop's own, in Preloop's shape (`condition_type: simple`):
 #   args.<field> == 'v'        args.<field>.contains('s')        '' = anything else
 # First match wins, and the default without rules is allow — which is why a principal that may do
-# only one thing ends with an explicit deny.
+# only one thing ends with an explicit deny. Two habits of the rule layer (docs/packages.md,
+# "Identities"; novel-v2 #77 #78): '' means "anything else" only under `simple` — under `cel` an
+# empty expression matches nothing, and `apply` refuses it; and contains() is a substring with no
+# path normalization, so an allow on a path names the file by its end (endsWith / matches under
+# cel), while the account policy denies `..` in every write path for everyone.
 
 principals:
   # The platform's own probe role. It exists to make per-role egress measurable on any machine: it

@@ -1297,6 +1297,25 @@ def query_controls():
           r.stdout.strip() == '["reject_once","query_no_tools","query_no_tools",null]', r.stdout + r.stderr)
 
 
+# ---------------------------------------------------------------- 22a. what the rule layer does with a declaration (§96)
+def rules_controls():
+    """novel-v2's findings on Preloop's rule layer, as what the stack now refuses before Preloop
+    accepts it quietly (#77); the traversal deny (#78) is pinned by verify.sh's policy check."""
+    sys.path.insert(0, str(HERE))
+    pr = importlib.import_module("principals")
+    spec = {"tool_rules": {"Search": [{"action": "allow", "condition_type": "cel", "condition_expression": ""},
+                                      {"action": "deny", "condition_type": "simple", "condition_expression": ""}],
+                           "write_file": [{"action": "allow", "condition_type": "cel", "condition_expression": "args.path.endsWith('/draft.md')"}]}}
+    probs = pr.rule_problems("r", spec)
+    check("rules: an allow with condition_type cel and an empty expression is refused by name — it matches nothing (#77)",
+          len(probs) == 1 and probs[0].startswith("r: Search rule 1 (allow)") and "matches nothing" in probs[0]
+          and "condition_type simple" in probs[0], probs)
+    check("rules: an empty expression under simple, and a CEL rule with an expression, are fine",
+          pr.rule_problems("r", {"tool_rules": {"x": [{"action": "deny", "condition_expression": ""},
+                                                       {"action": "allow", "condition_type": "cel", "condition_expression": "args.a == 'b'"}]}}) == [])
+    check("rules: no rules is no problem", pr.rule_problems("r", {}) == [] and pr.rule_problems("r", None) == [])
+
+
 # ---------------------------------------------------------------- 22b. the workspace mount, as each Docker Desktop names it (§94)
 def host_controls():
     """release.sh reads the agent's /work bind source back from docker inspect and compares it with
@@ -1407,6 +1426,7 @@ ease_controls()
 firstuse_controls()
 feedback_controls()
 query_controls()
+rules_controls()
 host_controls()
 install_controls()
 pinkind_controls()

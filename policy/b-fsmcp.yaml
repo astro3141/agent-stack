@@ -2,7 +2,11 @@
 # Reads are allowed, by name. Writes are allowed inside the workspace except:
 #   - anything under a .claude/ directory: the per-run project settings that remove Claude's
 #     native Write/Bash live there, so an agent must not be able to rewrite them;
-#   - any file named forbidden.txt: the rule-based deny control for this PoC.
+#   - any file named forbidden.txt: the rule-based deny control for this PoC;
+#   - any path argument that carries `..`: the rule layer does no path normalization, so a
+#     principal allowed `args.path.contains('draft.md')` could write `draft.md/../other.json`
+#     (novel-v2, #78, measured on Preloop's own condition-test endpoint). Denied here, for every
+#     tool that writes, whatever a principal's rules say.
 # Rules are evaluated by Preloop, not by the agent or the adapter.
 #
 # Every tool a run may call is listed here, by name. The names below are the full tool set of
@@ -30,6 +34,9 @@ tools:
   source: agentstack-fsmcp
   enabled: true
   conditions:
+  - expression: "args.path.contains('..')"
+    action: deny
+    description: no traversal in a write path (#78)
   - expression: "args.path.contains('/.claude') || args.path.endsWith('forbidden.txt')"
     action: deny
     description: no writes to agent settings or to the forbidden control file
@@ -37,6 +44,9 @@ tools:
   source: agentstack-fsmcp
   enabled: true
   conditions:
+  - expression: "args.path.contains('..')"
+    action: deny
+    description: no traversal in an edit path (#78)
   - expression: "args.path.contains('/.claude') || args.path.endsWith('forbidden.txt')"
     action: deny
     description: no edits to agent settings or to the forbidden control file
@@ -44,6 +54,9 @@ tools:
   source: agentstack-fsmcp
   enabled: true
   conditions:
+  - expression: "args.path.contains('..')"
+    action: deny
+    description: no traversal in a new directory's path (#78)
   - expression: "args.path.contains('/.claude')"
     action: deny
     description: no new agent-settings directories
@@ -51,6 +64,9 @@ tools:
   source: agentstack-fsmcp
   enabled: true
   conditions:
+  - expression: "args.source.contains('..') || args.destination.contains('..')"
+    action: deny
+    description: no traversal in a move (#78)
   - expression: "args.source.contains('/.claude') || args.destination.contains('/.claude') || args.destination.endsWith('forbidden.txt')"
     action: deny
     description: no moves into or out of agent settings, none onto the control file
