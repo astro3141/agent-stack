@@ -60,6 +60,17 @@ has to be excluded afterwards: `packages/*` is git-ignored and the packages this
 are the named exceptions, so what you install is yours and stays out of its history (OPERATIONS
 §42).
 
+**The tree `install` leaves is one you can keep committing on.** A `ref` that is a branch is
+checked out *as that branch*, fast-forwarded to what was fetched and tracking `origin/<ref>`, so an
+author who develops the package on the instance that runs it (the loop this page recommends)
+commits where `git push origin <ref>` expects. A local branch that holds commits the remote does
+not have is never moved: `install` refuses, names both ends and the two ways out (push them, or
+drop them), and locks nothing. A `ref` that is a tag or a commit is checked out detached, and the
+line says so. Before this (#70, trading, measured twice) the tree was left detached after every
+re-install: the next commits landed on the detached chain, `git push origin main` pushed a stale
+local main and printed `Everything up-to-date`, and the next `install` restored the old tree over
+the new files — a cutover shipped on old code that way.
+
 That repository ignores what the runtime writes — `__pycache__/` and `*.pyc` at least. `verify`
 compares the working tree against the pinned commit, so a compiled step that is tracked makes every
 run report the package as edited.
@@ -279,7 +290,11 @@ What a **query** is, and what the door does with it (§89, DECISIONS-2026-10-04 
 - **The payload goes as it is.** The file's bytes (`-` reads them from stdin, for a harness that
   never writes a prompt to disk), no `{WS}`, nothing added or wrapped; `request.json` in the
   evidence directory carries exactly what the model saw. What the model is told about the shape
-  it must answer in is the payload's business — the door sends it no schema.
+  it must answer in is the payload's business — the door sends it no schema. **A prompt that was
+  measured under a vendor's schema mode** (`--json-schema`, constrained decoding) **is not the
+  same prompt here until the schema is in the payload**: measured by trading (#62), the same
+  stage grew keys the schema does not name and read `INVALID_OUTPUT` until its payload carried
+  the schema in an output-shape block, then passed 12/12.
 - **No tools.** The vendor is asked for none (the adapter's session options `allowedTools: []`,
   `maxTurns: 1`, and each provider's own switch: Claude's project deny list, Codex's shell and
   web search off; Grok's posture is per login) and no Preloop MCP server travels with the call.

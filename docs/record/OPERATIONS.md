@@ -5288,3 +5288,40 @@ The same control on the pre-fix door: no job, `prompt unreadable`. `verify.sh --
 13/13; pins at the ratchets; **cold-start run 105 green** on b4af006. Not measured: the broker's
 and the runner's two lines on a live brokered query — the first query a confined role makes on the instance measures them; read
 `request.json` in that call's evidence for `kind: query` and `model`.
+
+## 92. The tree `install` leaves is one an author can commit on (#70); the schema in the payload (#62, 2026-10-04)
+
+**#70 (trading, measured twice).** `scripts/packages.sh install` fetched the declared ref and
+checked out `FETCH_HEAD`, which leaves the package tree detached. The documented author loop —
+develop the package on the instance that runs it, commit, `git push origin main`, re-install to
+re-lock — then commits on the detached chain: the push sends a stale local `main`, prints
+`Everything up-to-date` (success-shaped, nothing pushed), and the next `install` locks the old
+remote commit and restores the old tree over the new files. A cutover shipped on old code that
+way; only a telemetry field carrying the old binding name gave it away.
+
+**What changed.** `checkout_ref()` in `packages.sh`: a ref that is a branch (the fetch of
+`+refs/heads/<ref>:refs/remotes/origin/<ref>` succeeds) is checked out *as that branch*,
+fast-forwarded to origin's tip and set to track it; a branch the clone has not got yet is created
+there. A local branch that holds commits the remote does not have is never moved: the install
+refuses, names both ends (`local main at X, origin/main at Y`), says the two ways out (push them,
+or `checkout -B <ref> origin/<ref>` to drop them), locks nothing, and the command exits 1. A ref
+that is a tag or a commit is checked out detached, and the lock line says so (`locked — detached
+— v1 is a tag or a commit, not a branch`); every lock line now says where the tree is. docs/
+packages.md "Where it lives" says all of this.
+
+**#62 (trading's preflight, not a defect).** The door sends the model no schema, by design. A
+prompt measured under a vendor's schema mode (`--json-schema`, constrained decoding) and moved as
+it is grew keys the schema does not name — a `type` key on every observation — and read
+`INVALID_OUTPUT`; with the schema in the payload's output-shape block (trading's
+`door-compose-v2`) the same stages passed 12/12. docs/packages.md "A query", the payload bullet,
+now says it: such a prompt is not the same prompt until the schema is in the payload.
+
+**Measured.** review_controls 248/248, a new group on `checkout_ref` against a throw-away origin:
+the tree #70 measured (detached at A, origin at B) is put back on `main` at B, tracking; a branch
+behind is fast-forwarded; a branch ahead is refused with both ends and the two ways out, HEAD
+unmoved; a tag is detached and said; a branch the clone lacks is created. `verify.sh --level
+static` 13/13; pins at the ratchets (a text pin on the install case was written and taken out
+again — the ratchet at 51 holds). Not measured here: the install command end to end, which needs
+the agent container for the declaration — the next `scripts/packages.sh install trading` on the
+instance measures it, in its `locked — on branch main (tracks origin/main)` line and in
+`git -C packages/trading status` showing a branch.

@@ -1297,6 +1297,61 @@ def query_controls():
           r.stdout.strip() == '["reject_once","query_no_tools","query_no_tools",null]', r.stdout + r.stderr)
 
 
+# ---------------------------------------------------------------- 23. the tree install leaves (#70)
+def install_controls():
+    """packages.sh install checks a branch out as that branch and never moves local work — the
+    function itself, run against a throw-away origin; no docker, no declaration."""
+    sh = (WORK / "scripts" / "packages.sh").read_text()
+    fn = sh[sh.index("checkout_ref() {"):sh.index("where_of() {")]
+    root = Path(tempfile.mkdtemp(prefix="agentstack-install-"))
+    def g(repo, *a):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True).stdout.strip()
+    origin = root / "origin"; origin.mkdir()
+    g(origin, "init", "-q", "-b", "main"); g(origin, "config", "user.email", "c@c"); g(origin, "config", "user.name", "c")
+    (origin / "f").write_text("A\n"); g(origin, "add", "-A"); g(origin, "commit", "-qm", "A"); A = g(origin, "rev-parse", "HEAD")
+    g(origin, "tag", "v1")
+    (origin / "f").write_text("B\n"); g(origin, "add", "-A"); g(origin, "commit", "-qm", "B"); B = g(origin, "rev-parse", "HEAD")
+    def clone(name):
+        d = root / name
+        subprocess.run(["git", "clone", "-q", str(origin), str(d)], check=True, capture_output=True)
+        g(d, "config", "user.email", "c@c"); g(d, "config", "user.name", "c")
+        return d
+    def run(d, ref):
+        r = subprocess.run(["bash", "-c", f"set -u; {fn}\ncheckout_ref '{d}' '{ref}' && echo \"WHERE=$WHERE\""],
+                           capture_output=True, text=True, timeout=60)
+        return r.returncode, r.stdout, r.stderr
+    head = lambda d: g(d, "rev-parse", "HEAD")
+    branch = lambda d: subprocess.run(["git", "-C", str(d), "symbolic-ref", "--quiet", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+    # 1. the shape #70 measured: a tree left detached at A by an earlier install, origin moved on to B
+    d = clone("detached"); g(d, "reset", "-q", "--hard", A); g(d, "checkout", "-q", "--detach", A)
+    rc, out, err = run(d, "main")
+    check("install: a tree left detached is put back on its branch, fast-forwarded to origin, tracking it",
+          rc == 0 and branch(d) == "main" and head(d) == B and "WHERE=on branch main (tracks origin/main)" in out
+          and g(d, "rev-parse", "--abbrev-ref", "main@{upstream}") == "origin/main", (rc, out, err, branch(d), head(d)[:8]))
+    # 2. on the branch, behind: fast-forward
+    d = clone("behind"); g(d, "reset", "-q", "--hard", A)
+    rc, out, err = run(d, "main")
+    check("install: a branch behind origin is fast-forwarded, not detached", rc == 0 and branch(d) == "main" and head(d) == B, (rc, err))
+    # 3. local commits the remote does not have: refused, both ends named, nothing moved
+    d = clone("ahead"); g(d, "reset", "-q", "--hard", A); (d / "g").write_text("C\n"); g(d, "add", "-A"); g(d, "commit", "-qm", "C"); C = head(d)
+    rc, out, err = run(d, "main")
+    check("install: a local branch that holds commits the remote lacks is refused — both ends named, the two ways out, nothing moved",
+          rc == 1 and head(d) == C and branch(d) == "main" and C[:8] in err and B[:8] in err and "push origin main" in err
+          and "checkout -B main origin/main" in err and "moved nothing" in err, (rc, err, head(d)[:8]))
+    # 4. a tag: detached, and said
+    d = clone("tag")
+    rc, out, err = run(d, "v1")
+    check("install: a ref that is a tag is checked out detached, and the line says so",
+          rc == 0 and branch(d) == "" and head(d) == A and "WHERE=detached" in out and "not a branch" in out, (rc, out, err))
+    # 5. no local branch of that name yet: created, tracking
+    d = clone("fresh"); g(d, "checkout", "-q", "-b", "other")
+    g(d, "branch", "-q", "-D", "main")
+    rc, out, err = run(d, "main")
+    check("install: a branch the clone has not got yet is created at origin's tip, tracking it",
+          rc == 0 and branch(d) == "main" and head(d) == B, (rc, out, err, branch(d)))
+    shutil.rmtree(root, ignore_errors=True)
+
+
 def pinkind_controls():
     """pin_kinds.py counts the controls that pin a source file's text rather than a behaviour; the
     count may fall and may not rise. Raise the bound only with a sentence in OPERATIONS."""
@@ -1333,6 +1388,7 @@ ease_controls()
 firstuse_controls()
 feedback_controls()
 query_controls()
+install_controls()
 pinkind_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
