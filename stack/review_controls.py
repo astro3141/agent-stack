@@ -1297,6 +1297,25 @@ def query_controls():
           r.stdout.strip() == '["reject_once","query_no_tools","query_no_tools",null]', r.stdout + r.stderr)
 
 
+# ---------------------------------------------------------------- 22b. the workspace mount, as each Docker Desktop names it (§94)
+def host_controls():
+    """release.sh reads the agent's /work bind source back from docker inspect and compares it with
+    the workspace it runs in; each Docker Desktop names the host path its own way, and a form it
+    does not know refuses every record, update and rollback on that host (PR #73, the first Mac)."""
+    rel = (WORK / "scripts" / "release.sh").read_text()
+    fn = rel[rel.index("norm_host() {"):rel.index("real_of() {")]
+    def norm(path):
+        return subprocess.run(["bash", "-c", f"{fn}\nnorm_host '{path}'"], capture_output=True, text=True, timeout=30).stdout
+    check("host: Windows Docker Desktop's VM form becomes the drive path (both spellings)",
+          norm("/run/desktop/mnt/host/c/Users/x/agent-stack") == "C:/Users/x/agent-stack"
+          and norm("/host_mnt/d/work/stack") == "D:/work/stack",
+          (norm("/run/desktop/mnt/host/c/Users/x/agent-stack"), norm("/host_mnt/d/work/stack")))
+    check("host: macOS Docker Desktop's VM form is the host's absolute path under /host_mnt, no drive (PR #73)",
+          norm("/host_mnt/Users/astro3141/agent-stack-test") == "/Users/astro3141/agent-stack-test",
+          norm("/host_mnt/Users/astro3141/agent-stack-test"))
+    check("host: a plain host path (Linux) is left as it is", norm("/home/user/agent-stack") == "/home/user/agent-stack")
+
+
 # ---------------------------------------------------------------- 23. the tree install leaves (#70)
 def install_controls():
     """packages.sh install checks a branch out as that branch and never moves local work — the
@@ -1388,6 +1407,7 @@ ease_controls()
 firstuse_controls()
 feedback_controls()
 query_controls()
+host_controls()
 install_controls()
 pinkind_controls()
 failed = [n for n, ok in results if not ok]
