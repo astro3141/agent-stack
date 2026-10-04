@@ -1421,6 +1421,25 @@ def pinkind_controls():
     check("pins: assert statements are checks to the classifier — a text read is source-text, a plain one behaviour, a `not in` absence, and the message is the name",
           k2.get("checks") == 4 and k2.get("source-text") == 1 and k2.get("behaviour") == 2 and k2.get("absence") == 1
           and "the helper has out" in r2.stdout, (k2, r2.stdout[-300:]))
+    # a helper under the file's own name is read once the file declares it (§99); undeclared, it is not guessed
+    body = ("from pathlib import Path\n"
+            "def ok(name, cond): pass\n"
+            "def test_b():\n"
+            "    src = Path('/work/stack/step.py').read_text()\n"
+            "    ok('named by the file', 'def out' in src)\n"
+            "    ok('a plain one', 1 + 1 == 2)\n"
+            "    print('not a check', True)\n")
+    (root / "undeclared.py").write_text(body)
+    (root / "declared.py").write_text("# pin_kinds: check=ok\n" + body)
+    r3 = subprocess.run([sys.executable, str(HERE / "pin_kinds.py"), str(root / "undeclared.py"), str(root / "declared.py")], capture_output=True, text=True, timeout=60)
+    try:
+        k3 = json.loads(r3.stdout.strip().splitlines()[-1])
+        und, dec = k3[str(root / "undeclared.py")], k3[str(root / "declared.py")]
+    except Exception:
+        und, dec = {"error": r3.stdout + r3.stderr}, {}
+    check("pins: a helper the file declares (`# pin_kinds: check=ok`) is read like check — the text read source-text, the plain one behaviour, print never",
+          dec.get("checks") == 2 and dec.get("source-text") == 1 and dec.get("behaviour") == 1, (dec, r3.stderr[-200:]))
+    check("pins: an undeclared helper is not guessed from its shape — checks: 0", und.get("checks") == 0, und)
     shutil.rmtree(root, ignore_errors=True)
 
 
