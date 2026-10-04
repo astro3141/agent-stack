@@ -78,7 +78,20 @@ def evaluate(cand, obs, policy, now):
     if age < -60:
         return {**r, "eligible": False, "why": f"unknown: observed_at is {-round(age)}s in the future"}
     if age > policy["max_age_s"]:
+        # A reading too old because the login behind it expired is not the ordinary "stale" (a
+        # collection that has not run for a while): nothing here will take a new one until a
+        # person signs in. Said as `unknown:`, so the bring-up's "every provider's state is
+        # knowable" and the panel's standing risk name it, with the remedy (#44). Measured
+        # three times in two days before this: every run that needed claude held on "stale".
+        if obs.get("live_failed_kind") == "login_expired":
+            return {**r, "eligible": False, "login_expired": True,
+                    "why": f"unknown: the login's token expired — the last reading is {round(age)}s old "
+                           f"(> {policy['max_age_s']}s) and nothing here refreshes it; sign in on the panel"}
         return {**r, "eligible": False, "why": f"stale: {round(age)}s old > {policy['max_age_s']}s"}
+    if obs.get("live_failed_kind") == "login_expired":
+        # still young enough to use, and the login behind it is already dead: said beside the
+        # verdict, so the panel can show it before the reading ages out
+        r["login_expired"] = True
     wins = obs.get("windows") or {}
     if not isinstance(wins, dict):
         return {**r, "eligible": False, "why": "unknown: windows malformed"}

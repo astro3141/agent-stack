@@ -103,6 +103,9 @@ def accounts(profile):
             "identity_basis": e.get("identity_basis"),
             "account_match": None if "why" not in e else not str(e.get("why", "")).startswith("account_mismatch"),
             "session_used": e.get("session_used"), "weekly_used": e.get("weekly_used"),
+            # the login behind the reading is dead, whether or not the reading has aged out yet
+            # (#44): the screen says so beside 연결됨, which the login file alone cannot
+            "login_expired": bool(e.get("login_expired")),
         })
     return {"profile": profile, "decision": ev.get("decision"), "chosen": ev.get("provider"),
             "reason": ev.get("reason"), "providers": rows}

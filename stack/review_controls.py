@@ -200,6 +200,8 @@ def kept_controls():
 echo x >> {root}/calls
 if [ "$(cat {root}/mode)" = ok ]; then
   printf '[{{"provider":"claude","source":"oauth","usage":{{"updatedAt":"%s","primary":{{"usedPercent":6,"windowMinutes":300}},"secondary":{{"usedPercent":43,"windowMinutes":10080}}}}}}]' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+elif [ "$(cat {root}/mode)" = expired ]; then
+  printf '[{{"provider":"claude","source":"oauth","error":{{"message":"Claude OAuth token expired. CodexBar CLI does not launch Claude to refresh credentials. Run `claude login`, then retry."}}}}]'
 else
   printf '[{{"provider":"claude","source":"oauth","error":{{"message":"Claude OAuth usage endpoint is rate limited by Anthropic right now"}}}}]'
 fi
@@ -231,6 +233,42 @@ fi
           d["source"] == "cache:codexbar:oauth" and "reused_after_s" in d and calls() == n, (d, calls(), n))
     check("kept: the reused reading keeps its own time, so the router judges its age as before",
           d["observed_at"] == b["observed_at"], (d["observed_at"], b["observed_at"]))
+    # #44: the login's token expired. The kept reading stands in, and *why* it will not be
+    # refreshed travels with it — so the router can say "sign in" instead of "stale".
+    e = collect("expired", 0)
+    check("#44: an expired login is named as the kind of failure beside the kept reading",
+          e["source"] == "cache:codexbar:oauth" and e.get("live_failed_kind") == "login_expired", e)
+    check("#44: a 429 is a different kind", c.get("live_failed_kind") == "rate_limited", c.get("live_failed_kind"))
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    pol = {"candidates": ["claude"], "max_age_s": 1800, "require_windows": {"claude": ["weekly"]},
+           "max_used_percent": {"session": 80, "weekly": 90}}
+    def route(age, kind):
+        d2 = Path(tempfile.mkdtemp(prefix="agentstack-r44-"))
+        json.dump(pol, open(d2 / "p.json", "w"))
+        o = {**e, "observed_at": (now - timedelta(seconds=age)).isoformat()}
+        if kind is None:
+            o.pop("live_failed_kind", None); o.pop("live_failed", None)
+        else:
+            o["live_failed_kind"] = kind
+        json.dump(o, open(d2 / "claude.json", "w"))
+        r = json.loads(subprocess.run([sys.executable, str(HERE / "router.py"), str(d2 / "p.json"), str(d2)],
+                                      capture_output=True, text=True, env={**os.environ, "ROUTER_NOW": now.isoformat()}).stdout)
+        shutil.rmtree(d2, ignore_errors=True)
+        return r["evaluated"][0]
+    young = route(60, "login_expired")
+    check("#44: a kept reading still young enough is used, and the dead login is said beside the verdict",
+          young["eligible"] is True and young.get("login_expired") is True, young)
+    old = route(27152, "login_expired")
+    check("#44: aged out behind an expired login it is unknown — a person's job — with the remedy",
+          old["eligible"] is False and old["why"].startswith("unknown: the login's token expired") and "sign in on the panel" in old["why"], old["why"])
+    check("#44: aged out for any other reason it is still stale, the ordinary word",
+          route(27152, None)["why"].startswith("stale:") and route(27152, "rate_limited")["why"].startswith("stale:"))
+    import importlib.util as il
+    spec = il.spec_from_file_location("oh_fb", str(HERE / "ops_health.py"))
+    oh = il.module_from_spec(spec); spec.loader.exec_module(oh)
+    check("#44: the standing risk's remedy names the expired token and why the login check still says true",
+          "token expired" in oh.fix_for({"provider": "claude", "why": old["why"]}) and "login check" in oh.fix_for({"provider": "claude", "why": old["why"]}))
     shutil.rmtree(root, ignore_errors=True)
 
 

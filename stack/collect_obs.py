@@ -61,6 +61,19 @@ REUSE_S = int(os.environ.get("AGENTSTACK_OBS_REUSE_S", "120"))
 CACHE = f"{LOGINS}/.quota"
 
 
+def failure_kind(err):
+    """What a live reading's failure is, when the words say: a login whose token expired or that
+    is not there (`login_expired`), the vendor's usage endpoint refusing (`rate_limited`), else
+    `other`. Carried beside the kept reading so the router can say *why* a reading is old
+    rather than "stale" — an expired login is a person's job, a 429 is a wait (#44)."""
+    e = str(err or "").lower()
+    if "expired" in e or "not logged in" in e or "credentials not found" in e or "run `claude login`" in e:
+        return "login_expired"
+    if "rate limit" in e or "429" in e:
+        return "rate_limited"
+    return "other"
+
+
 def kept(provider, login, read):
     """`read()` — one live reading from the vendor — with the last good one kept beside the login.
 
@@ -108,7 +121,8 @@ def kept(provider, login, read):
             pass
         return rec
     if prev:
-        return {**prev, "source": f"cache:{prev.get('source')}", "live_failed": str(err)[:200]}
+        return {**prev, "source": f"cache:{prev.get('source')}", "live_failed": str(err)[:200],
+                "live_failed_kind": failure_kind(err)}
     if rec:
         return rec
     raise RuntimeError(err)

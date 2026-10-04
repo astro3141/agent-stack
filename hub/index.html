@@ -230,7 +230,8 @@ async function loadAccounts() {
     ? `지금 실행하면 <b>${esc(a.chosen)}</b>가 선택됩니다 <span class="muted">(${esc(a.reason)})</span>`
     : `<span class="bad">실행 보류(HOLD)</span> — ${esc(a.reason)}`;
   $("#acct-rows").innerHTML = a.providers.map((p) => {
-    const [ct, cc] = CONN[p.connection] || [p.connection, "muted"];
+    let [ct, cc] = CONN[p.connection] || [p.connection, "muted"];
+    if (p.login_expired) { ct = `${ct} <span class="bad">· 토큰 만료</span>`; cc = "warn"; }
     const match = p.account_match == null ? "—" : p.account_match ? `<span class="ok">일치</span> <span class="muted">(${esc(p.identity_basis)})</span>` : `<span class="bad">불일치</span>`;
     const quota = `${p.weekly_used ?? "—"}% / ${typeof p.session_used === "number" ? p.session_used + "%" : "보고 안 됨"}`;
     const use = p.eligible ? `<span class="ok">가능</span>` : `<span class="bad">불가</span> <span class="muted">${esc(p.why)}</span>`;
