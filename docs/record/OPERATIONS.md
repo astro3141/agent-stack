@@ -5365,3 +5365,24 @@ regenerated, ok. An orphan compose service (`agst-mac-toolsvc`) is the instance'
 **Measured.** `verify.sh --level static` 13/13 (the REPEATABLE scan through the function);
 trial_controls' template group 26/26 here; pins at the ratchets; **cold-start run 109 green** on
 8cc7e38.
+
+## 94. The workspace mount as macOS Docker Desktop names it (PR #73, 2026-10-04)
+
+**Found by the first Mac host while taking #72 live** (the trading author's session, PR #73 — opened
+without being asked, taken because it was small and right). `release.sh` reads the agent's `/work`
+bind source back from `docker inspect` and compares it with the workspace it runs in
+(`require_same_workspace`, so a release never describes a checkout other than the mounted one).
+Each Docker Desktop names the host path its own way: Windows as `/run/desktop/mnt/host/c/…` or
+`/host_mnt/c/…` (a drive letter), which `norm_host` knew; macOS as `/host_mnt/Users/…` — the
+host's absolute path under `/host_mnt`, no drive — which it did not, so every `record`, `update`
+and `rollback` on that host was refused (`this script is in /Users/… but agst-mac-agent runs
+/host_mnt/Users/…`; measured: `release.sh record --tag pre-pr72`).
+
+**What changed.** One case arm in `norm_host`: `/host_mnt/*` → the prefix stripped, the absolute
+path kept; the Windows arm stays first (its `?` takes a one-letter segment only). Here: a review
+control runs `norm_host` on the four shapes — the two Windows spellings, the macOS form, a plain
+Linux path — so the next host form that appears is one line and one measurement.
+
+**Measured.** review_controls 251/251; `verify.sh --level static` 13/13; pins at the ratchets.
+The Mac host's own measurement (a recorded update through the fixed script) is the operator's,
+with the `/bin/bash scripts/verify.sh` run §93 waits on.
