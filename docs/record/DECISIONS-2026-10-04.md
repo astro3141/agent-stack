@@ -134,3 +134,109 @@ update 1회가 측정.
 
 §86 인수 점검 수정 10건, §86 라이브 측정 3건, §87 devflow 피드백 6건, §88 #44와 trading 변종,
 #61. 머지: PR #57, #58, #59. 열림: PR #60. 콜드 스타트 run 88·91·93 녹색.
+
+---
+
+## 결정 1의 근거 자료 — 세 provider와 ACP의 구조화 출력 (2026-10-04 조사)
+
+운영자의 질문: 문의 장기 형태는 무엇인가. JSON schema여야 하나. 세 provider가 다 지원하나.
+JSON의 장점은. acpx가 그쪽으로 갈 것인가. 아래는 공식 문서·핀된 버전의 소스·npm tarball에서
+읽은 것이고, 확인 못 한 것은 UNVERIFIED로 표시했다.
+
+### 1. 각 provider CLI의 headless 모드 (우리 이미지에 핀된 버전 기준)
+
+| | Claude Code 2.1.287 | Codex 0.160.0 | Grok 1.0.46 |
+|---|---|---|---|
+| headless JSON 출력 | `-p --output-format json` | `exec --json` (JSONL 이벤트 스트림) | `-p --output-format json` (docs.x.ai) |
+| schema 제약 출력 | `--json-schema` → `structured_output`. 위반 시 내부 재시도, 소진되면 `subtype: error_max_structured_output_retries` | `--output-schema FILE` → 최종 메시지가 schema에 맞는 JSON 문자열 | **UNVERIFIED** — 공식 문서·npm에 없음. 오픈소스 repo 문서에 `--json-schema`가 지나가듯 언급될 뿐 |
+| payload를 stdin으로 | 가능 (10 MB) | 가능 (`-` 또는 파이프) | **불가** — "headless mode does not read piped stdin"; `--prompt-file` 사용 |
+| 모델 이름(pin) | `modelUsage` | **없음** — 어떤 이벤트에도 model 필드 없음 | `modelUsage` (repo 문서) |
+| 턴 수 | `num_turns` | `turn.*` 이벤트 수를 세면 됨 | `num_turns` |
+| permission denial | `permission_denials` | **없음** — 비대화형이라 정책(`--sandbox`)으로 다룸, 이벤트 없음 | **없음** — "does not collect permission denials" |
+| 토큰 사용량 | `usage`, `modelUsage` | `turn.completed.usage` | `usage`, `modelUsage`, `total_cost_usd` |
+
+출처: code.claude.com/docs/en/headless, …/agent-sdk/structured-outputs, …/cli-reference;
+developers.openai.com/codex/noninteractive, github.com/openai/codex `rust-v0.160.0`의
+`exec/src/cli.rs`·`exec_events.rs`; docs.x.ai/build/cli/headless-scripting, xai-org/grok-build 사용자
+가이드 14·15(브랜치 main, 1.0.46 태그 아님).
+
+**읽는 법.** trading이 얼린 envelope(`modelUsage`, `num_turns`, `permission_denials`,
+`structured_output`)은 **Claude Code CLI 하나에만 그 모양으로 존재**한다. Codex는 모델 이름과
+denial이 없고, Grok은 schema 자체가 미확인이고 stdin을 안 읽는다. 즉 "CLI envelope를 문이
+그대로 내줘라"(선택지 C)는 세 provider에 같은 보증을 줄 수 없다. 플랫폼 계약이 될 수 없는 모양이다.
+
+### 2. API 레벨 (CLI 아래)
+
+| | 구조화 출력 |
+|---|---|
+| Anthropic Messages API | `output_config.format` (json_schema). 현행 모델 전부. 제약: 재귀 schema·수치/길이 제약 불가, `additionalProperties: false` 필수. citations와 양립 불가 |
+| OpenAI API | Responses `text.format {type: json_schema, strict}`, Chat `response_format` |
+| xAI API | `response_format {type: json_schema}`; "tools와 함께는 Grok 4 family만" |
+
+세 vendor의 **API**는 모두 schema 제약 출력을 지원한다. 그러니 장기적으로 이 능력은 vendor가
+흔히 주는 것이고, 문제는 그것이 우리 경로(ACP)까지 닿느냐뿐이다.
+
+### 3. ACP · acpx · 어댑터 (우리가 실제로 타는 경로)
+
+- **ACP 프로토콜**: `session/prompt`에 schema/구조화 출력 필드가 **없다**. `PromptResponse`는
+  `stopReason`, `_meta`, 그리고 "UNSTABLE, not part of the spec yet"인 `usage`. 턴 수·도구 호출 수
+  필드 없음. RFD 목록에 구조화 출력 관련 RFD **없음**. 움직이는 건 토큰 사용량뿐(Session Usage
+  완료, End-Turn Token Usage 초안). 출처: agentclientprotocol.com/protocol/v1/schema, /prompt-turn,
+  /rfds/updates, /rfds/end-turn-token-usage.
+- **acpx 0.19.4**: `sessionOptions`는 `model, allowedTools, maxTurns, systemPrompt, env`만 통과
+  (`dist/session-options-*.d.ts`). 턴별 schema 옵션 없음. `turn.result`는 `status/stopReason/_meta`.
+  확장 알림(`_claude/sdkMessage`)은 기록은 하되 타입된 스트림에서 **버림**. 로드맵 문서에 구조화
+  출력 없음 (github.com/openclaw/acpx).
+- **claude-agent-acp 0.85.1**: `_meta.claudeCode.options`로 `outputFormat`을 **받긴 하지만**
+  `structured_output`을 PromptResponse에 **내보내지 않는다**(dist에 그 문자열 없음;
+  `error_max_structured_output_retries`만 실패로 매핑). 유일한 우회는 `emitRawSDKMessages`로 raw SDK
+  메시지를 확장 알림으로 흘리는 것인데 acpx가 그걸 버린다. 토큰은 `_meta.quota.model_usage`에
+  모델별로 있음(0.71.0부터).
+- **codex-acp 2.1.1**: schema를 `turn/start`로 넘기지 않음(내부 제목 생성용 schema 하나뿐).
+  토큰은 같은 `_meta.quota` 모양.
+
+**결론(3).** 지금 경로에서 "모델이 schema에 맞춰 생성한다"는 보증은 **닿지 않고, 위쪽 어디도
+그쪽으로 움직이지 않는다**. 닿는 것은: 모델별 토큰(`model_usage`), 원시 이벤트(도구 호출 포함),
+permission 요청과 Preloop의 답. 문이 이걸로 줄 수 있는 보증은 "모델 pin", "도구 호출 0건"(이벤트에
+tool_call이 없음), "한 번의 prompt = 한 턴"이다. 없는 것은 "schema에 맞춰 디코딩"뿐이고, 그것은
+사후 검증 + 유한 재시도로 대신할 수 있다. Claude Code CLI의 `--json-schema`도 내부적으로는
+"위반 시 재시도, 소진 시 실패"다 — 문이 같은 의미론을 가질 수 있다.
+
+### 4. "꼭 JSON이어야 하나", "JSON의 장점은"
+
+trading이 실제로 필요한 것은 넷이다. (a) 기계가 검증할 수 있는 답, (b) 도구를 안 썼다는 증거,
+(c) 모델 pin, (d) 입력 바이트를 그대로 넣을 수 있음. JSON schema는 (a)를 얻는 **한 방법**이지
+유일한 방법이 아니다. 장점: 파싱이 결정적이고, schema로 형태를 얼릴 수 있고, diff와 기록이 쉽고,
+세 vendor API가 다 지원한다. 단점: 우리 경로에선 모델 단 제약이 안 닿는다(3절), vendor CLI마다
+다르다(1절).
+
+in-tree 패키지의 현재 답: novel은 리뷰어에게 "이 JSON을 `review_story.json`에 써라"고 시키고
+`novel_stage.py`가 **사후에** 객체인지·`verdict`가 허용값인지 검증한다. 즉 novel은 (a)를
+"파일 + 사후 검증"으로 이미 풀고 있고, trading은 "CLI schema"로 풀고 있다. 같은 필요를 두
+패키지가 각자 풀었다 — CONTRACT 2절이 "공통"이라고 부르는 바로 그 증거다.
+
+### 5. 그래서 문의 장기 형태
+
+문 하나, 호출 종류 둘.
+
+| 종류 | 무엇 | 문이 주는 보증 | 지금 |
+|---|---|---|---|
+| **agent task** (지금의 문) | 도구를 써서 산출물을 만든다 | 권한은 Preloop, 산출물은 이 호출이 썼는가, 기록 | 있음 |
+| **query** (추가) | 도구 없이 payload → 객체. 모델을 함수처럼 | 입력 바이트 기록(stdin/inline), **도구 호출 0건**(이벤트로 확인), 모델 pin(`model_usage`), **답이 선언된 schema를 통과**(사후 검증, 유한 재시도, 실패는 `SCHEMA_REJECTED`) | 없음 — 이것이 B |
+
+query 종류는 ACP 위에서 지금 만들 수 있다(프롬프트로 JSON을 요구 → `text` 또는 파일 → 문이
+검증). 나중에 ACP/acpx가 schema를 싣게 되면 검증 앞에 "모델 단 제약"을 **같은 문 안에서** 더하면
+된다. 어댑터에 CLI 경로를 따로 여는 것(C)은 1절의 표가 말하듯 provider마다 다른 보증을 세 벌
+관리하는 일이고, 그중 Claude만이 trading이 얼린 모양을 준다.
+
+**trading에 되묻는 질문 하나는 그대로다.** "모델 단 schema 제약 대신 문의 사후 검증 + 유한
+재시도로, 그리고 `num_turns` 대신 '한 prompt = 한 턴 + 도구 호출 0건'으로 freeze를 재인증할 수
+있는가." 된다면 B의 query 종류를 만든다. 안 된다면 trading의 직접 호출을 계약의 명시된 예외로
+적고(§88에 적은 대로), 문은 지금 모양으로 둔다.
+
+### 6. 확인 못 한 것 (측정이 필요)
+
+- Grok 1.0.46 바이너리에 `--json-schema`가 실제로 있는가: 이미지 안에서 `grok --help` 한 번.
+- claude-agent-acp의 `emitRawSDKMessages` 경로로 `structured_output`이 acpx의 journal까지는
+  오는가: 측정 전까지 우회로 치지 않는다.
+- trading freeze guard의 다섯 필드 중 재인증 가능한 것: 저자의 답.
