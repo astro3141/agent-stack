@@ -14,18 +14,34 @@ the control wrote itself under a temporary directory is behaviour, not text.
 
 A check is a `check(name, …)` call — the stack's own shape — or an `assert` statement, which is how
 a package may write its controls (novel-v2's read `checks: 0` before this, §98); an assert's name
-is its message when it has one, else its test. Anything else is not a check to this tool.
+is its message when it has one, else its test. A controls file whose helper has another name says
+so on a line of its own, and the tool reads that name like `check` (§99):
+
+    # pin_kinds: check=ok            one or more names, comma-separated
+
+Nothing is guessed from a call's shape: a helper the file does not declare is not a check to this
+tool, and the count says `checks: 0`.
 """
 import ast, json, re, sys
 from collections import Counter
 from pathlib import Path
 
 SOURCE = re.compile(r'(WORK|HERE)\s*/|"/work/|/work/stack')
+DECLARED = re.compile(r"^\s*#\s*pin_kinds:\s*check\s*=\s*([A-Za-z_][\w, ]*)", re.M)
+
+
+def check_names(src):
+    """`check`, plus whatever the file declares as its own helper (`# pin_kinds: check=ok,expect`)."""
+    names = {"check"}
+    for m in DECLARED.finditer(src):
+        names |= {n.strip() for n in m.group(1).split(",") if n.strip()}
+    return names
 
 
 def classify(path):
     src = Path(path).read_text()
     tree = ast.parse(src)
+    names = check_names(src)
 
     def text_vars_in(node):
         """Variables of this scope bound to a repository file's text."""
@@ -49,7 +65,7 @@ def classify(path):
 
     def checks_in(node, text_vars):
         for n in ast.walk(node):
-            if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "check" and n.args and isinstance(n.args[0], ast.Constant):
+            if isinstance(n, ast.Call) and getattr(n.func, "id", "") in names and n.args and isinstance(n.args[0], ast.Constant):
                 name = str(n.args[0].value)
                 cond = ast.get_source_segment(src, n.args[1]) if len(n.args) > 1 else ""
             elif isinstance(n, ast.Assert):

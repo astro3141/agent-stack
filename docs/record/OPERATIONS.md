@@ -5533,3 +5533,19 @@ classifies 4 (one source-text, two behaviour, one absence) and lists the assert'
 name; `verify.sh --level static` 13/13; **cold-start run 122 green** on ac13811. On the instance,
 novel-v2's controls read `checks: 2, behaviour: 2` where they read 0 (its author notes a helper
 under another name — `ok(...)` — is still not a check to the tool; the page says as much).
+
+## 99. A controls file names its own check helper, and `pin_kinds.py` reads it (2026-10-04)
+
+§98 made an `assert` a check to the tool; novel-v2's controls are mostly calls of a helper of
+their own, `ok(name, cond)` — 131 of them — which the tool still did not see (`checks: 2`,
+the two asserts). The question the author left: should the tool read that style? Three ways:
+leave it (the page is honest, the package rewrites 131 lines or goes without); guess from a
+call's shape (a string constant first — `print("…", x)` would count, a wrong number); or let the
+file say. The third: a line of its own, `# pin_kinds: check=ok` (several names, comma-separated),
+and calls of that name are read exactly like `check` — the condition's reads decide the kind.
+Nothing is guessed: an undeclared helper is not a check, `checks: 0`, and the page says both.
+
+**Measured.** review_controls 257/257: the same file undeclared reads 0; declared, its two
+`ok(...)` calls read as one source-text and one behaviour, and `print("…", True)` never counts.
+The stack's own suites' counts and ratchets unchanged (51 / 167). `verify.sh --level static`
+13/13.

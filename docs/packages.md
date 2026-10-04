@@ -736,8 +736,9 @@ behaviour you notice has a name.
 - **Controls** (§82–§83): a check that pins your own source text (`"…" in open(step).read()`)
   passes when the behaviour is wrong and fails when the wording changes; the stack converted its
   own and holds the count with a ratchet. Yours are yours; `pin_kinds.py` classifies any
-  controls file — its `check(name, …)` calls and its `assert` statements (§98); a control written
-  another way is not a check to it, and it says `checks: 0`.
+  controls file — its `check(name, …)` calls and its `assert` statements (§98), and the calls of
+  a helper of your own once the file declares it on a line of its own, `# pin_kinds: check=ok`
+  (§99); a control written any other way is not a check to it, and it says `checks: 0`.
 
 **#34 (2026-10-02/03, §76, §79 — the toolchain lives in the image).**
 - `claude`, `conductor` and `preloop` run from `/opt` in the agent image; `/home/agent/.local/bin`
