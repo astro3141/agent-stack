@@ -46,9 +46,12 @@ SELF_MCP = os.environ.get("AGENTSTACK_BROKER_MCP") or settings.url("broker", "mc
 RUNNER_PORT = int(os.environ.get("AGENTSTACK_RUNNER_PORT", "8790"))
 NAME = re.compile(r"[a-z][a-z0-9-]{0,39}")
 
-JOBS = {}          # token -> {"role", "born", "done"}
+JOBS = {}          # token -> {"role", "born", "done", "ttl_s"}
 JOBS_LOCK = threading.Lock()
-TOKEN_TTL_S = 3600
+# A token lives as long as its job may: the job's own timeout, plus the margin the broker waits
+# on the runner. A fixed 3600 s was exactly long-task's timeout_ms, and the token is born before
+# the runner is even contacted — so the last seconds of an hour-long call answered 401 (§86).
+TOKEN_MARGIN_S = 60
 
 
 def provisioned():
@@ -143,8 +146,10 @@ class H(BaseHTTPRequestHandler):
         if credential(role) is None:
             return self._send(503, {"error": f"the broker holds no credential for {role!r}"})
         token = secrets.token_urlsafe(24)
+        timeout_s = int(req.get("timeout_s") or 900)
         with JOBS_LOCK:
-            JOBS[token] = {"role": role, "born": time.time(), "done": False}
+            JOBS[token] = {"role": role, "born": time.time(), "done": False,
+                           "ttl_s": timeout_s + TOKEN_MARGIN_S}
         job = {"role": role, "profile": profile, "profile_name":
                str(req.get("profile_name") or "research-default"),
                "provider": str(req.get("provider") or "claude"),
@@ -154,7 +159,7 @@ class H(BaseHTTPRequestHandler):
                "prompt": str(req.get("prompt") or ""),
                "expected": str(req.get("expected") or "out.txt"),
                "run_id": str(req.get("run_id") or f"broker-{int(time.time())}"),
-               "timeout_s": int(req.get("timeout_s") or 900),
+               "timeout_s": timeout_s,
                # the retry number, digits or nothing: it names the call's evidence in the runner
                "attempt": str(req.get("attempt") or "") if re.fullmatch(r"\d{0,3}", str(req.get("attempt") or "")) else "",
                "job_token": token, "mcp_url": SELF_MCP}
@@ -177,7 +182,7 @@ class H(BaseHTTPRequestHandler):
         now = time.time()
         with JOBS_LOCK:
             job = JOBS.get(auth)
-            if job and (job["done"] or now - job["born"] > TOKEN_TTL_S):
+            if job and (job["done"] or now - job["born"] > job["ttl_s"]):
                 job = None
         if not job:
             return self._send(401, {"error": "not a live job token"})
