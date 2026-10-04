@@ -117,6 +117,9 @@ norm_host() {
     /run/desktop/mnt/host/?/*|/host_mnt/?/*)
       p="${1#/run/desktop/mnt/host/}"; p="${p#/host_mnt/}"
       d="${p%%/*}"; printf '%s:/%s' "$(printf '%s' "$d" | tr 'a-z' 'A-Z')" "${p#*/}";;
+    # macOS Docker Desktop: the VM form is the host's absolute path under /host_mnt,
+    # not a drive letter (/host_mnt/Users/... — measured on the first Mac host, §93 follow-up)
+    /host_mnt/*) printf '/%s' "${1#/host_mnt/}";;
     *) printf '%s' "$1";;
   esac
 }
