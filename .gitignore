@@ -84,6 +84,10 @@ evidence/*
 # and this repository is public — the same split as config/packages.local.yaml (OPERATIONS §60).
 # `closed` (baseline only) and `probe` (the platform's own) ship tracked as the shapes to copy.
 docker/egress/allow.local
+# The Python libraries this instance's packages need in the image (OPERATIONS §101): the
+# operator's approval list, built into /opt/venv by up.sh, recorded with each release; the
+# stack's own are tracked beside it (docker/python/stack.txt).
+docker/python/python.local
 docker/egress/profiles/*.allow
 !docker/egress/profiles/closed.allow
 !docker/egress/profiles/probe.allow

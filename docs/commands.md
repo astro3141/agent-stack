@@ -18,9 +18,9 @@ docker exec agentstack-admin /opt/venv/bin/python /work/stack/<script>.py …   
 | | |
 |---|---|
 | `scripts/install.sh [--check] [--preloop-dir DIR] [--no-preloop]` | host check; install Preloop; bring up |
-| `scripts/up.sh [--composition full\|no-record\|runtime] [--observer] [--check] [--recreate]` | build, start, claim, apply policy and principals, check; `--observer` adds codex's optional second quota source |
+| `scripts/up.sh [--composition full\|no-record\|runtime] [--observer] [--check] [--recreate] [--no-build]` | build, start, claim, apply policy and principals, check; `--observer` adds codex's optional second quota source; `--no-build` brings up the images that exist (a rollback, §101); `docker/python/python.local` is built in, pinned |
 | `scripts/down.sh [--volumes] [--now]` | stop the runs first, then the containers. `--volumes` also deletes logins, the Preloop database and the agent home |
-| `scripts/backup.sh [--out DIR] [--key FILE] [--no-stop] [--allow-missing]` | one consistent, encrypted archive of everything that cannot be regenerated — Preloop's database, the login volumes, MLflow, evidence, `config/`, `policy/`, `state/`, Preloop's install directory and `docker/*.env` |
+| `scripts/backup.sh [--out DIR] [--key FILE] [--no-stop] [--allow-missing]` | one consistent, encrypted archive of everything that cannot be regenerated — Preloop's database, the login volumes, MLflow, evidence, `config/`, `policy/`, `state/`, Preloop's install directory, `docker/*.env` and the instance's own `docker/python/python.local` and `docker/egress/allow.local` |
 | `scripts/restore.sh --archive FILE --workspace DIR [--stack NAME] [--key FILE] [--clone-from REPO --rev REV] [--into-existing]` | bring a backup up as a *separate* instance, and verify it against the live one |
 | `scripts/restore.sh --archive FILE --verify-only [--key FILE]` | unpack the archive and check every member against its manifest; writes nothing |
 | `scripts/release.sh record [--tag NAME]\|list\|update --to REV\|rollback --to TAG` | keep what is running, move to something else, go back |

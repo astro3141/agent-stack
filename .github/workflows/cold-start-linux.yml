@@ -38,6 +38,11 @@ jobs:
       - name: what this host has
         run: bash scripts/install.sh --check
 
+      # An instance's own library (§101), written before the build as an operator would — pinned,
+      # git-ignored — and read back from the image after. pypdf: pure Python, small.
+      - name: the instance's own Python library, declared before the build
+        run: printf 'pypdf==6.19.0\n' > docker/python/python.local
+
       - name: install Preloop, build the stack, claim it, check it
         id: install
         continue-on-error: true
@@ -79,10 +84,52 @@ jobs:
           print("\nthe stack came up on a host that had none of it; only the provider logins failed")
           PY
 
+      - name: the instance's library is in the image, and the build left what it resolved
+        run: |
+          set -o pipefail
+          docker exec agentstack-agent /opt/venv/bin/python -c 'import pypdf; print("pypdf", pypdf.__version__)' | tee /tmp/pylocal.log
+          grep -q '^pypdf 6.19.0$' /tmp/pylocal.log
+          docker exec agentstack-agent grep -i '^pypdf==6.19.0' /opt/python/freeze.txt | tee -a /tmp/pylocal.log
+          # --check exits 1 here (no logins on a runner); the line is what is measured
+          (bash scripts/up.sh --check 2>&1 || true) | grep "the instance's Python libraries are pinned" | tee -a /tmp/pylocal.log
+          grep -q "ok    the instance's Python libraries are pinned" /tmp/pylocal.log
+
       # The stack is up and nobody is signed in: exactly the `stack` level of scripts/verify.sh —
       # the checks, the three control suites, package locks and controls, one hello-lane run.
       - name: verify at the stack level
         run: set -o pipefail; bash scripts/verify.sh --level stack 2>&1 | tee /tmp/verify.log
+
+      # Two recoveries (§101): a record carries the instance's input and what the venv resolved; a
+      # rollback brings the kept image up without a rebuild, verifies the running id is the record's,
+      # and restores the input — here, after it was deleted.
+      - name: record a release and roll back to it — the kept image comes up unrebuilt, the input comes back
+        run: |
+          set -o pipefail
+          bash scripts/release.sh record --tag cold 2>&1 | tee /tmp/release.log
+          grep -q 'instance inputs *docker/python/python.local' /tmp/release.log
+          grep -q 'resolved versions (python.freeze)' /tmp/release.log
+          rm docker/python/python.local
+          # the rollback's checks fail here where the install's do — the logins, nobody signed in —
+          # and the rollback exits 1 on them by design (§100): judged by its lines, as the install is
+          (bash scripts/release.sh rollback --to cold 2>&1 || true) | tee -a /tmp/release.log
+          grep -q 'as recorded, absence included' /tmp/release.log
+          grep -q "image agent .*running the release's kept image" /tmp/release.log
+          test -f docker/python/python.local
+          docker exec agentstack-agent /opt/venv/bin/python -c 'import pypdf'
+          python3 - <<'PY'
+          import re, sys
+          log = open("/tmp/release.log", encoding="utf-8", errors="replace").read()
+          after = log[log.index("== rolling back"):]
+          allowed = {"claude /route login", "codex /route login", "grok /route login",
+                     "observer codex login", "every provider's state is knowable",
+                     "observation fresh (< 10 min)", "the router can choose a provider"}
+          failed = [re.sub(r"\s{2,}.*$", "", l.strip()[6:]).strip() for l in after.splitlines() if l.startswith("  FAIL")]
+          bad = [f for f in failed if f not in allowed]
+          for f in failed: print(("expected  " if f in allowed else "UNEXPECTED ") + f)
+          ok = "the kept images are up" in after
+          print("the rollback said the kept images are up:", ok)
+          sys.exit(1 if bad or not ok else 0)
+          PY
 
       - name: keep the logs
         if: always()
@@ -92,6 +139,8 @@ jobs:
           path: |
             /tmp/cold-start.log
             /tmp/verify.log
+            /tmp/pylocal.log
+            /tmp/release.log
 
       - name: take it down the way an operator would
         if: always()

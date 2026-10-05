@@ -243,6 +243,16 @@ if untar_host docker-env "$STAGE/x-docker-env"; then
   done
   say "docker/*.env" "$(ls "$STAGE/x-docker-env/docker-env" | tr '\n' ' ')"
 fi
+# the instance's own inputs (docker/python/python.local, docker/egress/allow.local — §101):
+# put back where the build and the proxy read them; the next up.sh builds from them
+if untar_host instance-inputs "$STAGE/x-inputs"; then
+  for f in docker/python/python.local docker/egress/allow.local; do
+    [ -f "$STAGE/x-inputs/$f" ] || continue
+    mkdir -p "$WORKSPACEU/$(dirname "$f")"
+    cp "$STAGE/x-inputs/$f" "$WORKSPACEU/$f"
+  done
+  say "instance inputs" "$(cd "$STAGE/x-inputs" && find docker -type f | tr '\n' ' ')"
+fi
 if untar_host research "$STAGE/x-research"; then
   RES_SRC="$STAGE/x-research/$(ls "$STAGE/x-research" | head -1)"
   rm -rf "$WORKSPACEU/evidence/research"; mkdir -p "$WORKSPACEU/evidence"

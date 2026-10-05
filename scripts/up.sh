@@ -41,12 +41,13 @@ PRELOOP_DIR="${PRELOOP_DIR:-$HOME/.preloop-oss}"
 # docker on Windows needs native paths; path conversion is off below (MSYS_NO_PATHCONV)
 command -v cygpath >/dev/null && { PRELOOP_DIR="$(cygpath -m "$PRELOOP_DIR")"; HERE="$(cygpath -m "$HERE")"; }
 export MSYS_NO_PATHCONV=1
-MODE="up"; COMPOSITION="${COMPOSITION:-full}"
+MODE="up"; COMPOSITION="${COMPOSITION:-full}"; BUILD="--build"
 while [ $# -gt 0 ]; do
   case "$1" in
     --composition) COMPOSITION="${2:-full}"; shift 2;;
     --observer) OBSERVER=1; shift;;
     --check|--recreate|up) MODE="$1"; shift;;
+    --no-build) BUILD="--no-build"; shift;;   # bring up the images that exist, build nothing (a rollback, §101)
     *) echo "unknown argument: $1" >&2; exit 2;;
   esac
 done
@@ -89,6 +90,25 @@ export STACK OPS_PORT HUB_PORT MLFLOW_PORT
 export PRELOOP_API_PORT PRELOOP_GATEWAY_PORT PRELOOP_CONSOLE_PORT
 FORCE=""; [ "$MODE" = "--recreate" ] && FORCE="--force-recreate"
 
+# The instance's own Python libraries go into the image at build (docker/python/python.local,
+# OPERATIONS §101), and every line is pinned: a line without == would resolve differently at every
+# build, and the release record could not say what the image carries. Prints `none` when there is
+# no file, `pinned` when every line is, else the first line that is not.
+python_local_report() {  # file
+  [ -f "$1" ] || { echo none; return 0; }
+  _n=0
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    _n=$((_n+1))
+    _t="$(printf '%s' "$_line" | sed 's/[[:space:]]*#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ -n "$_t" ] || continue
+    case "$_t" in
+      [A-Za-z0-9]*==?*) ;;   # a distribution name, == and a version (extras and --hash may follow)
+      *) echo "line $_n is not pinned: $_line"; return 0;;
+    esac
+  done < "$1"
+  echo pinned
+}
+
 # Apply this stack's policy, and when Preloop refuses it, say what it said. The result line alone
 # ("apply failed") sent a reader to the admin container's state file; the cold-start runner failed
 # three times before the reason was read from there (a value Preloop 0.15.0 does not accept, §63).
@@ -120,7 +140,17 @@ if [ "$MODE" != "--check" ]; then
   # What the proxies read is generated: tracked baseline + this instance's own additions (§60).
   # Before the containers start, so a first bring-up on a fresh clone has the file to mount.
   bash "$HERE/scripts/egress_gen.sh" || exit 1
-  (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --build $FORCE) || exit 1
+  _pl="$(python_local_report "$HERE/docker/python/python.local")"
+  case "$_pl" in none|pinned) ;;
+    *) echo "docker/python/python.local: $_pl" >&2
+       echo "  every line is one distribution pinned with == (comments and blank lines aside); scripts/packages.py python prints the candidates" >&2
+       exit 1;;
+  esac
+  if [ "$BUILD" = "--no-build" ]; then   # a rollback: the kept images, as they are (§101)
+    (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --no-build $FORCE) || exit 1
+  else
+    (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --build $FORCE) || exit 1
+  fi
   # `up` only starts; a service left out of this composition would keep running from the last one,
   # and freeing its memory is the reason for choosing a smaller composition in the first place.
   # Removing the container leaves its data alone: MLflow's database and artifacts are a bind mount.
@@ -313,6 +343,12 @@ if [ "$MODE" != "--check" ] && docker ps --format '{{.Names}}' | grep -qx "$STAC
   in_agent "$PY_IN_AGENT"' /work/stack/grok_posture.py ensure 2>/dev/null' | grep -v '"no login"' | sed 's/^/   grok posture: /' || true
 fi
 
+echo "== the image's inputs"
+# docker/python/python.local is built into the image (§101); a line that is not pinned fails the
+# bring-up, and this says so on a --check too. `none` is a fresh clone.
+_plf="$HERE/docker/python/python.local"
+check "the instance's Python libraries are pinned (docker/python/python.local)" \
+      "$( [ -f "$_plf" ] && echo pinned || echo none )" "$(python_local_report "$_plf")"
 echo "== isolation"
 # The addresses the checks below probe are the generated settings' (config/generated/runtime.json,
 # generated above), read once here — the same ones every step reads, written in environment.yaml

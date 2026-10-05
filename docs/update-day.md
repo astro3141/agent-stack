@@ -104,6 +104,18 @@ scripts/release.sh rollback --to pre-<yyyymm>   # workspace revision, images (th
 scripts/up.sh --check
 ```
 
+**Two recoveries, not one (§101).** A rollback puts the release's *kept images* back and brings
+them up without a rebuild (`up.sh --recreate --no-build`), then checks that every container runs
+the recorded image id: the image is what ran, and nothing is reconstructed. It also restores the
+release's *configuration* — `config/`, `policy/`, and from a format-4 record the instance's own
+inputs, `docker/python/python.local` and `docker/egress/allow.local`, absence included. That half
+is for the **next** bring-up, which builds from the tree again (`up.sh` always does): with the
+inputs restored it reproduces the release; without them it would drift from it with nothing said.
+The record also keeps `python.freeze`, what the image's venv resolved, to read. An update's
+candidate is built from the same inputs (the local file is copied into the worktree, as the
+certificate is); the one update whose running script is from before §101 builds its candidate
+without the file, and the bring-up after the move has it.
+
 **Coming back from a release recorded before §90** (`pre-202610` and older, and every revision
 before the hand-over rule). The rollback puts that release's `scripts/release.sh` into the
 workspace, and that script performs an update itself, knowing nothing of the target: before #34

@@ -112,6 +112,30 @@ tool_running()  { docker exec "$AGENT" sh -c "$(tool_cmd "$1")" 2>/dev/null | he
 tool_in_image() { docker run --rm --entrypoint sh "$1" -c "$(tool_cmd "$2")" 2>/dev/null | head -1 | tr -d '\r' || true; }
 
 # Docker Desktop reports a bind source either as the host path or in the VM's own form.
+# The instance's own inputs to the image and the proxy (OPERATIONS §101): untracked, so a fresh
+# clone has none; members of a record from format 4 on, so a rollback puts back what the release
+# had — and takes away what it had not, since the next bring-up rebuilds from these files.
+INSTANCE_INPUTS="docker/python/python.local docker/egress/allow.local"
+instance_inputs_present() {  # workspace → the inputs that exist there, as tar members
+  for _f in $INSTANCE_INPUTS; do [ -f "$1/$_f" ] && printf '%s ' "$_f"; done; :
+}
+restore_instance_inputs() {  # record format, workspace → what happened, in words
+  if [ "${1:-0}" -ge 4 ] 2>/dev/null; then
+    for _f in $INSTANCE_INPUTS; do rm -f "$2/$_f"; done
+    echo "as recorded, absence included"
+  else
+    echo "kept as they are (a format-${1:-?} record does not carry them)"
+  fi
+}
+
+# config/generated is written by the containers as uid 1000; a host whose user is not 1000 cannot
+# unlink what they wrote (measured on the cold-start runner, the first rollback run anywhere but
+# the live instance, §101) — a container can, and the next bring-up regenerates it anyway.
+remove_generated() {
+  rm -rf "$HERE/config/generated" 2>/dev/null && return 0
+  docker run --rm -v "$(m "$HERE")/config:/c" alpine rm -rf /c/generated
+}
+
 norm_host() {
   case "$1" in
     /run/desktop/mnt/host/?/*|/host_mnt/?/*)
@@ -197,11 +221,20 @@ cmd_record() {
 
   # configuration sources only: config/generated is derived, and its state.json describes the
   # Preloop account rather than this code — see reapply_policy()
-  tar czf "$DEST/config.tar.gz" --exclude='config/generated' -C "$HERE" config policy docker/.env 2>/dev/null || \
-    tar czf "$DEST/config.tar.gz" --exclude='config/generated' -C "$HERE" config policy
+  MEMBERS="config policy"
+  [ -f "$HERE/docker/.env" ] && MEMBERS="$MEMBERS docker/.env"
+  INPUTS="$(instance_inputs_present "$HERE")"
+  tar czf "$DEST/config.tar.gz" --exclude='config/generated' -C "$HERE" $MEMBERS $INPUTS
   docker run --rm -v "$(m "$DEST"):/in:ro" alpine tar tzf /in/config.tar.gz >/dev/null \
     || fail "the configuration archive did not verify"
   say "configuration" "$(du -h "$DEST/config.tar.gz" | cut -f1) (sources only)"
+  say "instance inputs" "${INPUTS:-none (no python.local, no allow.local)}"
+  # what the image's venv resolved (docker/python/*, §101): readable beside the kept image
+  if docker exec "$AGENT" cat /opt/python/freeze.txt > "$DEST/python.freeze" 2>/dev/null && [ -s "$DEST/python.freeze" ]; then
+    say "python" "$(wc -l < "$DEST/python.freeze" | tr -d ' ') resolved versions (python.freeze)"
+  else
+    rm -f "$DEST/python.freeze"; say "python" "no freeze in this image (built before §101)"
+  fi
 
   {
     echo "tag=$TAG"
@@ -210,7 +243,7 @@ cmd_record() {
     echo "workspace_dir=$HERE"
     echo "backup_at_update=${BACKUP_NOTE:-}"      # empty for a plain record; what update saw
     echo "stack=$STACK"
-    echo "format=3"                  # 2: configuration sources only (no config/generated); 3: no toolchain archive (#34)
+    echo "format=4"                  # 2: configuration sources only (no config/generated); 3: no toolchain archive (#34); 4: the instance's inputs are members (§101)
     for t in $TOOLS; do echo "tool.$t=$(tool_running "$t")"; done
   } > "$DEST/release.kv"
   for t in $TOOLS; do
@@ -289,6 +322,10 @@ cmd_update() {
   for _crt in "$HERE"/docker/ca/*.crt; do
     [ -f "$_crt" ] && mkdir -p "$(u "$CAND_DOCKER")/ca" && cp "$_crt" "$(u "$CAND_DOCKER")/ca/"
   done
+  # the instance's Python libraries (docker/python/python.local, §101): untracked like the
+  # certificate, copied so the candidate is built from the inputs the workspace builds from
+  [ -f "$HERE/docker/python/python.local" ] && mkdir -p "$(u "$CAND_DOCKER")/python" \
+    && cp "$HERE/docker/python/python.local" "$(u "$CAND_DOCKER")/python/"
   docker build --quiet -t "$CAND_IMAGE" -f "$CAND_DOCKER/agent.Dockerfile" "$CAND_DOCKER" >/dev/null \
     || fail "the candidate build failed; nothing was changed"
   say "built" "$CAND_IMAGE"
@@ -409,14 +446,31 @@ cmd_rollback() {
   # Releases recorded by an older version of this script carry config/generated, whose state.json
   # describes the ACCOUNT, not the code. Restoring it would claim a policy the account may not
   # have, and the apply below would then skip as "already applied".
+  FMT="$(sed -n 's/^format=//p' "$SRC/release.kv")"
+  say "instance inputs" "$(restore_instance_inputs "$FMT" "$HERE")"
   tar xzf "$SRC/config.tar.gz" -C "$HERE" --exclude='config/generated' --exclude='config/generated/*'
-  rm -rf "$HERE/config/generated"
+  remove_generated
   say "configuration" "config/ and policy/ sources only (generated settings are rebuilt)"
 
-  echo "== starting and checking"
+  # Two recoveries, not one (§101). The kept images are what ran: they come up as they are, built
+  # nothing — up.sh would otherwise rebuild from the tree and put the result over the tag just
+  # restored. The configuration restored above is what the NEXT bring-up rebuilds from.
+  echo "== starting the kept images and checking"
   UP_RC=0
-  (cd "$HERE" && bash scripts/up.sh --recreate) || UP_RC=1
-  [ "$UP_RC" = 0 ] || { echo "the checks did not pass after the rollback" >&2; exit 1; }
+  (cd "$HERE" && bash scripts/up.sh --recreate --no-build) || UP_RC=1
+  # What runs now is read before the checks are judged: a login that fails the checks says
+  # nothing about which image came up, and the image is what the rollback is for.
+  while read -r s ref id keep; do
+    got="$(docker inspect -f '{{.Image}}' "$STACK-$s" 2>/dev/null || true)"
+    [ -n "$got" ] || continue     # not in this composition
+    [ "$got" = "$id" ] || { echo "$STACK-$s runs image $got; the release's is $id — the bring-up did not use the kept image" >&2; exit 1; }
+    say "image $s" "running the release's kept image"
+  done < "$SRC/images.txt"
+  [ "$UP_RC" = 0 ] || {
+    echo; echo "the checks did not pass after the rollback — the kept images are up. Read the FAIL lines above:" >&2
+    echo "  a login whose token expired ('every provider's state is knowable') is not the rollback's and no" >&2
+    echo "  release passes it — sign in on the panel (docs/runbook.md). Anything else is this release's." >&2
+    exit 1; }
   # the account must enforce the policy that was just restored, not the one from before
   reapply_policy || exit 1
   [ "$OLD_TOOLCHAIN" = 0 ] || docker run --rm -v "$STACK-agent-home:/vol" alpine rm -rf /vol/.local.old

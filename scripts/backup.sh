@@ -264,6 +264,19 @@ fi
 # before up.sh wrote this file (the live one, 2026-09-20) has no such file and never will unless
 # the operator writes it — so its absence is said, with the remedy, and is not a failure: the
 # archive is complete for everything the stack itself can give (§86, measured live).
+# The instance's own inputs to the image and the proxy (docker/python/python.local,
+# docker/egress/allow.local — git-ignored, OPERATIONS §101): a release keeps them per release,
+# the backup keeps them with the rest of what is this instance's and nobody else's.
+instance_inputs() {  # workspace → the inputs that exist there
+  for _f in docker/python/python.local docker/egress/allow.local; do [ -f "$1/$_f" ] && printf '%s ' "$_f"; done; :
+}
+INPUT_FILES="$(instance_inputs "$POC_DIRU")"
+if [ -n "$INPUT_FILES" ]; then
+  tar czf "$WORKU/host/instance-inputs.tar.gz" -C "$POC_DIRU" $INPUT_FILES || fail "could not copy the instance's inputs"
+  say "instance inputs" "$INPUT_FILES"
+else
+  say "instance inputs" "none (no python.local, no allow.local)"
+fi
 case " $ENV_FILES " in *" preloop-owner.env "*) ;;
   *) say "preloop-owner.env" "absent — the console account's password is in nobody's backup; write it to"
      say "" "docker/preloop-owner.env (PRELOOP_OWNER_USERNAME=, PRELOOP_OWNER_EMAIL=, PRELOOP_OWNER_PASSWORD=, mode 0600)";;
