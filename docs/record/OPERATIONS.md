@@ -5599,4 +5599,8 @@ code is unchanged: an update that ends with a provider nobody can determine stil
 **Measured.** On the instance, by the operator, evidence `evidence/m88-*` there: the token's
 `expiresAt`, the check line, the API row, the `--source cli` answer, the credentials file's hash
 before and after. Here: `bash -n scripts/release.sh`; `verify.sh --level static` 13/13; pins at
-the ratchets (51 / 167); **cold-start run 127 green** on d8517e2.
+the ratchets (51 / 167); **cold-start run 127 green** on d8517e2. The other half, on the instance
+after the operator signed claude in again on the hub (2026-10-05T00:16:52Z, live at 007422d):
+`up.sh --check` → `ok    claude /route login  true`, `ok    every provider's state is knowable
+0`, `ok    the router can choose a provider  yes`, ALL CHECKS PASSED, exit 0 — the hold clears
+the way §88 said it would, by a person, and nothing else needed touching.
