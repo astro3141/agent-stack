@@ -5679,4 +5679,12 @@ condition's string `up.sh --recreate` matched it on a word boundary — renamed,
 `freeze.txt`, sees the `--check` line, records a release (`instance inputs
 docker/python/python.local`, `python.freeze`), deletes the file, rolls back, and requires `as
 recorded, absence included`, `running the release's kept image`, the file back and pypdf
-importable — the first measurement of a rollback that brings up what it says it does.
+importable — the first measurement of a rollback that brings up what it says it does. **Cold-start
+run 135 green** on 99f0439: `instance inputs  docker/python/python.local`, `python  20 resolved
+versions (python.freeze)`, `as recorded, absence included`, six services `running the release's
+kept image`, the five login checks the only FAIL lines. Four red runs before it, each a finding:
+131, the pipe carrying `up.sh --check`'s exit code with the three image measurements passed; 132,
+two trial pins (the literal `up -d --build` line, the refusal block within 900 characters); 133,
+rollback's `rm` of `config/generated` on a host whose user is not uid 1000; 134, the rollback
+exiting 1 on the runner's five login checks before the image ids were read — now read first,
+and the rollback's FAIL lines judged as the install's are.
