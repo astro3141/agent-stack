@@ -223,9 +223,9 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
     # instance's own docker/python/python.local and a bring-up, by the operator (§101).
     try:
         import packages as _pk
+        mine = _pk.requires_of(workflow)[1] or pkg_name
         lacking = [(pkg, e) for pkg, rows in _pk.needs_python().items()
-                   for e in rows if not e["present"]
-                   if pkg == (_pk.requires_of(workflow)[1] or pkg_name)]
+                   for e in rows if not e["present"] and pkg == mine]
     except Exception:
         lacking = []
     if lacking:
@@ -235,7 +235,7 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
             "why": {e["module"]: f"{pkg} declares it in requires.python" for pkg, e in lacking},
             "hint": "no container here can reach PyPI (OPERATIONS §62): the operator puts the "
                     "distribution, pinned, in docker/python/python.local and runs scripts/up.sh "
-                    "--recreate (§101); `packages.py python` prints the candidates. A pure-Python "
+                    "--recreate (§101); packages.py python prints the candidates. A pure-Python "
                     "dependency belongs in the package instead.",
             "where": {e["module"]: _pk.where_from(e) for _, e in lacking}}, ensure_ascii=False))
         return 3

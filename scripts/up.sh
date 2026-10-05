@@ -146,7 +146,11 @@ if [ "$MODE" != "--check" ]; then
        echo "  every line is one distribution pinned with == (comments and blank lines aside); scripts/packages.py python prints the candidates" >&2
        exit 1;;
   esac
-  (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d $BUILD $FORCE) || exit 1
+  if [ "$BUILD" = "--no-build" ]; then   # a rollback: the kept images, as they are (§101)
+    (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --no-build $FORCE) || exit 1
+  else
+    (cd "$HERE/docker" && docker compose -f compose.poc.yaml up -d --build $FORCE) || exit 1
+  fi
   # `up` only starts; a service left out of this composition would keep running from the last one,
   # and freeing its memory is the reason for choosing a smaller composition in the first place.
   # Removing the container leaves its data alone: MLflow's database and artifacts are a bind mount.
