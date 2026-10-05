@@ -458,13 +458,19 @@ cmd_rollback() {
   echo "== starting the kept images and checking"
   UP_RC=0
   (cd "$HERE" && bash scripts/up.sh --recreate --no-build) || UP_RC=1
-  [ "$UP_RC" = 0 ] || { echo "the checks did not pass after the rollback" >&2; exit 1; }
+  # What runs now is read before the checks are judged: a login that fails the checks says
+  # nothing about which image came up, and the image is what the rollback is for.
   while read -r s ref id keep; do
     got="$(docker inspect -f '{{.Image}}' "$STACK-$s" 2>/dev/null || true)"
     [ -n "$got" ] || continue     # not in this composition
     [ "$got" = "$id" ] || { echo "$STACK-$s runs image $got; the release's is $id — the bring-up did not use the kept image" >&2; exit 1; }
     say "image $s" "running the release's kept image"
   done < "$SRC/images.txt"
+  [ "$UP_RC" = 0 ] || {
+    echo; echo "the checks did not pass after the rollback — the kept images are up. Read the FAIL lines above:" >&2
+    echo "  a login whose token expired ('every provider's state is knowable') is not the rollback's and no" >&2
+    echo "  release passes it — sign in on the panel (docs/runbook.md). Anything else is this release's." >&2
+    exit 1; }
   # the account must enforce the policy that was just restored, not the one from before
   reapply_policy || exit 1
   [ "$OLD_TOOLCHAIN" = 0 ] || docker run --rm -v "$STACK-agent-home:/vol" alpine rm -rf /vol/.local.old

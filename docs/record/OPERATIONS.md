@@ -5639,7 +5639,10 @@ the name of the other.
   container's running image id is checked against the record (`running the release's kept image`,
   or exit 1 naming both ids); the configuration restored — `config/`, `policy/`, and from a
   format-4 record the two inputs, removed first so their absence is restored too — is what the
-  next bring-up rebuilds from. A format-3 record leaves the inputs as they are and says so.
+  next bring-up rebuilds from. A format-3 record leaves the inputs as they are and says so. The
+  ids are read before the checks are judged (a dead login says nothing about which image came
+  up), and a rollback whose checks fail says, as an update does since §100, that the kept images
+  are up and which failure is not the release's.
   Found by the cold start, the first rollback ever run anywhere but the live instance: its
   `rm -rf config/generated` cannot unlink what the containers wrote as uid 1000 when the host's
   user is not 1000 (the runner's is not; the operator's is) — now a container removes it when
