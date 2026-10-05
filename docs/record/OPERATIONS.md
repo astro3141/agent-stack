@@ -5640,6 +5640,10 @@ the name of the other.
   or exit 1 naming both ids); the configuration restored — `config/`, `policy/`, and from a
   format-4 record the two inputs, removed first so their absence is restored too — is what the
   next bring-up rebuilds from. A format-3 record leaves the inputs as they are and says so.
+  Found by the cold start, the first rollback ever run anywhere but the live instance: its
+  `rm -rf config/generated` cannot unlink what the containers wrote as uid 1000 when the host's
+  user is not 1000 (the runner's is not; the operator's is) — now a container removes it when
+  the host cannot (`remove_generated`).
 - `scripts/backup.sh` / `restore.sh`: the two inputs are a member (`instance-inputs.tar.gz`),
   restored where the build and the proxy read them. allow.local was in no backup before.
 - `stack/packages.py`: `requires.python` takes `{import: <module>, dist: "<distribution>==<v>"}`

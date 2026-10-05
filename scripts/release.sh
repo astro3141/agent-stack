@@ -128,6 +128,14 @@ restore_instance_inputs() {  # record format, workspace → what happened, in wo
   fi
 }
 
+# config/generated is written by the containers as uid 1000; a host whose user is not 1000 cannot
+# unlink what they wrote (measured on the cold-start runner, the first rollback run anywhere but
+# the live instance, §101) — a container can, and the next bring-up regenerates it anyway.
+remove_generated() {
+  rm -rf "$HERE/config/generated" 2>/dev/null && return 0
+  docker run --rm -v "$(m "$HERE")/config:/c" alpine rm -rf /c/generated
+}
+
 norm_host() {
   case "$1" in
     /run/desktop/mnt/host/?/*|/host_mnt/?/*)
@@ -441,7 +449,7 @@ cmd_rollback() {
   FMT="$(sed -n 's/^format=//p' "$SRC/release.kv")"
   say "instance inputs" "$(restore_instance_inputs "$FMT" "$HERE")"
   tar xzf "$SRC/config.tar.gz" -C "$HERE" --exclude='config/generated' --exclude='config/generated/*'
-  rm -rf "$HERE/config/generated"
+  remove_generated
   say "configuration" "config/ and policy/ sources only (generated settings are rebuilt)"
 
   # Two recoveries, not one (§101). The kept images are what ran: they come up as they are, built
