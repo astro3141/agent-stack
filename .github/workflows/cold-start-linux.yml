@@ -90,7 +90,8 @@ jobs:
           docker exec agentstack-agent /opt/venv/bin/python -c 'import pypdf; print("pypdf", pypdf.__version__)' | tee /tmp/pylocal.log
           grep -q '^pypdf 6.19.0$' /tmp/pylocal.log
           docker exec agentstack-agent grep -i '^pypdf==6.19.0' /opt/python/freeze.txt | tee -a /tmp/pylocal.log
-          bash scripts/up.sh --check 2>&1 | grep "the instance's Python libraries are pinned" | tee -a /tmp/pylocal.log
+          # --check exits 1 here (no logins on a runner); the line is what is measured
+          (bash scripts/up.sh --check 2>&1 || true) | grep "the instance's Python libraries are pinned" | tee -a /tmp/pylocal.log
           grep -q "ok    the instance's Python libraries are pinned" /tmp/pylocal.log
 
       # The stack is up and nobody is signed in: exactly the `stack` level of scripts/verify.sh —
