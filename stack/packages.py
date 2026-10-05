@@ -319,6 +319,8 @@ def egress_of(name=None):
 
 
 MODULE = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,60}")
+# a distribution pinned to one version, as docker/python/python.local takes it (§101)
+DIST = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(\[[^\]]*\])?==[A-Za-z0-9.+!*-]+")
 
 
 def needs_python(name=None):
@@ -335,10 +337,15 @@ def needs_python(name=None):
     twenty minutes in is refused at the start with the name of the module and where it goes.
 
         requires:
-          python: [pydantic, httpx]
+          python: [pydantic, {import: pdfplumber, dist: "pdfplumber==0.11.10"}]
 
     A pure-Python dependency does not belong here at all — vendor it in the package, which arrives
     as a directory and needs nothing from the image. This is for what cannot travel that way.
+
+    Where it goes is the instance's own list, not the stack's code (§101): the operator puts the
+    distribution, pinned, in docker/python/python.local and brings the stack up. `dist` names that
+    line, because the import name and the distribution name differ (yaml is PyYAML) and nothing
+    here guesses one from the other; `where_from()` says so to a person.
     """
     import importlib.util as il
     out = {}
@@ -347,6 +354,10 @@ def needs_python(name=None):
             continue
         rows = []
         for m in ((p.get("requires") or {}).get("python") or []):
+            dist = ""
+            if isinstance(m, dict):
+                dist = str(m.get("dist") or "").strip()
+                m = m.get("import") or m.get("module") or ""
             mod = str(m).strip()
             if not MODULE.fullmatch(mod):
                 continue
@@ -354,10 +365,59 @@ def needs_python(name=None):
                 present = il.find_spec(mod.split(".")[0]) is not None
             except (ImportError, ValueError):
                 present = False
-            rows.append({"module": mod, "present": present})
+            row = {"module": mod, "present": present}
+            if dist:
+                row["dist"], row["pinned"] = dist, bool(DIST.fullmatch(dist))
+            rows.append(row)
         if rows:
             out[pkg] = rows
     return out
+
+
+def where_from(e):
+    """Where a missing module comes from, said to a person: the instance's docker/python/python.local
+    and a bring-up (§101) — the line itself when the package named the distribution, and never a
+    name guessed from the module's (yaml is PyYAML, Pillow is PIL)."""
+    if e.get("dist"):
+        return (f"put `{e['dist']}` in docker/python/python.local and run scripts/up.sh --recreate"
+                + ("" if e.get("pinned") else " (pinned ==<version> first; the package left it open)"))
+    return (f"put the distribution that provides `{e['module']}` (its index name, pinned ==<version>) "
+            "in docker/python/python.local and run scripts/up.sh --recreate; the package can name it "
+            "(requires.python: {import: …, dist: …}) and this will print the line")
+
+
+def candidates(got):
+    """The lines for docker/python/python.local that `needs_python()` can name: declared with a
+    distribution, not importable. An open one is printed with the ask to pin it, never silently."""
+    out = []
+    for items in got.values():
+        for e in items:
+            if not e["present"] and e.get("dist"):
+                out.append(e["dist"] + ("" if e.get("pinned") else "   # not pinned: ==<version> first"))
+    return out
+
+
+def cmd_python(a):
+    rest = [x for x in a if not x.startswith("--")]
+    got = needs_python(rest[0] if rest else None)
+    if "--json" in a:
+        print(json.dumps(got, ensure_ascii=False))
+    elif "--candidates" in a:
+        for c in candidates(got):
+            print(c)
+    elif not got:
+        print("no installed package declares a Python dependency")
+    else:
+        for pkg, items in got.items():
+            for e in items:
+                print(f"{pkg:<12} {e['module']:<20} {'importable' if e['present'] else 'MISSING — ' + where_from(e)}")
+        c = candidates(got)
+        if c:
+            print("\ncandidates for docker/python/python.local (declared by a package, not importable):")
+            for line in c:
+                print("  " + line)
+            print("the operator copies them there and runs scripts/up.sh --recreate (OPERATIONS §101)")
+    return 0
 
 
 def stack_of(name=None):
@@ -573,18 +633,7 @@ if __name__ == "__main__":
         sys.exit(0)
     rows = installed()
     if a[:1] == ["python"]:
-        rest = [x for x in a[1:] if not x.startswith("--")]
-        got = needs_python(rest[0] if rest else None)
-        if "--json" in a:
-            print(json.dumps(got, ensure_ascii=False))
-        elif not got:
-            print("no installed package declares a Python dependency")
-        else:
-            for pkg, items in got.items():
-                for e in items:
-                    print(f"{pkg:<12} {e['module']:<20} "
-                          f"{'importable' if e['present'] else 'MISSING — add it to the image'}")
-        sys.exit(0)
+        sys.exit(cmd_python(a[1:]))
     if a[:1] == ["egress"]:
         rest = [x for x in a[1:] if not x.startswith("--")]
         got = egress_of(rest[0] if rest else None)

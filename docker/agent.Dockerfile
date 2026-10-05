@@ -111,10 +111,19 @@ USER agent
 #
 # sympy must be baked in at all: the governed runtime has no egress, so installing it at
 # run time fails by design.
+#
+# What goes in is read from docker/python/ (OPERATIONS §101): stack.txt is the stack's own, tracked;
+# python.local is this instance's — the libraries its packages declare (requires.python), pinned,
+# approved by the operator, git-ignored, absent on a fresh clone. stack.txt is applied again as
+# the constraints, so a local line cannot move a stack pin: the build fails and names the
+# conflict. What was resolved is left in the image (freeze.txt) for the release record to keep.
 USER root
-RUN python -m venv /opt/venv     && /opt/venv/bin/pip install --no-cache-dir -q pytest 'sympy==1.14.0' 'PyYAML==6.0.2' 'pydantic>=2,<3' 'httpx>=0.27,<1'     && chmod -R a+rX /opt/venv
-# pydantic/httpx: declared by the trading package (requires.python, OPERATIONS §62) — C
-# extensions cannot travel inside a package directory, so they live here, added by the operator.
+COPY python/ /opt/python/
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir -q -r /opt/python/stack.txt -c /opt/python/stack.txt \
+         $( [ -f /opt/python/python.local ] && echo "-r /opt/python/python.local" ) \
+    && /opt/venv/bin/pip freeze > /opt/python/freeze.txt \
+    && chmod -R a+rX /opt/venv /opt/python
 USER agent
 
 # ---- #281: common agent execution layer -------------------------------------------------

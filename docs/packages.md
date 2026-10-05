@@ -98,7 +98,7 @@ workflows:                    # or `entry: workflow.yaml` for a single one
   my-lane: workflow.yaml
 requires:
   capabilities: [tool_rights, egress, record, admission]   # only what your steps use (also `approvals`, probed with the rest): a package with no model call declares [] and runs on a fresh install before any login (hello-lane)
-  python: [pydantic]          # modules you import that the image must already carry
+  python: [pydantic, {import: pdfplumber, dist: "pdfplumber==0.11.10"}]   # modules you import that the image must carry — with the distribution, when you know it
 runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
 ```
 
@@ -106,10 +106,22 @@ runbook: RUNBOOK.md           # your operating document — the panel links it u
 package — it arrives as a directory, and a step can put it on `sys.path` itself. Declare
 `requires.python` only for what cannot travel that way (a C extension, a wheel), and note what the
 stack will and will not do with it: no container here can reach PyPI (OPERATIONS §62), so nothing is
-installed for you. What you get is an answer and a refusal — `packages.py python` says whether each
-module is importable, and a run whose package lacks one is refused at the start, naming the module,
-instead of dying on an ImportError inside a step. Adding it is a line in the image and a rebuild, by
-the operator.
+installed for you at run time. What you get is an answer and a refusal — `packages.py python` says
+whether each module is importable, and a run whose package lacks one is refused at the start, naming
+the module, instead of dying on an ImportError inside a step.
+
+**Where it comes from is the instance's own list, not the stack's code (§101).** The operator puts
+the distribution, pinned (`pdfplumber==0.11.10`), in `docker/python/python.local` — git-ignored,
+absent on a fresh clone, beside `docker/egress/allow.local` — and runs `scripts/up.sh --recreate`.
+The build installs it into `/opt/venv` with the stack's own pins (`docker/python/stack.txt`) applied
+as constraints, so a line there cannot move a stack version: the build fails and names the conflict.
+A line without `==` fails the bring-up before any build. Name the distribution in the manifest
+(`dist:`) and `packages.py python` prints the line to copy (`--candidates` prints only those); it
+never guesses one from the import name, because the two differ (`yaml` is `PyYAML`, `PIL` is
+`Pillow`). One instance runs **one compatible set**: every package shares the venv, and two packages
+whose lines disagree are the operator's to settle in that file. A release records the file and what
+the build resolved (`python.freeze`), a rollback restores it, absence included, and a backup
+carries it (docs/update-day.md).
 
 A package may carry **several workflows** when they share steps — that is why the three trading
 workflows are one package.
@@ -357,7 +369,7 @@ whose package needs what the stack has not got. These are the keys something rea
 | `capabilities` | the stack capabilities a run needs (`tool_rights`, `egress`, `record`, `admission`, `approvals`) | `run_workflow.py start` refuses without them |
 | `env` | environment variables, by name and purpose — never a value | `packages.py needs`, the panel |
 | `egress` | hosts the package's scripts reach | `packages.py egress` (an audit, not a control) |
-| `python` | modules the image must carry | `packages.py python`, `run_workflow.py start` |
+| `python` | modules the image must carry — a name, or `{import: <module>, dist: "<distribution>==<version>"}` so the line for `docker/python/python.local` can be printed | `packages.py python` (and `--candidates`), `run_workflow.py start` |
 | `stack` | the oldest stack revision the package runs on: `stack: {min: <commit>}` | `packages.py stack`, `run_workflow.py start` |
 | `state` | `state: true` — the package keeps state outside any run, under its own directory (below); `state: "<where>"` — it keeps state with the work, elsewhere, and this says where; `state: {here: true, with_the_work: "<where>"}` — both (#53) | `packages.py state` |
 
@@ -494,6 +506,8 @@ docker/package.env          KEY=value, git-ignored, read into the agent's enviro
 docker/egress/allow.local   one regex per line, git-ignored: the hosts this package may reach
                             (docker/egress/allow is the tracked provider baseline — platform
                             content, never a package's; the two merge at bring-up, §60)
+docker/python/python.local  one pinned distribution per line, git-ignored: the libraries this
+                            instance's packages need in the image (built in by up.sh, §101)
 ```
 
 Declare the hosts in your manifest as well — `requires: {egress: [api.example.com]}`. That is an

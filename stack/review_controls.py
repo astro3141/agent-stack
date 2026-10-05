@@ -841,7 +841,7 @@ def update_controls():
     check("release: a record carries no toolchain archive, an update stages and swaps nothing and has no flag — a release is revision + images + configuration",
           all(x not in rel for x in ("tar czf /out/toolchain.tar.gz", "verify_staged", "swap_staged", "keep_or_restore_toolchain",
                                      "REPLACE_TOOLCHAIN=1", "VOLUME_TOOLS", "refusing an update whose toolchain"))
-          and "format=3" in rel and 'say "will change $t"' in rel)
+          and "format=4" in rel and 'say "will change $t"' in rel)
     check("release: a record from before #34 still rolls back — its archive is restored into the volume, verified first (§79)",
           'if [ -f "$SRC/toolchain.tar.gz" ]; then' in rel and "OLD_TOOLCHAIN=1" in rel)
     # #48 (§90): the update is performed by the target revision's own script, handed the candidate
@@ -1443,6 +1443,92 @@ def pinkind_controls():
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 26. the instance's Python libraries (§101)
+def pylocal_controls():
+    """A package's libraries come from the instance's own docker/python/python.local, not the stack's
+    code: pinned lines, read by up.sh before any build; named by the manifest (dist) and printed as
+    candidates, never guessed from an import name; a member of a record from format 4, with absence
+    restored on rollback; a member of a backup. Driven at function level: the shell functions are
+    run on temporary files, the loader on a temporary root."""
+    import importlib.util as il
+    root = Path(tempfile.mkdtemp(prefix="agentstack-pylocal-"))
+
+    def run(fn_text, cmd):
+        return subprocess.run(["bash", "-c", f"{fn_text}\n{cmd}"], capture_output=True, text=True, timeout=30).stdout.strip()
+
+    upsh = (WORK / "scripts" / "up.sh").read_text()
+    fn = upsh[upsh.index("python_local_report() {"):upsh.index("  echo pinned\n}") + len("  echo pinned\n}")]
+    def report(text):
+        f = root / "python.local"
+        if text is None:
+            f = root / "absent"
+        else:
+            f.write_text(text)
+        return run(fn, f"python_local_report '{f}'")
+    ok_text = "# mine\n\npdfplumber==0.11.10  # pdf\nfoo[extra]==1.0 --hash=sha256:ab\n"
+    check("python.local: no file is `none`; pinned lines (comments, blanks, extras and --hash aside) are `pinned`",
+          report(None) == "none" and report(ok_text) == "pinned", (report(None), report(ok_text)))
+    check("python.local: a line without == is named with its number, and an include is not a line",
+          report("pdfplumber==0.11.10\npypdf>=6\n") == "line 2 is not pinned: pypdf>=6"
+          and report("-r other.txt\n").startswith("line 1 is not pinned"), report("pdfplumber==0.11.10\npypdf>=6\n"))
+
+    rel = (WORK / "scripts" / "release.sh").read_text()
+    fn2 = rel[rel.index('INSTANCE_INPUTS="'):rel.index("norm_host() {")]
+    def rel_fn(cmd):
+        return run(fn2, cmd)
+    ws = root / "ws"
+    (ws / "docker" / "python").mkdir(parents=True); (ws / "docker" / "egress").mkdir(parents=True)
+    (ws / "docker" / "python" / "python.local").write_text("pypdf==6.19.0\n")
+    check("release: a record's members are the inputs that exist (python.local here, no allow.local)",
+          rel_fn(f"instance_inputs_present '{ws}'") == "docker/python/python.local")
+    check("release: a format-3 record leaves the inputs as they are, and says so",
+          rel_fn(f"restore_instance_inputs 3 '{ws}'").startswith("kept as they are")
+          and (ws / "docker" / "python" / "python.local").exists())
+    check("release: a format-4 record removes them before its archive is restored — absence is restored too",
+          rel_fn(f"restore_instance_inputs 4 '{ws}'") == "as recorded, absence included"
+          and not (ws / "docker" / "python" / "python.local").exists())
+    bk = (WORK / "scripts" / "backup.sh").read_text()
+    fn3 = bk[bk.index("instance_inputs() {"):bk.index('INPUT_FILES="')]
+    def bk_fn(cmd):
+        return run(fn3, cmd)
+    (ws / "docker" / "egress" / "allow.local").write_text("x\n")
+    check("backup: the inputs that exist are members (allow.local here, python.local gone)",
+          bk_fn(f"instance_inputs '{ws}'") == "docker/egress/allow.local")
+
+    sp = il.spec_from_file_location("pk_pylocal", str(HERE / "packages.py"))
+    pk = il.module_from_spec(sp); sp.loader.exec_module(pk)
+    proot = root / "packages"; (proot / "zz-pl").mkdir(parents=True)
+    (proot / "zz-pl" / "manifest.yaml").write_text(
+        "name: zz-pl\nentry: workflow.yaml\nrequires:\n  python:\n    - json\n"
+        "    - {import: zz_not_here, dist: \"zz-not-here==1.2.3\"}\n"
+        "    - {import: zz_open, dist: \"zz-open\"}\n    - zz_unnamed\n")
+    (proot / "zz-pl" / "workflow.yaml").write_text("workflow: {}\n")
+    decl = proot / "_packages.yaml"; decl.write_text("packages:\n  zz-pl: {from: local}\n")
+    pk.ROOT, pk.DECL = str(proot), str(decl)
+    rows = pk.needs_python().get("zz-pl") or []
+    by = {e["module"]: e for e in rows}
+    check("manifest: a plain name and an {import, dist} entry both read; dist travels with the row, pinned or open",
+          [e["module"] for e in rows] == ["json", "zz_not_here", "zz_open", "zz_unnamed"]
+          and by["json"]["present"] and not by["zz_not_here"]["present"]
+          and by["zz_not_here"]["dist"] == "zz-not-here==1.2.3" and by["zz_not_here"]["pinned"] is True
+          and by["zz_open"]["pinned"] is False and "dist" not in by["zz_unnamed"], rows)
+    h1, h2, h3 = pk.where_from(by["zz_not_here"]), pk.where_from(by["zz_open"]), pk.where_from(by["zz_unnamed"])
+    check("hint: a pinned dist is the line to put in python.local and the bring-up; an open one is asked to pin first",
+          "`zz-not-here==1.2.3`" in h1 and "docker/python/python.local" in h1 and "up.sh --recreate" in h1
+          and "pinned ==<version> first" in h2, (h1, h2))
+    check("hint: without a dist it asks for the distribution that provides the module and guesses no name",
+          "`zz_unnamed`" in h3 and "zz-unnamed" not in h3 and "distribution that provides" in h3, h3)
+    rc, out = quiet(pk.cmd_python, [])
+    check("packages.py python: the table, then the candidate lines for python.local — the open one marked, the unnamed one absent",
+          "zz_not_here" in out and "candidates for docker/python/python.local" in out
+          and "\n  zz-not-here==1.2.3\n" in out and "zz-open   # not pinned" in out and "zz_unnamed" in out
+          and out.count("zz-unnamed") == 0 and "up.sh --recreate" in out, out)
+    rc, out2 = quiet(pk.cmd_python, ["--candidates"])
+    check("packages.py python --candidates: only the lines, to copy",
+          out2.splitlines() == ["zz-not-here==1.2.3", "zz-open   # not pinned: ==<version> first"], out2)
+    shutil.rmtree(root, ignore_errors=True)
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -1468,6 +1554,7 @@ rules_controls()
 host_controls()
 install_controls()
 pinkind_controls()
+pylocal_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

@@ -38,6 +38,11 @@ jobs:
       - name: what this host has
         run: bash scripts/install.sh --check
 
+      # An instance's own library (§101), written before the build as an operator would — pinned,
+      # git-ignored — and read back from the image after. pypdf: pure Python, small.
+      - name: the instance's own Python library, declared before the build
+        run: printf 'pypdf==6.19.0\n' > docker/python/python.local
+
       - name: install Preloop, build the stack, claim it, check it
         id: install
         continue-on-error: true
@@ -79,10 +84,35 @@ jobs:
           print("\nthe stack came up on a host that had none of it; only the provider logins failed")
           PY
 
+      - name: the instance's library is in the image, and the build left what it resolved
+        run: |
+          set -o pipefail
+          docker exec agentstack-agent /opt/venv/bin/python -c 'import pypdf; print("pypdf", pypdf.__version__)' | tee /tmp/pylocal.log
+          grep -q '^pypdf 6.19.0$' /tmp/pylocal.log
+          docker exec agentstack-agent grep -i '^pypdf==6.19.0' /opt/python/freeze.txt | tee -a /tmp/pylocal.log
+          bash scripts/up.sh --check 2>&1 | grep "the instance's Python libraries are pinned" | tee -a /tmp/pylocal.log
+          grep -q "ok    the instance's Python libraries are pinned" /tmp/pylocal.log
+
       # The stack is up and nobody is signed in: exactly the `stack` level of scripts/verify.sh —
       # the checks, the three control suites, package locks and controls, one hello-lane run.
       - name: verify at the stack level
         run: set -o pipefail; bash scripts/verify.sh --level stack 2>&1 | tee /tmp/verify.log
+
+      # Two recoveries (§101): a record carries the instance's input and what the venv resolved; a
+      # rollback brings the kept image up without a rebuild, verifies the running id is the record's,
+      # and restores the input — here, after it was deleted.
+      - name: record a release and roll back to it — the kept image comes up unrebuilt, the input comes back
+        run: |
+          set -o pipefail
+          bash scripts/release.sh record --tag cold 2>&1 | tee /tmp/release.log
+          grep -q 'instance inputs *docker/python/python.local' /tmp/release.log
+          grep -q 'resolved versions (python.freeze)' /tmp/release.log
+          rm docker/python/python.local
+          bash scripts/release.sh rollback --to cold 2>&1 | tee -a /tmp/release.log
+          grep -q 'as recorded, absence included' /tmp/release.log
+          grep -q "running the release's kept image" /tmp/release.log
+          test -f docker/python/python.local
+          docker exec agentstack-agent /opt/venv/bin/python -c 'import pypdf'
 
       - name: keep the logs
         if: always()
@@ -92,6 +122,8 @@ jobs:
           path: |
             /tmp/cold-start.log
             /tmp/verify.log
+            /tmp/pylocal.log
+            /tmp/release.log
 
       - name: take it down the way an operator would
         if: always()

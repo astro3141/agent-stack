@@ -219,11 +219,11 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
             gone.append(c)
     # A module the package says it imports, checked here (§62): the alternative is an ImportError
     # in a step, minutes in, naming a module and nothing about which package wanted it or why the
-    # image has not got it. No container in this stack can reach PyPI — the fix is always a line in
-    # the image, at build, by the operator.
+    # image has not got it. No container in this stack can reach PyPI — the fix is a line in the
+    # instance's own docker/python/python.local and a bring-up, by the operator (§101).
     try:
         import packages as _pk
-        lacking = [(pkg, e["module"]) for pkg, rows in _pk.needs_python().items()
+        lacking = [(pkg, e) for pkg, rows in _pk.needs_python().items()
                    for e in rows if not e["present"]
                    if pkg == (_pk.requires_of(workflow)[1] or pkg_name)]
     except Exception:
@@ -231,11 +231,13 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
     if lacking:
         print(json.dumps({
             "error": "this workflow's package needs a module the runtime has not got: "
-                     + ", ".join(m for _, m in lacking),
-            "why": {m: f"{pkg} declares it in requires.python" for pkg, m in lacking},
-            "hint": "no container here can reach PyPI (OPERATIONS §62): add it to "
-                    "docker/agent.Dockerfile's venv install and re-run scripts/up.sh --build. "
-                    "A pure-Python dependency belongs in the package instead."}, ensure_ascii=False))
+                     + ", ".join(e["module"] for _, e in lacking),
+            "why": {e["module"]: f"{pkg} declares it in requires.python" for pkg, e in lacking},
+            "hint": "no container here can reach PyPI (OPERATIONS §62): the operator puts the "
+                    "distribution, pinned, in docker/python/python.local and runs scripts/up.sh "
+                    "--recreate (§101); `packages.py python` prints the candidates. A pure-Python "
+                    "dependency belongs in the package instead.",
+            "where": {e["module"]: _pk.where_from(e) for _, e in lacking}}, ensure_ascii=False))
         return 3
     # The stack revision the package says it needs at least (requires.stack.min). Only a floor this
     # checkout verifiably does not contain refuses; "unverifiable" is reported by `packages.py

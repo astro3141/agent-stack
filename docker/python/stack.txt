@@ -1,0 +1,13 @@
+# The stack's own Python libraries — installed into /opt/venv at build, and applied again as the
+# constraints for this instance's docker/python/python.local (OPERATIONS §101): a line there
+# cannot move a version named here; the build fails on the conflict and says which.
+#
+# An instance's own libraries do not go here. They go in docker/python/python.local (git-ignored,
+# one `name==version` per line, scripts/up.sh --recreate to rebuild) — docs/packages.md.
+pytest
+sympy==1.14.0
+PyYAML==6.0.2
+# trading's (requires.python, §62), here since before §101. They leave when the instances that
+# run trading carry the two in their python.local — a trading follow-up, not the stack's.
+pydantic>=2,<3
+httpx>=0.27,<1

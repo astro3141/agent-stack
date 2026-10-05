@@ -5604,3 +5604,72 @@ after the operator signed claude in again on the hub (2026-10-05T00:16:52Z, live
 `up.sh --check` → `ok    claude /route login  true`, `ok    every provider's state is knowable
 0`, `ok    the router can choose a provider  yes`, ALL CHECKS PASSED, exit 0 — the hold clears
 the way §88 said it would, by a person, and nothing else needed touching.
+
+## 101. An instance's Python libraries are its own, and a rollback is two recoveries (2026-10-05)
+
+The devflow session needed a PDF reader in the agent container and read the way there as "a stack
+update": pydantic and httpx, trading's, sat in `docker/agent.Dockerfile` because the only way a
+library reached the image was a line in the stack's code, by the stack owner, and a release. The
+operator's objection was the right one — a package's library is not the stack's business — and
+the reviewer's five points shaped the change: ownership and git are separate choices; a record
+must say what was resolved; the manifest should be able to name the line without writing it; every
+build and recovery path must carry the file, absence included; the shared venv's conflicts are
+real and the import name is not the distribution name. Reading the rollback for the fourth point
+found the larger thing: `release.sh rollback` retagged the kept images and then ran `up.sh
+--recreate`, which always `--build`s — the tag just restored was overwritten by a rebuild of the
+checked-out revision plus whatever untracked files the tree held, byte-identical only while the
+build cache said so. The kept image was a warm cache; the recovery was from configuration, under
+the name of the other.
+
+**What changed.**
+- `docker/python/stack.txt` (tracked) is the stack's own venv list, applied again as the
+  constraints; `docker/python/python.local` (git-ignored, absent on a fresh clone) is the
+  instance's — the libraries its packages declare, pinned `==`, approved by the operator by
+  writing them there. The Dockerfile copies the directory and installs both in one resolve, so a
+  local line that would move a stack pin fails the build with the conflict named; `pip freeze`
+  is left in the image (`/opt/python/freeze.txt`). pydantic and httpx stay in stack.txt until the
+  instances that run trading carry them in python.local — trading's follow-up.
+- `scripts/up.sh`: a line without `==` fails the bring-up before any build (`python_local_report`:
+  `none`, `pinned`, or the line and its number); `--check` has the line; `--no-build` brings up the
+  images that exist and builds nothing.
+- `scripts/release.sh`: record format 4 — `docker/python/python.local` and
+  `docker/egress/allow.local` are members when present, `python.freeze` is kept beside the images;
+  the update's candidate is built with the local file copied into the worktree, as the certificate
+  is. **Rollback is now two recoveries**: the kept images come up with `--no-build` and every
+  container's running image id is checked against the record (`running the release's kept image`,
+  or exit 1 naming both ids); the configuration restored — `config/`, `policy/`, and from a
+  format-4 record the two inputs, removed first so their absence is restored too — is what the
+  next bring-up rebuilds from. A format-3 record leaves the inputs as they are and says so.
+- `scripts/backup.sh` / `restore.sh`: the two inputs are a member (`instance-inputs.tar.gz`),
+  restored where the build and the proxy read them. allow.local was in no backup before.
+- `stack/packages.py`: `requires.python` takes `{import: <module>, dist: "<distribution>==<v>"}`
+  beside a plain name; `packages.py python` prints `MISSING — put `<dist>` in
+  docker/python/python.local and run scripts/up.sh --recreate`, the candidate lines under the
+  table, `--candidates` only the lines; an open `dist` is printed with the ask to pin it; a module
+  with no `dist` is asked for as "the distribution that provides it" — no name is guessed from an
+  import name (yaml is PyYAML). `run_workflow.py start`'s refusal says the same and carries
+  `where` per module.
+- Docs: packages.md (the instance's list, one compatible set per instance, the manifest's `dist`,
+  the file beside allow.local), update-day.md (two recoveries), commands.md.
+
+**Not changed, and why.** No hash-verified lock: wheel hashes differ by architecture (trading's
+Mac is arm64, this instance x86_64), pip-tools would enter the host toolchain, and every release
+keeps its image, which is the strongest lock there is — `python.freeze` makes it readable. No
+per-package venv: one instance runs one compatible set, the build says when two lines disagree,
+and the operator settles it in the file. No automatic install from the manifest: the manifest
+names the line, the operator writes it; approval is the file.
+
+**Measured.** review_controls 268/268 — the new group runs the shell functions on temporary files
+(`python_local_report`: none / pinned / `line 2 is not pinned: pypdf>=6`, an include refused;
+`instance_inputs_present`, `restore_instance_inputs` 3 keeps and 4 removes; backup's
+`instance_inputs`) and the loader on a temporary root (a plain name and an `{import, dist}` entry,
+pinned and open; the three hints; the table with candidates and `--candidates`); the update
+group's pin moved to `format=4`. Pins at the ratchets (51 / 167): the two shell-function checks
+first read as source-text because the variable holding up.sh's text was named `up` and the
+condition's string `up.sh --recreate` matched it on a word boundary — renamed, not re-counted.
+`verify.sh --level static` 13/13; `bash -n` on the four scripts. The cold start now writes
+`pypdf==6.19.0` into python.local before the build, reads it back from the image and from
+`freeze.txt`, sees the `--check` line, records a release (`instance inputs
+docker/python/python.local`, `python.freeze`), deletes the file, rolls back, and requires `as
+recorded, absence included`, `running the release's kept image`, the file back and pypdf
+importable — the first measurement of a rollback that brings up what it says it does.
