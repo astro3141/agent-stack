@@ -2024,13 +2024,20 @@ def controls_shape():
     # prompt, schema and model, and the environment as the profile's name — measured with a
     # recorder standing where the broker listens
     import http.server as _hs, threading as _th
-    got = {}
+    got, mode = {}, {"answer": "ok"}
     class Rec(_hs.BaseHTTPRequestHandler):
         def do_POST(self):
             got["path"] = self.path
             got["job"] = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"{}")
-            body = json.dumps({"result": {"status": "COMPLETED", "closed": True, "run_id": "brokered", "provider": "claude",
-                                          "dispatched": {"role": got["job"].get("role")}}}).encode()
+            role = got["job"].get("role")
+            if mode["answer"] == "refused":      # the broker carrying a runner's 4xx in its words (§103)
+                body = json.dumps({"dispatched": {"role": role}, "error": "the 'closed' runner refused the job: prompt text is required, and bounded at 200000 characters", "refused": 400}).encode()
+            elif mode["answer"] == "noschema":   # a runner from before the checkout: COMPLETED, no schema applied
+                body = json.dumps({"result": {"status": "COMPLETED", "closed": True, "run_id": "brokered", "provider": "claude",
+                                              "produced": False, "dispatched": {"role": role}}}).encode()
+            else:
+                body = json.dumps({"result": {"status": "COMPLETED", "closed": True, "run_id": "brokered", "provider": "claude",
+                                              "schema_sha256": sha, "dispatched": {"role": role}}}).encode()
             self.send_response(200); self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
         def log_message(self, *a):
@@ -2039,19 +2046,38 @@ def controls_shape():
     _th.Thread(target=srv.serve_forever, daemon=True).start()
     benv = {**env, "AGENTSTACK_BROKER_URL": f"http://127.0.0.1:{srv.server_port}"}
     benv.pop("AGENTSTACK_EGRESS_PROFILE", None); benv.pop("AGENTSTACK_ROLE", None)
-    p = _sp.run([sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "b1", "-", "b1.json",
-                 "closed", "claude", "novel-reviewer", "--output-schema", sfile, "--model", "m-pin"],
-                capture_output=True, text=True, env=benv, input="brokered payload {WS}")
-    srv.shutdown()
-    try:
-        r = json.loads(p.stdout.strip().splitlines()[-1])
-    except Exception:
-        r = {"status": (p.stderr or p.stdout)[-300:]}
+    def brokered(text, schema=True, model=True):
+        got.clear()
+        argv = [sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "b1", "-", "b1.json",
+                "closed", "claude", "novel-reviewer"] + (["--output-schema", sfile] if schema else []) + (["--model", "m-pin"] if model else [])
+        p = _sp.run(argv, capture_output=True, text=True, env=benv, input=text)
+        try:
+            return json.loads(p.stdout.strip().splitlines()[-1])
+        except Exception:
+            return {"status": (p.stderr or p.stdout)[-300:]}
+    r = brokered("brokered payload {WS}")
     job = got.get("job") or {}
     check("brokered: a role with an egress profile is handed to the broker, and the prompt, the schema, the model and the profile's name travel with the job",
           (got.get("path"), job.get("role"), job.get("prompt"), job.get("schema"), job.get("model"), job.get("profile_name")),
           ("/dispatch", "novel-reviewer", "brokered payload {WS}", open(sfile).read(), "m-pin", "closed"))
-    check("brokered: the broker's answer is the step's answer", (r.get("status"), (r.get("dispatched") or {}).get("role")), ("COMPLETED", "novel-reviewer"))
+    check("brokered: the broker's answer is the step's answer when its record names the schema sent",
+          (r.get("status"), (r.get("dispatched") or {}).get("role"), r.get("schema_sha256")), ("COMPLETED", "novel-reviewer", sha))
+    mode["answer"] = "noschema"
+    r = brokered("brokered payload")
+    check("brokered: a completed record that does not name the schema sent came through a runner that did not apply it — FAILED, nothing produced, the sentence names the stale runner (§103, #91)",
+          (r.get("status"), r.get("produced"), r.get("answer"), "did not apply the output schema" in (r.get("failure") or ""), "up.sh" in (r.get("failure") or "")),
+          ("FAILED", False, {}, True, True))
+    mode["answer"] = "refused"
+    r = brokered("brokered payload")
+    check("brokered: a job the runner refused is REFUSED with the runner's words, attempts 0 — a member's `denied`, not retried (§103, #89)",
+          (r.get("status"), r.get("attempts"), r.get("produced"), r.get("failure")),
+          ("REFUSED", 0, False, "the 'closed' runner refused the job: prompt text is required, and bounded at 200000 characters"))
+    mode["answer"] = "ok"
+    r = brokered("x" * 200001)
+    check("brokered: a prompt over the bound is refused here, before the hand-over — FAILED, attempts 0, the sizes named, the broker never asked (§103, #88)",
+          (r.get("status"), r.get("attempts"), "200,001 characters" in (r.get("failure") or ""), "200,000" in (r.get("failure") or ""), got.get("path")),
+          ("FAILED", 0, True, True, None))
+    srv.shutdown()
     shutil.rmtree(root, ignore_errors=True)
 
 def declare_temp(pk, root, extra=()):

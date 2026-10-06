@@ -41,6 +41,7 @@ sys.path.insert(0, "/work/stack")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import settings  # noqa: E402
+import execution  # noqa: E402
 CONSOLE_MCP = os.environ.get("AGENTSTACK_CONSOLE_MCP") or settings.url("preloop", "mcp_url")
 SELF_MCP = os.environ.get("AGENTSTACK_BROKER_MCP") or settings.url("broker", "mcp_url")
 RUNNER_PORT = int(os.environ.get("AGENTSTACK_RUNNER_PORT", "8790"))
@@ -85,6 +86,28 @@ def credential(role):
     if not v:
         return None
     return v if v.startswith("Bearer ") else "Bearer " + v
+
+
+def runner_answer(url, job, timeout):
+    """The runner's answer as the broker carries it: its JSON when it answered; its own words and
+    the code when it refused the job (a 4xx body's `error`, carried as `refused`, §103 — until
+    then `did not answer: HTTPError` dropped the words and a member retried a request the runner
+    refuses the same way every time, #89); `did not answer: <kind>` when nothing came back."""
+    try:
+        r = urllib.request.Request(url, data=json.dumps(job).encode(),
+                                   headers={"content-type": "application/json"})
+        with urllib.request.urlopen(r, timeout=timeout) as x:
+            return json.loads(x.read())
+    except urllib.error.HTTPError as e:
+        try:
+            words = str(json.loads(e.read()).get("error") or f"HTTP {e.code}")
+        except Exception:
+            words = f"HTTP {e.code}"
+        if 400 <= e.code < 500:
+            return {"error": f"the {job.get('profile')!r} runner refused the job: {words}", "refused": e.code}
+        return {"error": f"the {job.get('profile')!r} runner failed: HTTP {e.code} — {words}"}
+    except Exception as e:
+        return {"error": f"the {job.get('profile')!r} runner did not answer: {type(e).__name__}"}
 
 
 class H(BaseHTTPRequestHandler):
@@ -161,20 +184,14 @@ class H(BaseHTTPRequestHandler):
                "run_id": str(req.get("run_id") or f"broker-{int(time.time())}"),
                "timeout_s": timeout_s,
                # an output schema (§89, §102): text, bounded like the prompt; the runner makes it a file
-               **({"schema": str(req["schema"])[:200000]} if req.get("schema") else {}),
+               **({"schema": str(req["schema"])[:execution.PROMPT_BOUND]} if req.get("schema") else {}),
                # the model asked for (§91): a name, bounded; the runner checks its shape
                **({"model": str(req["model"])[:120]} if req.get("model") else {}),
                # the retry number, digits or nothing: it names the call's evidence in the runner
                "attempt": str(req.get("attempt") or "") if re.fullmatch(r"\d{0,3}", str(req.get("attempt") or "")) else "",
                "job_token": token, "mcp_url": SELF_MCP}
         try:
-            r = urllib.request.Request(f"http://runner-{profile}:{RUNNER_PORT}/run",
-                                       data=json.dumps(job).encode(),
-                                       headers={"content-type": "application/json"})
-            with urllib.request.urlopen(r, timeout=job["timeout_s"] + 30) as x:
-                out = json.loads(x.read())
-        except Exception as e:
-            out = {"error": f"the {profile!r} runner did not answer: {type(e).__name__}"}
+            out = runner_answer(f"http://runner-{profile}:{RUNNER_PORT}/run", job, job["timeout_s"] + 30)
         finally:
             with JOBS_LOCK:
                 JOBS[token]["done"] = True   # a token lives exactly as long as its job

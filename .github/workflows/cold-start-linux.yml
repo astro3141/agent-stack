@@ -94,6 +94,18 @@ jobs:
           (bash scripts/up.sh --check 2>&1 || true) | grep "the instance's Python libraries are pinned" | tee -a /tmp/pylocal.log
           grep -q "ok    the instance's Python libraries are pinned" /tmp/pylocal.log
 
+      # A server whose process predates the code it serves (§103, #91): made stale by touching a
+      # stack file, named by --check, restarted by the bring-up, clean after.
+      - name: a stale stack server is named by --check and restarted by up.sh
+        run: |
+          set -o pipefail
+          sleep 1; touch stack/profile_runner.py
+          (bash scripts/up.sh --check 2>&1 || true) | grep "the stack's servers run this checkout's code" | tee /tmp/servers.log
+          grep -q "FAIL  the stack's servers run this checkout's code" /tmp/servers.log
+          (bash scripts/up.sh 2>&1 || true) | grep -E "stack servers started before this code|the stack's servers run this checkout's code" | tee -a /tmp/servers.log
+          grep -q "restarting:" /tmp/servers.log
+          grep -q "ok    the stack's servers run this checkout's code" /tmp/servers.log
+
       # The stack is up and nobody is signed in: exactly the `stack` level of scripts/verify.sh —
       # the checks, the three control suites, package locks and controls, one hello-lane run.
       - name: verify at the stack level
@@ -140,6 +152,7 @@ jobs:
             /tmp/cold-start.log
             /tmp/verify.log
             /tmp/pylocal.log
+            /tmp/servers.log
             /tmp/release.log
 
       - name: take it down the way an operator would

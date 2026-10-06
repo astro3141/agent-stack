@@ -22,10 +22,14 @@ A record carries `contract`, the version of this shape, so a reader can tell an 
 import copy, json, os
 
 CONTRACT = 3                             # 3: `closed` for `kind` (§102); 2: the query kind's keys (§89); 1: before them
+# A brokered call carries its prompt and its schema as text inside the job the broker forwards;
+# each is bounded here, and the bound is the dispatch step's to refuse before the hand-over (§103,
+# #88) — a direct call has no bound. Named once, read by the dispatch, the broker and the runner.
+PROMPT_BOUND = 200000
 
 # every key a model step answers with, and what it holds when the call did not get that far
 FIELDS = {
-    "status": "FAILED",                  # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | …
+    "status": "FAILED",                  # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | REFUSED (a runner's 4xx, §103) | …
     "closed": False,                     # the profile asked for no tools (tools.allowed: []): one prompt, one turn (§102)
     "provider": "",
     "principal": "",                     # the Preloop principal the call presented

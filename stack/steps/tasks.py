@@ -112,7 +112,8 @@ def outcome_of(res, produced):
     # doing: not a "failed" a member's default retry runs again (§89) — a workflow that wants it says `invalid`
     if status in ("INVALID_OUTPUT", "TOOLS_USED"):
         return "invalid"
-    return "denied" if status in ("DENIED", "CONTROL_UNAVAILABLE", "TIMED_OUT") else "failed"
+    # a runner's refusal (REFUSED, §103) is an answer too: the same request is refused the same way
+    return "denied" if status in ("DENIED", "REFUSED", "CONTROL_UNAVAILABLE", "TIMED_OUT") else "failed"
 
 
 def read_row(r):
