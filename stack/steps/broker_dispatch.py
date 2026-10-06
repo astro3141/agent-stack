@@ -16,7 +16,7 @@ and the role's name.
 What a repeat of this step does (OPERATIONS §17): "no" — a model call, dispatched.
 """
 REPEATABLE = "no"
-import json
+import hashlib, json
 import os
 import sys
 import urllib.error
@@ -72,6 +72,17 @@ if _prof is None:                      # the same refusal the door makes (#79): 
                 f"{', '.join(settings.profile_names()) or 'none'}"), ensure_ascii=False))
     raise SystemExit(0)
 timeout_s = int((_prof.get("execution") or {}).get("timeout_ms", 900000)) // 1000
+# The job carries the prompt and the schema as text, each bounded (execution.PROMPT_BOUND); a
+# longer one is refused here, before anything is handed over, with the sizes — not at the runner
+# as "prompt text is required (and bounded)" with no evidence directory (devflow, #88, §103).
+if len(prompt) > execution.PROMPT_BOUND or len(schema) > execution.PROMPT_BOUND:
+    print(json.dumps(execution.record(
+        status="FAILED", produced=False, attempts=0, principal=principal, provider=provider, profile=prof_name,
+        failure=f"the prompt is {len(prompt):,} characters and the schema {len(schema):,}; a brokered call "
+                f"carries each as text in its job, bounded at {execution.PROMPT_BOUND:,} (docs/packages.md) — "
+                "a direct call has no bound; split the call, or hand the materials over as files the role reads"),
+        ensure_ascii=False))
+    raise SystemExit(0)
 
 req = {"role": principal, "provider": provider, "model_route": model_route or "direct",
        "label": label, "prompt": prompt, "expected": expected,
@@ -105,9 +116,26 @@ except Exception as e:
         profile=prof_name, failure=f"the broker did not answer: {type(e).__name__}")))
     raise SystemExit(0)
 
+# A job the runner refused (its 4xx, carried by the broker with the runner's words, §103): an
+# answer, not a transport failure — REFUSED, attempts 0, and a member's default retry does not run
+# it again (the same request is refused the same way).
+if out.get("refused"):
+    print(json.dumps(execution.record(
+        status="REFUSED", produced=False, attempts=0, principal=principal, provider=provider, profile=prof_name,
+        failure=str(out.get("error") or f"the runner refused the job: HTTP {out['refused']}")), ensure_ascii=False))
+    raise SystemExit(0)
 res = execution.normalize(out.get("result") or {"status": "FAILED", "provider": provider,
                                                 "principal": principal, "profile": prof_name,
                                                 "failure": out.get("error", "no result from the runner")})
+# This step sent a schema, so a completed call's record names it by content; one that does not
+# came through a runner that did not apply it — a process from before the checkout (devflow, #91:
+# half the path on §102, COMPLETED with no schema and an empty answer). Said, not passed on.
+if schema_file and res.get("status") == "COMPLETED" \
+        and res.get("schema_sha256") != hashlib.sha256(schema.encode("utf-8")).hexdigest():
+    res["status"], res["produced"], res["answer"] = "FAILED", False, {}
+    res["failure"] = ("the runner did not apply the output schema this call was given (its record names "
+                      f"{res.get('schema_sha256') or 'none'}): a runner whose process predates the checkout — "
+                      "scripts/up.sh restarts one, and its --check says so (§103)")
 # where it ran is part of the record: the receipt should say this member was brokered, and where
 res["dispatched"] = out.get("dispatched") or {"role": principal}
 print(json.dumps(res, ensure_ascii=False))

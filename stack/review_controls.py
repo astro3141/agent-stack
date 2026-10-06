@@ -1531,6 +1531,71 @@ def pylocal_controls():
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 27. the stack's servers, and a runner's refusal (§103)
+def servers_controls():
+    """A server whose process predates the code it serves is named (stale_servers.py); the broker
+    carries a runner's refusal in the runner's words, as `refused`, and a transport failure as
+    `did not answer` (broker.runner_answer, driven against local HTTP servers); a REFUSED record is
+    a member's `denied`, not a `failed` it retries."""
+    import http.server as hs, threading as th
+    sys.path.insert(0, str(HERE))
+    ss = importlib.import_module("stale_servers")
+    root = Path(tempfile.mkdtemp(prefix="agentstack-servers-"))
+    (root / "stack").mkdir(); (root / "stack" / "tools").mkdir()
+    (root / "stack" / "broker.py").write_text("x")
+    os.utime(root / "stack" / "broker.py", (1_700_000_000, 1_700_000_000))            # 2023-11-14T22:13:20Z
+    (root / "stack" / "tools" / "replay_serve.py").write_text("x")
+    os.utime(root / "stack" / "tools" / "replay_serve.py", (1_700_000_100, 1_700_000_100))
+    lines = ["s-broker 2023-11-14T22:13:00.123456789Z",      # before both
+             "s-agent-closed 2023-11-14T22:15:10.5Z",        # after the newest (tools/)
+             "s-odd not-a-time", "", "s-only"]
+    check("servers: a process started before the newest .py under the stack directory (tools included) is stale; later ones, odd lines and bare names are not",
+          ss.stale(str(root / "stack"), lines) == ["s-broker"], ss.stale(str(root / "stack"), lines))
+    check("servers: docker's RFC 3339 with nanoseconds is read to the second, and a bad one is None",
+          ss.started("2026-10-06T06:33:47.491710600Z") == 1791268427 and ss.started("yesterday") is None)
+
+    brk = (WORK / "stack" / "broker.py").read_text()
+    fn_src = brk[brk.index("def runner_answer(url, job, timeout):"):brk.index("class H(BaseHTTPRequestHandler):")]
+    ns = {}
+    exec("import json, urllib.request, urllib.error\n" + fn_src, ns)
+    answers = {}
+    class R(hs.BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("content-length") or 0))
+            code, body = answers.get(self.path, (200, b'{"result": {"status": "COMPLETED"}}'))
+            self.send_response(code); self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *a):
+            pass
+    srv = hs.HTTPServer(("127.0.0.1", 0), R)
+    th.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    answers["/refuse"] = (400, b'{"error": "prompt text is required, and bounded at 200000 characters"}')
+    answers["/bare"] = (413, b"too big")
+    answers["/broken"] = (503, b'{"error": "no runner"}')
+    def ans(path):
+        return ns["runner_answer"](base + path, {"profile": "closed"}, 5)
+    check("broker: a runner that answered is passed through as it answered",
+          ans("/run") == {"result": {"status": "COMPLETED"}}, ans("/run"))
+    check("broker: a runner's 4xx is carried in the runner's words, with the code as `refused`",
+          ans("/refuse") == {"error": "the 'closed' runner refused the job: prompt text is required, and bounded at 200000 characters", "refused": 400}, ans("/refuse"))
+    check("broker: a 4xx with no JSON body still says the code", ans("/bare") == {"error": "the 'closed' runner refused the job: HTTP 413", "refused": 413}, ans("/bare"))
+    check("broker: a 5xx is a failure, not a refusal", ans("/broken") == {"error": "the 'closed' runner failed: HTTP 503 — no runner"}, ans("/broken"))
+    srv.shutdown(); srv.server_close()        # the port closed, not just the loop stopped: refused, not a hang
+    dead = ns["runner_answer"](base + "/run", {"profile": "closed"}, 5)
+    check("broker: nothing answering is `did not answer` with the kind of failure, as before", dead == {"error": "the 'closed' runner did not answer: URLError"}, dead)
+
+    tk = (WORK / "stack" / "steps" / "tasks.py").read_text()
+    oo_src = tk[tk.index("def outcome_of(res, produced):"):tk.index("def read_row(r):")]
+    ns2 = {}
+    exec(oo_src, ns2)
+    oo = ns2["outcome_of"]
+    check("fan-out: a REFUSED member is `denied` — not retried by a default retry_when; FAILED stays `failed`, DENIED `denied`, INVALID_OUTPUT `invalid`",
+          (oo({"status": "REFUSED"}, False), oo({"status": "FAILED"}, False), oo({"status": "DENIED"}, False), oo({"status": "INVALID_OUTPUT"}, False))
+          == ("denied", "failed", "denied", "invalid"))
+    shutil.rmtree(root, ignore_errors=True)
+
+
 policy_controls()
 codex_controls()
 kept_controls()
@@ -1557,6 +1622,7 @@ host_controls()
 install_controls()
 pinkind_controls()
 pylocal_controls()
+servers_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

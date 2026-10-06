@@ -442,6 +442,20 @@ presents it.
 If you meant to start from nothing instead, that is `scripts/down.sh --volumes` — it prints exactly
 which volumes it will remove, and a person has to sign in to the providers again afterwards.
 
+## `up.sh --check` fails "the stack's servers run this checkout's code"
+
+**What it means.** The broker, a profile runner or the replay server is a process that started
+before the newest file under `stack/` changed — it runs the code it read at start, not the
+checkout's. Measured by devflow (#91, §103) after `git pull` + `up.sh` on a bring-up that rebuilt
+no image: the broker and the runners kept §102-before code, and a brokered `--output-schema` call
+came back `COMPLETED` with `schema_sha256: ""` and an empty answer. The dispatch step now refuses
+such an answer (`the runner did not apply the output schema this call was given`), and this check
+names the server.
+
+**Do:** `scripts/up.sh` — it restarts the stale servers itself and says which
+(`== stack servers started before this code — restarting: …`). A running brokered call on a
+restarted server ends with the process; bring the stack up between runs.
+
 ## Disk keeps growing
 
 ```bash

@@ -19,6 +19,8 @@ import subprocess
 import sys
 import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import execution  # noqa: E402  (the bound a brokered prompt travels under, §103)
 
 PY = sys.executable
 STEP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steps", "agent_task.py")
@@ -79,8 +81,9 @@ class H(BaseHTTPRequestHandler):
         if model and not MODEL.fullmatch(model):
             return self._send(400, {"error": "invalid model"})
         prompt = str(job.get("prompt") or "")
-        if not prompt or len(prompt) > 200000:
-            return self._send(400, {"error": "prompt text is required (and bounded)"})
+        if not prompt or len(prompt) > execution.PROMPT_BOUND:
+            return self._send(400, {"error": f"prompt text is required, and bounded at {execution.PROMPT_BOUND} characters "
+                                             "(the dispatch step refuses a longer one before the hand-over, §103)"})
         with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False,
                                          encoding="utf-8") as f:
             f.write(prompt)

@@ -246,7 +246,7 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
 
 ```yaml
     output:
-      status: {type: string}                 # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | ...
+      status: {type: string}                 # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | REFUSED | ...
       closed: {type: boolean}                # the profile asked for no tools (tools.allowed: []): one prompt, one turn (§102)
       provider: {type: string}
       principal: {type: string}              # the Preloop principal the call presented
@@ -353,8 +353,15 @@ agent_task.py <provider> <route> <label> <prompt|-> <answer.json> [<profile> [<l
   token rows the adapter reported).
 - **Where it runs** is as for any call: a role that declares an egress profile is handed to the
   broker, prompt, schema and model with it (§91), and the environment travels as the profile's
-  name. A chain step (`steps/task_chain.py`) takes `schema:` and `model:` beside its `prompt`, and
-  a `profile:` of its own over the member's.
+  name. **A brokered prompt and a brokered schema are each bounded at 200,000 characters**
+  (`execution.PROMPT_BOUND`): the job carries them as text, and the dispatch step refuses a
+  longer one before the hand-over (`FAILED`, `attempts: 0`, the sizes named) — a direct call has
+  no bound; split the call, or hand the materials over as files the role reads (§103, #88). The
+  dispatch step also checks that a completed call's record names the schema it sent
+  (`schema_sha256`): one that does not came through a runner whose process predates the checkout,
+  and is `FAILED` with that sentence rather than a completed call with an empty answer (#91).
+  A chain step (`steps/task_chain.py`) takes `schema:` and `model:` beside its `prompt`, and a
+  `profile:` of its own over the member's.
 
 **Compositions are the workflow's.** Three it may want — none of them is a thing the stack names:
 
@@ -510,7 +517,9 @@ A fan-out member may ask to be run again when it does not produce:
 No retry by default; `["failed"]` when retries are asked for and `retry_when` is not given — a
 denial is an answer (a tool rule, or a person), and retrying an answer is something the workflow
 says out loud. So is `invalid` (an answer that broke its declared schema, or a tool call a closed
-call made): the model's doing, retried only when the member says `"invalid"`. Every attempt is
+call made): the model's doing, retried only when the member says `"invalid"`. A brokered job the
+runner refused (`REFUSED`, the runner's words in `failure`, §103) is a denial too — the same
+request is refused the same way, so it is not run again by default. Every attempt is
 in the receipt as `attempts` and `attempt_outcomes`.
 
 ## Credentials of its own

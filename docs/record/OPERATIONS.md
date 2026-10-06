@@ -5745,3 +5745,65 @@ ratchets (51 / 167); `cfg.py validate` accepts `closed` and refuses a named `too
 `verify.sh --level static` 13/13. **Cold-start run 138 green** on 87b4e8f — the same group in
 the container 546/546 at the stack level, 24/24; run 137 red on one trial pin that still read
 contract 2.
+
+## 103. devflow's three findings after §102: a half-updated path, a bound nobody stated, a refusal nobody heard (#88, #89, #91, 2026-10-06)
+
+devflow moved to §102 the hour it merged (`requires.stack.min: 826536e`: three investigators on
+`research-default`, one judge on `closed`, every member with `--output-schema`) and filed three
+findings, two of them from the day before. All three are the stack's.
+
+**#91 — after `git pull` + `up.sh`, the broker and the runners ran §102-before code.** The broker
+and the profile runners (and the replay server) run `/work/stack/*.py` as long-lived processes
+from the bind mount; `compose up -d --build` recreates a container only when its image changed,
+and a change in `stack/` changes no image. So the operator's bring-up generated `closed.json`
+and left the servers on the code they had started with on 10-05. The old runner handed the new
+door `--query sf`; the new door read `--query` as a positional and dropped it; the judge, closed
+and without a schema, answered into nothing — `COMPLETED`, `schema_sha256: ""`, `produced:
+false`, `failure: ""`, twice. Nothing on the path said a word. Two things now do:
+- `scripts/up.sh` names the stack servers whose process started before the newest Python file
+  under `stack/` (`stack/stale_servers.py`, docker's `StartedAt` against the mtimes, run inside
+  the agent container so no host python is needed) and **restarts them on every bring-up**
+  (`== stack servers started before this code — restarting: …`); `--check` fails `the stack's
+  servers run this checkout's code (broker, runners)` naming them. A brokered call running on a
+  restarted server ends with the process: a bring-up is the operator's moment for that, and the
+  docs say so (update-day.md, runbook).
+- `broker_dispatch.py` sent the schema, so it knows what a completed record must name: one
+  whose `schema_sha256` is not the hash of what it sent is `FAILED` with "the runner did not
+  apply the output schema this call was given … a runner whose process predates the checkout",
+  `produced: false`, the answer emptied — never a completed call with an empty answer.
+
+**#88 — a brokered prompt is bounded at 200,000 characters, and no page said so.** The runner
+refused `len(prompt) > 200000` with "prompt text is required (and bounded)" and no evidence
+directory; a direct call has no bound. The bound is now one name (`execution.PROMPT_BOUND`),
+read by the dispatch step, the broker and the runner; **the dispatch step refuses before the
+hand-over** (`FAILED`, `attempts: 0`, "the prompt is 369,809 characters and the schema 1,204; a
+brokered call carries each as text in its job, bounded at 200,000 … a direct call has no bound;
+split the call, or hand the materials over as files the role reads"); docs/packages.md states
+it beside "Where it runs". The schema is bounded the same way (the broker truncated it silently
+before).
+
+**#89 — the broker reported a runner's 400 as `did not answer: HTTPError`, and the member retried
+it.** `broker.runner_answer()` now carries a runner's 4xx in the runner's words with the code as
+`refused`; the dispatch step records it as **`REFUSED`**, `attempts: 0`, the words in `failure`;
+`tasks.py` reads `REFUSED` as a member's `denied` — the same request is refused the same way, so
+a default `retry_when` does not run it again. A 5xx stays a failure; nothing answering stays
+`did not answer: <kind>`.
+
+**Measured.** review_controls 277/277 — `stale_servers.stale()` on a temporary tree (a process
+before the newest file under `tools/` is stale, a later one is not, odd lines are skipped;
+docker's nanosecond timestamp read to the second); `broker.runner_answer()` against local HTTP
+servers (200 passed through, 400 with its words and `refused: 400`, 413 with no JSON body, 503 a
+failure, nothing listening `did not answer: URLError`); `outcome_of`: REFUSED → `denied`.
+trial_controls' shape group, run here against the `/work` link (34/34): the brokered recorder
+answering with the schema named (passed through), without it (FAILED, the stale-runner
+sentence), with a 400 (REFUSED, attempts 0, the runner's words), and a prompt of 200,001
+characters refused before the broker was asked. Pins at the ratchets (51 / 167); `verify.sh
+--level static` 13/13. The cold start touches `stack/profile_runner.py` after the install and
+requires `--check` to fail the servers check, the next `up.sh` to print the restart line, and the
+check to pass after. **Cold-start run 141 green** on c14da15: after the touch, `--check` named
+four (`agentstack-broker agentstack-agent-closed agentstack-agent-probe agentstack-replay`); the
+bring-up's `compose up` had already recreated three of them by the time the servers were read
+(their configuration changes with the regenerated egress lists), so the restart line named the
+one that was still old, the broker — `restarting: agentstack-broker` — and the check passed;
+trial 549/549, review 277/277, stack 24/24. Run 140 red on the helper being defined after the
+bring-up used it (`stale_servers: command not found`) and the check printing its list twice.

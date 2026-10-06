@@ -75,6 +75,15 @@ apply. Until §97 a plain bring-up applied it only on the claim and when the too
 novel-v2 measured a new deny (#78) not in effect on an updated instance until `cfg.py apply` was
 run by hand.
 
+**A code change rides with any bring-up too (§103, #91).** The broker, the profile runners and
+the replay server run `/work/stack/*.py` as long-lived processes, and a bring-up that rebuilt no
+image used to leave them on the code they started with: devflow measured half the path on §102
+and half before it — a brokered call `COMPLETED` with no schema. `scripts/up.sh` now restarts a
+server whose process predates the newest stack file (a brokered call running on it ends with the
+process; a bring-up is the operator's moment for that), and `up.sh --check` fails `the stack's
+servers run this checkout's code` naming the stale ones. `git pull` alone changes nothing that
+runs; `up.sh` after it does.
+
 **Whose script performs the update (§90, #48).** The script you run is the workspace's — the
 revision being left — and it knows nothing of what the target changed. So it does the two things
 only the running revision can do safely, builds the candidate from the target's Dockerfile and
