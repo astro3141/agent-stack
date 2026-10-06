@@ -5742,4 +5742,6 @@ carrying prompt, schema, model and the profile's name. review_controls 269/269: 
 (`closed`, no `kind`, contract 3), the option parser (`--query` read as a positional now), the
 adapter's local refusal (`closed_no_tools`); the providers' `closedEnv` 24/24; pins at the
 ratchets (51 / 167); `cfg.py validate` accepts `closed` and refuses a named `tools.allowed`;
-`verify.sh --level static` 13/13.
+`verify.sh --level static` 13/13. **Cold-start run 138 green** on 87b4e8f — the same group in
+the container 546/546 at the stack level, 24/24; run 137 red on one trial pin that still read
+contract 2.
