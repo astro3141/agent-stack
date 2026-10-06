@@ -90,6 +90,20 @@ export STACK OPS_PORT HUB_PORT MLFLOW_PORT
 export PRELOOP_API_PORT PRELOOP_GATEWAY_PORT PRELOOP_CONSOLE_PORT
 FORCE=""; [ "$MODE" = "--recreate" ] && FORCE="--force-recreate"
 
+in_agent() { docker exec "$STACK-agent" sh -c "$1" 2>/dev/null; }
+in_agent_stdin() { docker exec -i "$STACK-agent" sh -c "$1" 2>/dev/null; }
+# The stack's servers — the broker, the profile runners, the replay server — run /work/stack/*.py
+# as long-lived processes; a bring-up that rebuilt no image leaves them on the code they started
+# with (devflow, #91: half the path on §102, a brokered call COMPLETED with no schema). This names
+# the ones whose process predates the newest stack file: the bring-up restarts them, --check says.
+stale_servers() {
+  docker ps --filter "name=^${STACK}-" --format '{{.Names}}' 2>/dev/null | while read -r c; do
+    case "$(docker inspect -f '{{join .Config.Cmd " "}}' "$c" 2>/dev/null)" in
+      *"/work/stack/"*) echo "$c $(docker inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null)";;
+    esac
+  done | in_agent_stdin "$PY_IN_AGENT /work/stack/stale_servers.py /work/stack"
+}
+
 # The instance's own Python libraries go into the image at build (docker/python/python.local,
 # OPERATIONS §101), and every line is pinned: a line without == would resolve differently at every
 # build, and the release record could not say what the image carries. Prints `none` when there is
@@ -251,19 +265,6 @@ check() {  # name, expected, actual
   else printf '  FAIL  %-44s expected %s, got %s\n' "$1" "$2" "$3"; fail=1
        FAILED="$FAILED{\"check\":\"$1\",\"expected\":\"$2\",\"got\":\"$3\"},"; fi
 }
-in_agent() { docker exec "$STACK-agent" sh -c "$1" 2>/dev/null; }
-in_agent_stdin() { docker exec -i "$STACK-agent" sh -c "$1" 2>/dev/null; }
-# The stack's servers — the broker, the profile runners, the replay server — run /work/stack/*.py
-# as long-lived processes; a bring-up that rebuilt no image leaves them on the code they started
-# with (devflow, #91: half the path on §102, a brokered call COMPLETED with no schema). This names
-# the ones whose process predates the newest stack file: the bring-up restarts them, --check says.
-stale_servers() {
-  docker ps --filter "name=^${STACK}-" --format '{{.Names}}' 2>/dev/null | while read -r c; do
-    case "$(docker inspect -f '{{join .Config.Cmd " "}}' "$c" 2>/dev/null)" in
-      *"/work/stack/"*) echo "$c $(docker inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null)";;
-    esac
-  done | in_agent_stdin "$PY_IN_AGENT /work/stack/stale_servers.py /work/stack"
-}
 
 # A fetched package is pinned: installing one gives its principals rights, so what is on disk has
 # to be the commit the lock names. Reported here rather than enforced — a package edited on purpose
@@ -364,7 +365,8 @@ fi
 
 echo "== the stack's servers"
 _stale="$(stale_servers | tr '\n' ' ')"
-check "the stack's servers run this checkout's code (broker, runners)" none "${_stale:+${_stale% }}${_stale:-none}"
+_stale="${_stale% }"
+check "the stack's servers run this checkout's code (broker, runners)" none "${_stale:-none}"
 echo "== the image's inputs"
 # docker/python/python.local is built into the image (§101); a line that is not pinned fails the
 # bring-up, and this says so on a --check too. `none` is a fresh clone.
