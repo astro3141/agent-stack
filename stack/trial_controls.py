@@ -361,7 +361,7 @@ def controls_lanes_step():
           open(f"{ws}/lane_ai.json", encoding="utf-8").read() if os.path.isfile(f"{ws}/lane_ai.json") else None, doc)
     rec = json.load(open(f"{ws}/lanes_round.json"))
     check("the receipt carries the cycle's context unchanged", rec.get("context"), "packet-sha")
-    check("and the contract version", rec.get("contract"), 2)
+    check("and the contract version", rec.get("contract"), 3)
     shutil.rmtree(root, ignore_errors=True)
     shutil.rmtree(ws, ignore_errors=True)
 
