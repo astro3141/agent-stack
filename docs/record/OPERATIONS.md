@@ -5800,4 +5800,10 @@ sentence), with a 400 (REFUSED, attempts 0, the runner's words), and a prompt of
 characters refused before the broker was asked. Pins at the ratchets (51 / 167); `verify.sh
 --level static` 13/13. The cold start touches `stack/profile_runner.py` after the install and
 requires `--check` to fail the servers check, the next `up.sh` to print the restart line, and the
-check to pass after.
+check to pass after. **Cold-start run 141 green** on c14da15: after the touch, `--check` named
+four (`agentstack-broker agentstack-agent-closed agentstack-agent-probe agentstack-replay`); the
+bring-up's `compose up` had already recreated three of them by the time the servers were read
+(their configuration changes with the regenerated egress lists), so the restart line named the
+one that was still old, the broker — `restarting: agentstack-broker` — and the check passed;
+trial 549/549, review 277/277, stack 24/24. Run 140 red on the helper being defined after the
+bring-up used it (`stale_servers: command not found`) and the check printing its list twice.
