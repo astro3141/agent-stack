@@ -236,8 +236,8 @@ block; three packages had each copied their own subset, one of them twice
 recorder turns into an MLflow run, and what `trajectory.py` sums; a copy is written beside the
 adapter's raw result as `<evidence_dir>/execution.json`, so the evidence directory carries the
 platform's record of the call whether or not any step passed it on. A record carries
-`contract: 2`, the version of this shape (2 since the query's keys, §89; a 1 is a record from
-before them); so do a fan-out's receipt and a chain's answer. The
+`contract: 3`, the version of this shape (3 since `closed` replaced `kind`, §102; 2 the query
+kind's keys, §89; 1 before them); so do a fan-out's receipt and a chain's answer. The
 recorder also reads the evidence directories of the run directly, so a call your workflow made
 and did not list is recorded all the same (#22); and a run a step of yours starts through
 `run_workflow.py start` carries your run's id as its parent and inherits your `--suite`/`--case`
@@ -247,7 +247,7 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
 ```yaml
     output:
       status: {type: string}                 # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | ...
-      kind: {type: string}                   # task (the default) | query (one prompt, no tools, a declared shape)
+      closed: {type: boolean}                # the profile asked for no tools (tools.allowed: []): one prompt, one turn (§102)
       provider: {type: string}
       principal: {type: string}              # the Preloop principal the call presented
       model_route: {type: string}
@@ -268,10 +268,10 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
       failure: {type: string}                # why, when status is not COMPLETED
       ledger_error: {type: string}
       turns: {type: number}                  # one prompt is one turn over ACP; a retry is another call
-      tool_calls: {type: number}             # tool calls the turn made, from the adapter's events; a query says 0
+      tool_calls: {type: number}             # tool calls the turn made, from the adapter's events; a closed call says 0
       server_tool_use: {type: number}        # of those, web lookups
-      schema_sha256: {type: string}          # a query: the declared schema, by content
-      answer: {type: object}                 # a query: the validated answer; {} until there is one
+      schema_sha256: {type: string}          # with --output-schema: the declared schema, by content
+      answer: {type: object}                 # with --output-schema: the validated answer; {} until there is one
       measurements:                          # a number the adapter did not report is left out, never 0
         type: object
         properties:
@@ -283,48 +283,46 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
 A YAML anchor (`output: &agent_out` on the first model step, `output: *agent_out` on the rest)
 keeps one copy per workflow; `packages/research-r/research-r.yaml` shows it.
 
-## A query: one prompt, no tools, an answer in a declared shape
+## The shape of a call: the environment is the profile's, the output contract is an option
 
-A harness that pins its prompts to a schema — a prompt's answer is parsed, checked, and nothing
-else may have happened in between (trading, #62) — calls the same door with one more argument:
+Two things decide what a model call is, and they are independent (§102). The stack provides
+each as a knob and decides nothing about how they are combined — that is the workflow's
+(CONTRACT.md). The query kind of §89 bundled them into one call type with a use case built in;
+§102 took it apart.
+
+**The environment — what the model can reach — is the profile's and the principal's.** A profile
+says whether the vendor's native tools exist (`tools.native_tools`), which read-only ones run
+without asking (`tools.native_allow`), and, since §102, **`tools.allowed`**: the list the vendor's
+agent is handed as its tools (the adapter's session option `allowedTools`). `tools.allowed: []`
+is a **closed call**: the agent gets no tools and one turn (`maxTurns: 1`), no Preloop MCP server
+travels with the call, and every permission request is refused by the adapter without asking
+anyone (Claude's project deny list, Codex's shell and web search off, Grok's posture per login —
+each provider's own switch beside the session option). Whether the vendor honoured the ask is
+read from the events: **`tool_calls` is 0, or the status is `TOOLS_USED`**, whatever the model
+wrote. Only `[]` is accepted for now, because only it is measured; which calls an open call's
+tools may make is the principal's `tool_rules`, and where they reach is the egress profile's. The
+tracked profile **`closed`** is that environment, ready to name; the record says `closed: true`.
+
+**The output contract is `--output-schema <schema.json>` on `agent_task.py`**, on any call:
 
 ```
-agent_task.py <provider> <route> <label> <payload|-> <answer.json> [<profile> [<login> [<principal>]]] --query <schema.json> [--model <id>]
+agent_task.py <provider> <route> <label> <prompt|-> <answer.json> [<profile> [<login> [<principal>]]] --output-schema <schema.json> [--model <id>]
 ```
 
-`--model <id>` asks the vendor for that model by name (the adapter forwards it as the session's
-`model` option); without it the login's default answers. A pinned binding passes its pin here AND
-still reads `measurements.model_usage` to see what answered — the ask and the check are separate
-facts, and a helper model's row (Claude reports one) is judged by the reader, not merged away.
-
-What a **query** is, and what the door does with it (§89, DECISIONS-2026-10-04 §8):
-
-- **The payload goes as it is.** The file's bytes (`-` reads them from stdin, for a harness that
-  never writes a prompt to disk), no `{WS}`, nothing added or wrapped; `request.json` in the
-  evidence directory carries exactly what the model saw. What the model is told about the shape
-  it must answer in is the payload's business — the door sends it no schema. **A prompt that was
-  measured under a vendor's schema mode** (`--json-schema`, constrained decoding) **is not the
-  same prompt here until the schema is in the payload**: measured by trading (#62), the same
-  stage grew keys the schema does not name and read `INVALID_OUTPUT` until its payload carried
-  the schema in an output-shape block, then passed 12/12.
-- **No tools.** The vendor is asked for none (the adapter's session options `allowedTools: []`,
-  `maxTurns: 1`, and each provider's own switch: Claude's project deny list, Codex's shell and
-  web search off; Grok's posture is per login) and no Preloop MCP server travels with the call.
-  Every permission request is refused by the adapter without asking anyone. Whether the vendor
-  honoured the ask is read from the events: **`tool_calls` is 0, or the status is `TOOLS_USED`**,
-  whatever the model wrote.
-- **One turn.** Over ACP one prompt is one turn; `turns: 1` says so, and a retry is another call.
-- **The answer is checked here, after the call, the same for every vendor.** The model's text,
-  with one surrounding ``` fence removed and nothing else, is read as JSON and checked against the
-  schema. It passes: `COMPLETED`, the answer written to the expected file as JSON, and carried in
-  the record as `answer` (`produced` means a valid answer arrived). It does not: `INVALID_OUTPUT`,
-  the problems named in `failure` by their place (`$.verdict: "hold" is not one of […]`), the raw
-  text kept as `answer.raw.txt`, and **no retry** — an answer that broke its schema is the model's
-  doing, and the stack never retries a failure the model produced (CONTRACT.md). A fan-out member
-  sees it as `invalid`, which its default `retry_when` does not retry; say `["invalid"]` to.
-- **What is retried, once:** a login the vendor calls a refresh (as for a task) and a text that
-  is not JSON at all — a cut stream is a transport fault, not an answer. Both are counted in
-  `attempts`, both attempts' results kept (`result.a1.json`, `events.a1.jsonl`).
+- **The answer is checked here, after the call, the same for every vendor.** It comes from the
+  expected file when this attempt wrote it (a call with tools that writes its answer), else from
+  the model's text with one surrounding ``` fence removed and nothing else (a closed call). It is
+  read as JSON and checked against the schema. It passes: `COMPLETED`, the answer in the expected
+  file as JSON and carried in the record as `answer` — **with a schema, `produced` means a valid
+  answer arrived**. It does not: `INVALID_OUTPUT`, the problems named in `failure` by their place
+  (`$.verdict: "hold" is not one of […]`), the raw text kept as `answer.raw.txt` when the answer
+  came from the text, and **no retry** — an answer that broke its schema is the model's doing,
+  and the stack never retries a failure the model produced (CONTRACT.md). A fan-out member sees
+  it as `invalid`, which its default `retry_when` does not retry; say `["invalid"]` to.
+- **What is retried, once:** a login the vendor calls a refresh (as for any call) and, when the
+  answer had to come from the text, a text that is not JSON at all — a cut stream is a transport
+  fault, not an answer. Both are counted in `attempts`, both attempts' results kept
+  (`result.a1.json`, `events.a1.jsonl`).
 - **The schema** is a JSON Schema whose root is `"type": "object"` — the shape the three vendors'
   own schema modes require too — using the keywords the door checks: `type`, `enum`, `const`,
   `properties`, `required`, `additionalProperties`, `items`, `minItems`, `maxItems`, `minimum`,
@@ -334,18 +332,37 @@ What a **query** is, and what the door does with it (§89, DECISIONS-2026-10-04 
   nobody and allowed. A schema that uses any other keyword is **refused before the call**
   (`FAILED`, `attempts: 0`, the keywords named): an answer called valid against a half-read schema
   would be worse than no call. `schema_sha256` names the schema the answer was checked against.
-- **The record** is the execution record above with `kind: query`, `turns`, `tool_calls`,
-  `server_tool_use`, `schema_sha256`, `answer`, and `measurements.model_usage` — the per-model
-  token rows the adapter reported, so a prompt pinned to one model can read which model answered
-  (`model_adapter_reported` lists them; Claude and Codex report, Grok reports none — a query on
-  Grok cannot be pinned to a model). Claude Code reports **two** models for one query — a helper
-  model beside the one that answered (measured: `claude-haiku-4-5-20251001,claude-opus-5-5`,
-  §89) — so a pin reads the rows of `measurements.model_usage` and decides which row is the pin,
-  rather than comparing the joined string.
-- **Where it runs** is as for a task: a role that declares an egress profile is handed to the
-  broker, payload, schema and model with it (§91 — before it, the two options did not survive
-  the hand-over). A chain step (`steps/task_chain.py`) is a query with
-  `"query": "<schema path>"` beside its `prompt`.
+- **What the model is told about the shape it must answer in is the prompt's business** — the
+  door sends it no schema. **A prompt that was measured under a vendor's schema mode**
+  (`--json-schema`, constrained decoding) **is not the same prompt here until the schema is in
+  the prompt**: measured by trading (#62), the same stage grew keys the schema does not name and
+  read `INVALID_OUTPUT` until its payload carried the schema in an output-shape block, then
+  passed 12/12.
+- **The prompt** is a file, or `-` for stdin (a harness that never writes its prompt to disk);
+  `{WS}` where it appears is the run's shared workspace; `request.json` in the evidence directory
+  carries exactly what the model saw.
+- **`--model <id>`** asks the vendor for that model by name (the adapter forwards it as the
+  session's `model` option); without it the login's default answers. A pinned binding passes its
+  pin here AND still reads `measurements.model_usage` to see what answered — the ask and the
+  check are separate facts. Claude Code reports **two** models for one call — a helper model
+  beside the one that answered (measured: `claude-haiku-4-5-20251001,claude-opus-5-5`, §89) — so
+  a pin reads the rows of `measurements.model_usage` and decides which row is the pin, rather than
+  comparing the joined string; Grok reports none, so a call on Grok cannot be pinned to a model.
+- **The record** is the execution record above with `closed`, `turns`, `tool_calls`,
+  `server_tool_use`, `schema_sha256`, `answer`, and `measurements.model_usage` (the per-model
+  token rows the adapter reported).
+- **Where it runs** is as for any call: a role that declares an egress profile is handed to the
+  broker, prompt, schema and model with it (§91), and the environment travels as the profile's
+  name. A chain step (`steps/task_chain.py`) takes `schema:` and `model:` beside its `prompt`, and
+  a `profile:` of its own over the member's.
+
+**Compositions are the workflow's.** Three it may want — none of them is a thing the stack names:
+
+| the call | profile | option |
+|---|---|---|
+| a judge: the answer is a function of the prompt and nothing else (trading's schema-pinned harness, #62) | `closed` | `--output-schema` |
+| a reviewer that reads a prepared tree and answers in a declared shape (devflow's code review) | an open one, with the Preloop file tools read-only by its principal | `--output-schema` |
+| an agent that writes an artifact | an open one | none |
 
 **Where a call runs is not the workflow's to choose.** A role that declares an egress profile is
 handed to the broker by `agent_task.py` itself (§54); a fan-out and a chain start the same step
@@ -492,8 +509,8 @@ A fan-out member may ask to be run again when it does not produce:
 
 No retry by default; `["failed"]` when retries are asked for and `retry_when` is not given — a
 denial is an answer (a tool rule, or a person), and retrying an answer is something the workflow
-says out loud. So is a query's `invalid` (an answer that broke its schema, or a tool call the
-model made): the model's doing, retried only when the member says `"invalid"`. Every attempt is
+says out loud. So is `invalid` (an answer that broke its declared schema, or a tool call a closed
+call made): the model's doing, retried only when the member says `"invalid"`. Every attempt is
 in the receipt as `attempts` and `attempt_outcomes`.
 
 ## Credentials of its own
@@ -617,7 +634,8 @@ first run (novel-v2, #77 and #78):**
 #79). They are the vendor's native tools, and the switch is the execution **profile**: a profile's
 `tools.native_allow: [WebSearch, WebFetch]` lets those two run without asking (`routed:
 profile_native_allow` in `permissions.jsonl`); nothing else is allowed there (`cfg.py` refuses
-other names). Where `WebFetch` may reach is the egress allowlist's to decide — a role's profile
+other names). The same block's `tools.allowed: []` is the opposite end — a closed call with no
+tools at all ("The shape of a call", above). Where `WebFetch` may reach is the egress allowlist's to decide — a role's profile
 pins its hosts at the proxy; `WebSearch` runs at the provider and no proxy limits it. So a
 researcher step takes a profile that allows them (`long-task` carries the devflow researcher's
 binding) and the workflow names it. **A profile yaml is live only after `cfg.py generate`** has
@@ -680,11 +698,24 @@ the package is four steps, and the fourth is the one that pays for the other thr
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
 
+**§102 (2026-10-06 — the query kind goes; the shape of a call is two knobs).**
+- **`--query` is gone.** The environment is the profile's: `tools.allowed: []` (the tracked
+  profile `closed`) is what the query's "no tools, one turn" was. The output contract is
+  **`--output-schema <schema.json>`**, on any call — the answer from the expected file when the
+  call wrote it, else from the text; checked here; `INVALID_OUTPUT` and no retry as before. A
+  chain step says `schema:` (and `model:`, `profile:`), not `query:`. The prompt may be `-` on
+  any call; `{WS}` is replaced where it appears.
+- The record's `kind` is gone; `closed` (boolean) replaces it; `contract` is 3. A reader that
+  routed on `kind == "query"` reads `closed` and `schema_sha256` instead.
+- Why: the query kind decided how the two were used — a contract violation on the stack's side
+  (it provides knobs, the workflow combines them); the combination was trading's use case, not
+  a capability. A harness that called `--query` calls the `closed` profile and `--output-schema`.
+
 **§89 (2026-10-04 — the query kind of a call, #62).**
 - **`--query <schema.json>` on `agent_task.py`** makes the call a query: the payload byte for
   byte (`-` for stdin), no tools, one turn, the answer checked against the schema here and
   written to the expected file; `INVALID_OUTPUT` / `TOOLS_USED` and no retry for what the model
-  did ("A query", above). A harness that called a vendor CLI with `--json-schema` calls this
+  did (then "A query", now "The shape of a call" — §102 took the kind apart). A harness that called a vendor CLI with `--json-schema` calls this
   instead; the record carries the per-model usage it needs (`measurements.model_usage`).
 - The execution record gained `kind`, `turns`, `tool_calls`, `server_tool_use`, `schema_sha256`,
   `answer`; `contract` is 2. A reader that copied the `output:` block copies it again; one that
@@ -775,8 +806,8 @@ behaviour you notice has a name.
   which ones the judgement rests on.
 - **A run your step starts** through `run_workflow.py start` carries your run as its parent and
   inherits `--suite`/`--case` (#13). Pass nothing extra.
-- **`contract: 2`** travels in the execution record, a fan-out's receipt and a chain's answer; a
-  reader of yours may check it (#26). A 1 is a record from before the query's keys (§89).
+- **`contract: 3`** travels in the execution record, a fan-out's receipt and a chain's answer; a
+  reader of yours may check it (#26). 2 is a record with `kind` (§89), 1 one from before its keys.
 - **A package with its own runtime** (a desk, a harness, a loop) keeps its runtime and uses the
   stack's doors: `agent_task.py` for every model call, Preloop for every approval, the recorder
   or the evidence directory for every record; it never writes into `/route` (#25, CONTRACT.md "A

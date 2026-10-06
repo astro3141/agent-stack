@@ -5688,3 +5688,60 @@ two trial pins (the literal `up -d --build` line, the refusal block within 900 c
 rollback's `rm` of `config/generated` on a host whose user is not uid 1000; 134, the rollback
 exiting 1 on the runner's five login checks before the image ids were read — now read first,
 and the rollback's FAIL lines judged as the install's are.
+
+## 102. The query kind goes: a contract violation, corrected (2026-10-06)
+
+The devflow session had moved its code-review lenses to the query kind on the operator's word and
+found them unable to read the repository; its analysis of why ended at the right place — "the
+stack's `query` bundles no-tools-one-shot with schema-validated output, and the two are
+independent" — and the operator's question went one step further: whose business is the bundle?
+Read against CONTRACT.md the answer is nobody's on this side. The stack provides capabilities and
+the workflow decides how they are used; §89 took trading's use of one capability (a prompt
+answered with no tools, in a declared shape) and made the use a **kind** of call, with the
+stack deciding that a schema means no tools and no tools means a schema. devflow followed the
+definition the docs gave and got a judge where it needed a reader. DECISIONS-2026-10-04 §8 is
+where the bundling was decided; it was my design, not trading's ask — #62 asked for a stdin
+payload, the vendor's envelope and a per-call schema, all input/output shape.
+
+**The two axes, and where each lives now.**
+- **The environment is the profile's** (and the principal's and the egress profile's, as it
+  was). One key is new: `tools.allowed`, the list the vendor's agent is handed as its tools —
+  the adapter's session option `allowedTools`, which until now only `--query` set, and which no
+  profile key reached. `tools.allowed: []` is a **closed call**: no tools, one turn (`maxTurns:
+  1`), no Preloop MCP server, every permission request refused by the adapter without asking —
+  everything the query did on the environment side, read from the profile the call names. The
+  tracked profile `closed` is that environment. Only `[]` is accepted (`cfg.py validate`
+  refuses a named list): it is the measured case, and which calls an open call's tools may make
+  is the principal's `tool_rules`. The record says `closed`.
+- **The output contract is `--output-schema <schema.json>`** on `agent_task.py`, on any call.
+  The answer is the expected file when this attempt wrote it (a call with tools that writes its
+  answer), else the model's text with one fence removed (a closed call); read as JSON, checked
+  here against the schema; `INVALID_OUTPUT` with every break named and no retry, as before; with
+  a schema, `produced` means a valid answer arrived. A written file that breaks the schema is
+  left as the model wrote it and `produced` is false — a chain does not advance on it.
+- **`--query` is gone**, with no alias: the operator decided that a combination the stack names
+  is the same violation in a smaller font, and trading re-declares its calls as the `closed`
+  profile plus `--output-schema` at its next re-qualification. The record's `kind` is gone;
+  `closed` replaces it; `contract` is **3**. The prompt may be `-` (stdin) on any call, and
+  `{WS}` is replaced where it appears — the query's "byte for byte" was a distinction without a
+  difference once the record carries the prompt the model saw. A chain step says `schema:`,
+  `model:` and a `profile:` of its own instead of `query:`.
+- What did not change: the validator (`stack/query.py`), the refusal of a half-read schema before
+  the call, the two verdicts, the one retry for a cut stream (now: with a schema and no file
+  written), the broker carrying schema and model (§91) — the environment now travels as the
+  profile's name, which it always did.
+
+**Measured.** trial_controls' shape group, run here against a `/work` link with the generated
+profiles and the stand-in adapter (31/31): the closed profile with a schema (valid, fenced,
+invalid, TOOLS_USED, the cut-stream retry, stdin with `{WS}` replaced, the three schema refusals,
+the ungenerated profile), an open profile without a schema (not closed, tool calls counted and
+allowed, no `allowed_tools` on the request), an open profile with a schema (a written file
+judged — valid produced, invalid left as written with `produced: false` — and a text answer
+written by the door), the closed profile without a schema, `--model`, and the brokered job
+carrying prompt, schema, model and the profile's name. review_controls 269/269: the record's keys
+(`closed`, no `kind`, contract 3), the option parser (`--query` read as a positional now), the
+adapter's local refusal (`closed_no_tools`); the providers' `closedEnv` 24/24; pins at the
+ratchets (51 / 167); `cfg.py validate` accepts `closed` and refuses a named `tools.allowed`;
+`verify.sh --level static` 13/13. **Cold-start run 138 green** on 87b4e8f — the same group in
+the container 546/546 at the stack level, 24/24; run 137 red on one trial pin that still read
+contract 2.

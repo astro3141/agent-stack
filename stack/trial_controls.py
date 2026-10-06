@@ -361,7 +361,7 @@ def controls_lanes_step():
           open(f"{ws}/lane_ai.json", encoding="utf-8").read() if os.path.isfile(f"{ws}/lane_ai.json") else None, doc)
     rec = json.load(open(f"{ws}/lanes_round.json"))
     check("the receipt carries the cycle's context unchanged", rec.get("context"), "packet-sha")
-    check("and the contract version", rec.get("contract"), 2)
+    check("and the contract version", rec.get("contract"), 3)
     shutil.rmtree(root, ignore_errors=True)
     shutil.rmtree(ws, ignore_errors=True)
 
@@ -1875,22 +1875,26 @@ for (let i = 0; i < (p.tool_calls || 0); i++) {
   ev.push({ type: "tool_call", tag: "tool_call_update", toolCallId: "t" + i, status: "completed" });
 }
 ev.push({ type: "text_delta", text: p.say });
+// a call with tools that writes its answer (§102): the payload names the file and its text
+if (p.write) { mkdirSync(req.cwd, { recursive: true }); writeFileSync(join(req.cwd, p.write.name), p.write.text); }
 writeFileSync(join(req.evidence_dir, "events.jsonl"), ev.map((e) => JSON.stringify(e)).join("\n") + "\n");
 const out = { run_id: req.run_id, status: p.status || "COMPLETED", provider: req.provider, text: p.say, wall_ms: 7,
-  permissions: [], mcp_denials: [], model_route: req.model_route, native_tools: req.native_tools, kind: req.kind,
+  permissions: [], mcp_denials: [], model_route: req.model_route, native_tools: req.native_tools, allowed_tools: req.allowed_tools,
   turn: { _meta: { quota: { token_count: { totalTokens: 11 }, model_usage: [{ model: "m-1", token_count: { totalTokens: 11 } }] } } } };
 writeFileSync(join(req.evidence_dir, "result.json"), JSON.stringify(out));
 process.stdout.write(JSON.stringify(out) + "\n");
 """
 
 
-def controls_query():
-    """§89: the door's query kind, with a recorded vendor standing in for the adapter — what the
-    step itself does with a turn's text and events, no vendor on the line."""
+def controls_shape():
+    """§102: the shape of a call — the environment from the profile (closed = tools.allowed: []),
+    the output contract from --output-schema, each on its own — with a recorded vendor standing in
+    for the adapter: what the step itself does with a turn's text, a written file and the events,
+    no vendor on the line."""
     print("")
-    print("a query: one prompt, no tools, an answer in a declared shape (§89)")
+    print("the shape of a call: a closed profile, an output schema, each on its own (§102)")
     import hashlib as _h, subprocess as _sp
-    root = tempfile.mkdtemp(prefix="agentstack-query-")
+    root = tempfile.mkdtemp(prefix="agentstack-shape-")
     stand_in = os.path.join(root, "stand-in.mjs")
     open(stand_in, "w").write(STAND_IN)
     calls = os.path.join(root, "calls.log")
@@ -1899,107 +1903,133 @@ def controls_query():
               "required": ["verdict", "confidence"], "additionalProperties": False}
     sfile = os.path.join(root, "schema.json")
     open(sfile, "w").write(json.dumps(schema))
+    sha = _h.sha256(open(sfile, "rb").read()).hexdigest()
     env = {**os.environ, "AGENTSTACK_CONTROLS_ROOT": os.path.join(root, "roots"), "AGENTSTACK_ADAPTER": stand_in,
-           "CTL_CALLS": calls, "CONDUCTOR_SELF_RUN_ID": "ctl-query"}
+           "CTL_CALLS": calls, "CONDUCTOR_SELF_RUN_ID": "ctl-shape"}
     env.pop("AGENTSTACK_ATTEMPT", None)
+    ws = os.path.join(root, "roots", "workspace", "ctl-shape")
 
-    def door(label, payload, provider="claude", query=True, stdin=None):
+    def door(label, payload, provider="claude", profile="closed", schema=True, stdin=None, extra=()):
         open(calls, "w").close()
         pf = "-" if stdin is not None else os.path.join(root, label + ".payload")
         if stdin is None:
             open(pf, "wb").write(payload)
+        opt = ["--output-schema", sfile] if schema is True else (["--output-schema", schema] if schema else [])
         argv = [sys.executable, "/work/stack/steps/agent_task.py", provider, "direct", label, pf, label + ".json",
-                "research-default", provider, ""] + (["--query", sfile] if query is True else ["--query", query] if query else [])
+                profile, provider, ""] + opt + list(extra)
         p = _sp.run(argv, capture_output=True, text=True, env=env, input=stdin)
         try:
             return json.loads(p.stdout.strip().splitlines()[-1]), sum(1 for _ in open(calls))
         except Exception as e:                       # the step's own failure is the finding
             return {"status": f"{type(e).__name__}: {(p.stderr or p.stdout)[-300:]}"}, -1
-    ev = lambda label, provider="claude": os.path.join(root, "roots", "evidence", f"ctl-query-{label}-{provider}")
-    ws = os.path.join(root, "roots", "workspace", "ctl-query")
+    ev = lambda label, provider="claude": os.path.join(root, "roots", "evidence", f"ctl-shape-{label}-{provider}")
+    say = lambda text, **k: json.dumps({"say": text, **k}).encode()
+    request = lambda label, provider="claude": json.load(open(os.path.join(ev(label, provider), "request.json"), encoding="utf-8"))
 
-    r, n = door("v1", json.dumps({"say": '{"verdict":"buy","confidence":0.7}'}).encode())
-    check("a valid answer: COMPLETED, kind query, produced, the answer carried, one call",
-          (r.get("status"), r.get("kind"), r.get("produced"), r.get("answer"), r.get("attempts"), n),
-          ("COMPLETED", "query", True, {"verdict": "buy", "confidence": 0.7}, 1, 1))
+    # the closed profile with a schema: a judge
+    r, n = door("c1", say('{"verdict":"buy","confidence":0.7}'))
+    check("closed + schema, a valid answer: COMPLETED, closed, produced, the answer carried, one call",
+          (r.get("status"), r.get("closed"), r.get("produced"), r.get("answer"), r.get("attempts"), n),
+          ("COMPLETED", True, True, {"verdict": "buy", "confidence": 0.7}, 1, 1))
     check("… written to the expected file as JSON",
-          json.load(open(os.path.join(ws, "v1.json"))) if os.path.isfile(os.path.join(ws, "v1.json")) else None,
+          json.load(open(os.path.join(ws, "c1.json"))) if os.path.isfile(os.path.join(ws, "c1.json")) else None,
           {"verdict": "buy", "confidence": 0.7})
     check("… with no tool call, one turn, and the schema named by content",
-          (r.get("tool_calls"), r.get("server_tool_use"), r.get("turns"), r.get("schema_sha256")),
-          (0, 0, 1, _h.sha256(open(sfile, "rb").read()).hexdigest()))
+          (r.get("tool_calls"), r.get("server_tool_use"), r.get("turns"), r.get("schema_sha256")), (0, 0, 1, sha))
     check("… and the per-model usage the adapter reported, under measurements",
           (r.get("measurements") or {}).get("model_usage"), [{"model": "m-1", "token_count": {"totalTokens": 11}}])
     check("the record says which model the adapter reported", r.get("model_adapter_reported"), "m-1")
-    r, n = door("v2", json.dumps({"say": '```json\n{"verdict":"wait","confidence":0.2}\n```'}).encode())
+    req = request("c1")
+    check("the request carries the profile's tools.allowed as allowed_tools [] — the adapter's switch — and no kind",
+          (req.get("allowed_tools"), "kind" in req, req.get("profile")), ([], False, "closed"))
+    r, n = door("c2", say('```json\n{"verdict":"wait","confidence":0.2}\n```'))
     check("a fenced answer is the JSON inside the fence", (r.get("status"), r.get("answer")),
           ("COMPLETED", {"verdict": "wait", "confidence": 0.2}))
-    r, n = door("v3", json.dumps({"say": '{"verdict":"hold","confidence":2,"x":1}'}).encode())
+    r, n = door("c3", say('{"verdict":"hold","confidence":2,"x":1}'))
     check("an answer that breaks the schema: INVALID_OUTPUT, nothing produced, the answer empty, and no retry",
           (r.get("status"), r.get("produced"), r.get("answer"), r.get("attempts"), n), ("INVALID_OUTPUT", False, {}, 1, 1))
     check("… every break named by its place", [x.split(":")[0] for x in (r.get("failure") or "").split("; ")],
           ["$.verdict", "$.confidence", "$"])
-    check("… the raw text kept beside the evidence", os.path.isfile(os.path.join(ev("v3"), "answer.raw.txt")), True)
-    check("… and the expected file not written", os.path.exists(os.path.join(ws, "v3.json")), False)
-    r, n = door("v4", json.dumps({"say": '{"verdict":"buy","confidence":0.7}', "tool_calls": 2, "web": True}).encode())
-    check("a tool call the vendor made anyway: TOOLS_USED whatever the text, the calls counted, the web one told apart",
+    check("… the raw text kept beside the evidence", os.path.isfile(os.path.join(ev("c3"), "answer.raw.txt")), True)
+    check("… and the expected file not written", os.path.exists(os.path.join(ws, "c3.json")), False)
+    r, n = door("c4", say('{"verdict":"buy","confidence":0.7}', tool_calls=2, web=True))
+    check("closed: a tool call the vendor made anyway is TOOLS_USED whatever the text, the calls counted, the web one told apart",
           (r.get("status"), r.get("tool_calls"), r.get("server_tool_use"), r.get("answer"), r.get("produced")),
           ("TOOLS_USED", 2, 1, {}, False))
-    r, n = door("v5", json.dumps({"say": "I think buy."}).encode())
+    r, n = door("c5", say("I think buy."))
     check("a text that is not JSON at all is a cut stream: one retry, then INVALID_OUTPUT",
           (r.get("status"), r.get("attempts"), n, r.get("attempt_outcomes")), ("INVALID_OUTPUT", 2, 2, ["COMPLETED", "COMPLETED"]))
     check("… both attempts kept: result and events of the first beside the second's",
-          sorted(f for f in os.listdir(ev("v5")) if ".a1." in f), ["events.a1.jsonl", "result.a1.json"])
+          sorted(f for f in os.listdir(ev("c5")) if ".a1." in f), ["events.a1.jsonl", "result.a1.json"])
     check("… and both attempts' cost summed", (r.get("measurements") or {}).get("total_tokens"), 22)
-    r, n = door("v6", b"", provider="codex", stdin="ask about {WS} and \ud55c\uae00\n")
-    req = json.load(open(os.path.join(ev("v6", "codex"), "request.json"), encoding="utf-8"))
-    check("the payload from stdin goes as it is: no {WS}, nothing added, the kind on the request",
-          (req.get("prompt"), req.get("kind"), req.get("native_tools")), ("ask about {WS} and \ud55c\uae00\n", "query", False))
+    r, n = door("c6", b"", provider="codex", stdin="ask about {WS} and 한글\n")
+    req = request("c6", "codex")
+    check("the prompt from stdin, {WS} replaced where it appears, the closed environment on the request",
+          (req.get("prompt"), req.get("allowed_tools"), req.get("native_tools")), (f"ask about {ws} and 한글\n", [], False))
     bad = os.path.join(root, "bad.json")
     open(bad, "w").write(json.dumps({"type": "object", "properties": {"d": {"type": "string", "format": "date"}}}))
-    r, n = door("v7", b'{"say":"{}"}', query=bad)
+    r, n = door("c7", say("{}"), schema=bad)
     check("a schema with a keyword the door does not check is refused before the call: FAILED, attempts 0, no call, the keyword named",
           (r.get("status"), r.get("attempts"), n, "format" in (r.get("failure") or "")), ("FAILED", 0, 0, True))
     arr = os.path.join(root, "arr.json")
     open(arr, "w").write(json.dumps({"type": "array"}))
-    r, n = door("v8", b'{"say":"[]"}', query=arr)
+    r, n = door("c8", say("[]"), schema=arr)
     check("a schema whose root is not an object is refused the same way", (r.get("status"), r.get("attempts"), n), ("FAILED", 0, 0))
-    r, n = door("v9", b'{"say":"{}"}', query="/nonexistent/schema.json")
+    r, n = door("c9", say("{}"), schema="/nonexistent/schema.json")
     check("a schema that cannot be read is refused the same way", (r.get("status"), r.get("attempts"), n), ("FAILED", 0, 0))
     # #79: a profile yaml without its generated file used to run as an empty profile; refused now
     open(calls, "w").close()
-    p = _sp.run([sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "np", os.path.join(root, "v1.payload"),
+    p = _sp.run([sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "np", os.path.join(root, "c1.payload"),
                  "np.json", "zz-not-generated", "claude", ""], capture_output=True, text=True, env=env)
     r = json.loads(p.stdout.strip().splitlines()[-1])
     check("a profile with no generated file is refused before any call, naming cfg.py generate and the profiles that exist",
           (r.get("status"), r.get("attempts"), sum(1 for _ in open(calls)), "cfg.py generate" in r.get("failure", ""),
            "research-default" in r.get("failure", "")), ("FAILED", 0, 0, True, True))
-    r, n = door("t1", json.dumps({"say": "done", "tool_calls": 1}).encode(), query=False)
-    check("a task through the same door is a task: its tool calls counted, its status the adapter's",
-          (r.get("kind"), r.get("status"), r.get("tool_calls"), r.get("schema_sha256"), r.get("answer")),
-          ("task", "COMPLETED", 1, "", {}))
-    req = json.load(open(os.path.join(ev("t1"), "request.json"), encoding="utf-8"))
-    check("… and the request says so", req.get("kind"), "task")
+    # an open profile, no schema: the call it always was
+    r, n = door("t1", say("done", tool_calls=1), profile="research-default", schema=False)
+    check("an open profile without a schema: not closed, its tool calls counted and allowed, no answer, the status the adapter's",
+          (r.get("closed"), r.get("status"), r.get("tool_calls"), r.get("schema_sha256"), r.get("answer"), r.get("produced")),
+          (False, "COMPLETED", 1, "", {}, False))
+    check("… and the request names no allowed_tools: the agent's own tools, under the profile and Preloop's rules",
+          "allowed_tools" in request("t1"), False)
+    # an open profile with a schema: a reviewer that reads and answers in a shape
+    r, n = door("a1", say("wrote it", tool_calls=1, write={"name": "a1.json", "text": '{"verdict":"sell","confidence":0.9}'}),
+                profile="research-default")
+    check("open + schema, the model wrote the expected file: the file is the answer — COMPLETED, produced, tools counted and allowed",
+          (r.get("status"), r.get("closed"), r.get("produced"), r.get("answer"), r.get("tool_calls")),
+          ("COMPLETED", False, True, {"verdict": "sell", "confidence": 0.9}, 1))
+    r, n = door("a2", say("wrote it", tool_calls=1, write={"name": "a2.json", "text": '{"verdict":"hold"}'}), profile="research-default")
+    check("… a written file that breaks the schema: INVALID_OUTPUT, produced false though the file is there, no retry",
+          (r.get("status"), r.get("produced"), r.get("answer"), r.get("attempts")), ("INVALID_OUTPUT", False, {}, 1))
+    check("… and the file is left as the model wrote it", open(os.path.join(ws, "a2.json")).read(), '{"verdict":"hold"}')
+    r, n = door("a3", say('{"verdict":"buy","confidence":0.1}', tool_calls=1), profile="research-default")
+    check("open + schema, no file written: the text is the answer, and the door writes the file",
+          (r.get("status"), r.get("produced"), r.get("answer"), json.load(open(os.path.join(ws, "a3.json")))),
+          ("COMPLETED", True, {"verdict": "buy", "confidence": 0.1}, {"verdict": "buy", "confidence": 0.1}))
+    # the closed profile without a schema
+    r, n = door("s1", say("just words"), schema=False)
+    check("closed without a schema: the text is the result, nothing produced, nothing judged, no tools",
+          (r.get("status"), r.get("closed"), r.get("produced"), r.get("answer"), r.get("tool_calls")), ("COMPLETED", True, False, {}, 0))
     # #62 / §91: the model asked for travels on the request, and the ask is separate from the check
-    argv = [sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "m1", os.path.join(root, "v1.payload"),
-            "m1.json", "research-default", "claude", "", "--query", sfile, "--model", "m-pin"]
+    argv = [sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "m1", os.path.join(root, "c1.payload"),
+            "m1.json", "closed", "claude", "", "--output-schema", sfile, "--model", "m-pin"]
     p = _sp.run(argv, capture_output=True, text=True, env=env)
     r = json.loads(p.stdout.strip().splitlines()[-1])
-    req = json.load(open(os.path.join(ev("m1"), "request.json"), encoding="utf-8"))
     check("--model: the ask is on the request, byte for byte, and what answered is still the adapter's word",
-          (req.get("model"), r.get("status"), r.get("model_adapter_reported")), ("m-pin", "COMPLETED", "m-1"))
+          (request("m1").get("model"), r.get("status"), r.get("model_adapter_reported")), ("m-pin", "COMPLETED", "m-1"))
     p = _sp.run(argv[:-1], capture_output=True, text=True, env=env)
     r = json.loads(p.stdout.strip().splitlines()[-1])
     check("--model without its id is refused before anything runs", (r.get("status"), "model id" in r.get("failure", "")), ("FAILED", True))
     # the brokered door (§54): a role that declares an egress profile is handed to the broker with
-    # payload, schema and model — measured with a recorder standing where the broker listens
+    # prompt, schema and model, and the environment as the profile's name — measured with a
+    # recorder standing where the broker listens
     import http.server as _hs, threading as _th
     got = {}
     class Rec(_hs.BaseHTTPRequestHandler):
         def do_POST(self):
             got["path"] = self.path
             got["job"] = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"{}")
-            body = json.dumps({"result": {"status": "COMPLETED", "kind": "query", "run_id": "brokered", "provider": "claude",
+            body = json.dumps({"result": {"status": "COMPLETED", "closed": True, "run_id": "brokered", "provider": "claude",
                                           "dispatched": {"role": got["job"].get("role")}}}).encode()
             self.send_response(200); self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
@@ -2010,7 +2040,7 @@ def controls_query():
     benv = {**env, "AGENTSTACK_BROKER_URL": f"http://127.0.0.1:{srv.server_port}"}
     benv.pop("AGENTSTACK_EGRESS_PROFILE", None); benv.pop("AGENTSTACK_ROLE", None)
     p = _sp.run([sys.executable, "/work/stack/steps/agent_task.py", "claude", "direct", "b1", "-", "b1.json",
-                 "research-default", "claude", "novel-reviewer", "--query", sfile, "--model", "m-pin"],
+                 "closed", "claude", "novel-reviewer", "--output-schema", sfile, "--model", "m-pin"],
                 capture_output=True, text=True, env=benv, input="brokered payload {WS}")
     srv.shutdown()
     try:
@@ -2018,12 +2048,11 @@ def controls_query():
     except Exception:
         r = {"status": (p.stderr or p.stdout)[-300:]}
     job = got.get("job") or {}
-    check("brokered: a role with an egress profile is handed to the broker, and the payload, the schema and the model travel with the job",
-          (got.get("path"), job.get("role"), job.get("prompt"), job.get("schema"), job.get("model")),
-          ("/dispatch", "novel-reviewer", "brokered payload {WS}", open(sfile).read(), "m-pin"))
+    check("brokered: a role with an egress profile is handed to the broker, and the prompt, the schema, the model and the profile's name travel with the job",
+          (got.get("path"), job.get("role"), job.get("prompt"), job.get("schema"), job.get("model"), job.get("profile_name")),
+          ("/dispatch", "novel-reviewer", "brokered payload {WS}", open(sfile).read(), "m-pin", "closed"))
     check("brokered: the broker's answer is the step's answer", (r.get("status"), (r.get("dispatched") or {}).get("role")), ("COMPLETED", "novel-reviewer"))
     shutil.rmtree(root, ignore_errors=True)
-
 
 def declare_temp(pk, root, extra=()):
     """Declare every package directory in `root` (plus `extra`) in a temp config/packages.yaml, and
@@ -2869,7 +2898,7 @@ if __name__ == "__main__":
     controls_review_findings()
     controls_package_sources()
     controls_retry()
-    controls_query()
+    controls_shape()
     controls_packages()
     controls_docs()
     controls_template()

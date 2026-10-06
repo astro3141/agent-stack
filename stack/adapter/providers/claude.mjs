@@ -46,13 +46,13 @@ export default function claude(ctx) {
                          ...(safe.length ? { allow: safe } : {}) } }) + "\n");
       return {};
     },
-    // A query (§89): no tool at all. Every native tool Claude Code has, by name, and the Preloop MCP
+    // A closed call (§89, §102): no tool at all. Every native tool Claude Code has, by name, and the Preloop MCP
     // server the user tier may carry (the gateway route's ~/.claude.json) are denied in the
     // workspace's project settings; the session is also asked for allowedTools [] and one turn.
     // A name Claude does not have is ignored, so the list may be longer than one version's tools.
     // Whether a denied tool is removed or only refused is the vendor's; a use shows as a
     // tool_call event either way, and the door then says TOOLS_USED.
-    queryEnv(cwd) {
+    closedEnv(cwd) {
       mkdirSync(join(cwd, ".claude"), { recursive: true });
       writeFileSync(join(cwd, ".claude/settings.json"), JSON.stringify(
         { permissions: { deny: ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep",

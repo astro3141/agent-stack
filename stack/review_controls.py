@@ -1218,8 +1218,8 @@ def feedback_controls():
 
 
 # ---------------------------------------------------------------- 22. the query kind of a call (§89)
-def query_controls():
-    """What the door checks after a query, as functions: the fence, the schema subset, the keywords
+def shape_controls():
+    """What the door checks with an output schema (§89, §102), as functions: the fence, the schema subset, the keywords
     it refuses, the tool count read from a turn's events, and the record's keys."""
     sys.path.insert(0, str(HERE))
     q = importlib.import_module("query")
@@ -1271,30 +1271,32 @@ def query_controls():
           q.tool_counts(root / "ev.jsonl") == (2, 1), q.tool_counts(root / "ev.jsonl"))
     shutil.rmtree(root, ignore_errors=True)
     rec = ex.record(provider="claude", run_id="r")
-    check("query: the record's shape carries the query's keys with their nothing-values, and says contract 2",
-          (rec["kind"], rec["turns"], rec["tool_calls"], rec["server_tool_use"], rec["schema_sha256"], rec["answer"], rec["contract"])
-          == ("task", 1, 0, 0, "", {}, 2), rec)
+    check("shape: the record carries closed, turns, tool_calls, server_tool_use, schema_sha256, answer with their nothing-values, no kind, and says contract 3",
+          (rec["closed"], rec["turns"], rec["tool_calls"], rec["server_tool_use"], rec["schema_sha256"], rec["answer"], rec["contract"], "kind" in rec)
+          == (False, 1, 0, 0, "", {}, 3, False), rec)
     check("query: a wrong-typed count is a named problem", ex.problems({"run_id": "r", "provider": "p", "status": "COMPLETED", "tool_calls": "0"}) == ["tool_calls is not int"])
     r = subprocess.run(["node", "--input-type=module", "-e",
                         'import { refusedLocally } from "' + str(WORK / "stack" / "adapter" / "permissions.mjs") + '";'
-                        'const e = refusedLocally({ kind: "execute", title: "Bash" }, {}, "query_no_tools");'
+                        'const e = refusedLocally({ kind: "execute", title: "Bash" }, {}, "closed_no_tools");'
                         'process.stdout.write(JSON.stringify([e.outcome, e.denial, e.routed, e.preloop]));'],
                        capture_output=True, text=True, timeout=60)
     at = (HERE / "steps" / "agent_task.py").read_text()
-    src = at[at.index("def split_options(argv):"):at.index('    return pos, opts, vals["--query"], vals["--model"], why') + len('    return pos, opts, vals["--query"], vals["--model"], why')]
+    src = at[at.index("def split_options(argv):"):at.index('    return pos, opts, vals["--output-schema"], vals["--model"], why') + len('    return pos, opts, vals["--output-schema"], vals["--model"], why')]
     ns = {}
     exec(src, ns)
     so = ns["split_options"]
-    full = ["claude", "direct", "l", "p", "e", "prof", "login", "", "--query", "s.json", "--model", "m-1"]
-    check("query: the options are parted from the positionals and kept as given, to stay in argv behind them for the re-executions (§91)",
-          so(full) == (full[:8], ["--query", "s.json", "--model", "m-1"], "s.json", "m-1", ""), so(full))
-    check("query: options standing where the optional positionals would be leave the positionals short, not wrong",
-          so(["claude", "direct", "l", "p", "e", "--model", "m-1", "--query", "s.json"])[0] == ["claude", "direct", "l", "p", "e"])
-    check("query: an option without its value is named",
-          "schema file" in so(["c", "d", "l", "p", "e", "--query"])[4] and "model id" in so(["c", "d", "l", "p", "e", "--model"])[4])
-    check("query: no options is no options", so(["c", "d", "l", "p", "e"]) == (["c", "d", "l", "p", "e"], [], "", "", ""))
-    check("query: the adapter refuses a tool request without asking Preloop — reject_once, query_no_tools, nobody asked",
-          r.stdout.strip() == '["reject_once","query_no_tools","query_no_tools",null]', r.stdout + r.stderr)
+    full = ["claude", "direct", "l", "p", "e", "prof", "login", "", "--output-schema", "s.json", "--model", "m-1"]
+    check("shape: the options are parted from the positionals and kept as given, to stay in argv behind them for the re-executions (§91)",
+          so(full) == (full[:8], ["--output-schema", "s.json", "--model", "m-1"], "s.json", "m-1", ""), so(full))
+    check("shape: options standing where the optional positionals would be leave the positionals short, not wrong",
+          so(["claude", "direct", "l", "p", "e", "--model", "m-1", "--output-schema", "s.json"])[0] == ["claude", "direct", "l", "p", "e"])
+    check("shape: an option without its value is named",
+          "schema file" in so(["c", "d", "l", "p", "e", "--output-schema"])[4] and "model id" in so(["c", "d", "l", "p", "e", "--model"])[4])
+    check("shape: no options is no options", so(["c", "d", "l", "p", "e"]) == (["c", "d", "l", "p", "e"], [], "", "", ""))
+    check("shape: --query is no longer an option — it is read as a positional, not a schema",
+          so(["c", "d", "l", "p", "e", "--query", "s.json"]) == (["c", "d", "l", "p", "e", "--query", "s.json"], [], "", "", ""))
+    check("closed: the adapter refuses a tool request without asking Preloop — reject_once, closed_no_tools, nobody asked",
+          r.stdout.strip() == '["reject_once","closed_no_tools","closed_no_tools",null]', r.stdout + r.stderr)
 
 
 # ---------------------------------------------------------------- 22a. what the rule layer does with a declaration (§96)
@@ -1549,7 +1551,7 @@ review3_controls()
 ease_controls()
 firstuse_controls()
 feedback_controls()
-query_controls()
+shape_controls()
 rules_controls()
 host_controls()
 install_controls()

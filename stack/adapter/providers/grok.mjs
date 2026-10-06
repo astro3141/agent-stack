@@ -25,11 +25,11 @@ export default function grok(ctx) {
     // With one, the adapter hands it a server over ACP instead (§49), and this is not reached.
     mcpAuth() { throw new Error("grok reads its Preloop credential from its own config file"); },
     disableNative() { return {}; },
-    // A query (§89): Grok's tools are a table in its login's config (grok_posture.py), not a
+    // A closed call (§89, §102): Grok's tools are a table in its login's config (grok_posture.py), not a
     // per-run switch, so nothing is added here beyond the session options; a tool it uses anyway
     // is a tool_call event, and the door says TOOLS_USED. Grok reports no model either
-    // (DECISIONS-2026-10-04 §7): a query on grok cannot be pinned to one.
-    queryEnv() { return {}; },
+    // (DECISIONS-2026-10-04 §7): a call on grok cannot be pinned to one.
+    closedEnv() { return {}; },
     // Grok did not connect an MCP server handed over ACP (no connection attempt in its log;
     // its tool search waited ~5 min per call for a server "still connecting"). The same server
     // registered in its own config (/route/grok/config.toml, `grok mcp add preloop …`) is healthy.

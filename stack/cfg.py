@@ -138,6 +138,12 @@ def validate_profile(p, name, env):
                     "login (stack/grok_posture.py), not per run; a profile that needs Grok's native tools "
                     "needs a login directory of its own without that table, which this stack does not provision")
     # read-only native tools that may run without asking; anything that writes or executes is refused
+    # tools.allowed: the list the vendor's agent is handed as its tools (the adapter's session option,
+    # §102). Only the empty list is measured — a closed call: no tools, one turn (§89) — so only it
+    # is accepted; which tool calls a non-closed call may make is Preloop's rules' (tool_rules).
+    if "allowed" in t and t.get("allowed") != []:
+        errs.append(f"profile {name}: tools.allowed takes only [] (a closed call: no tools, one turn); which "
+                    "calls a tool may make is the principal's tool_rules' — leave the key out for an open call")
     bad = [x for x in (t.get("native_allow") or []) if x not in ("WebSearch", "WebFetch")]
     if bad:
         errs.append(f"profile {name}: tools.native_allow may name only WebSearch and WebFetch, not {bad}")

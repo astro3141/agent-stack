@@ -85,7 +85,7 @@ class H(BaseHTTPRequestHandler):
                                          encoding="utf-8") as f:
             f.write(prompt)
             pf = f.name
-        # a query (§89): the schema the broker carried, as a file, and the same --query the caller gave
+        # the output schema the broker carried (§89, §102), as a file, and the same option the caller gave
         sf = ""
         if job.get("schema"):
             with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
@@ -101,7 +101,7 @@ class H(BaseHTTPRequestHandler):
                **({"AGENTSTACK_ATTEMPT": str(job["attempt"])} if re.fullmatch(r"\d{1,3}", str(job.get("attempt") or "")) else {})}
         argv = [PY, STEP, job["provider"], str(job.get("model_route") or "direct"),
                 job["label"], pf, job["expected"], job["profile_name"], job["login"],
-                job["role"], *(["--query", sf] if sf else []), *(["--model", model] if model else [])]
+                job["role"], *(["--output-schema", sf] if sf else []), *(["--model", model] if model else [])]
         try:
             r = subprocess.run(argv, capture_output=True, text=True,
                                timeout=int(job.get("timeout_s") or 900), env=env)

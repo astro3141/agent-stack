@@ -1,7 +1,7 @@
 """Run one model step through the broker — the same contract as agent_task.py, different door.
 
 usage: broker_dispatch.py <provider> <model_route> <label> <prompt-file> <expected-file>
-       [<profile> [<login> [<principal>]]] [--query <schema.json>] [--model <id>]
+       [<profile> [<login> [<principal>]]] [--output-schema <schema.json>] [--model <id>]
 
 The argv is agent_task.py's on purpose: the fan-out (steps/tasks.py) and a chain
 (steps/task_chain.py) swap the entrypoint and change nothing else, so a receipt, a retry and the
@@ -27,11 +27,11 @@ import urllib.request
 # be `cadp278-broker`, one operator's instance, and every other instance's dispatch failed with
 # URLError (measured on the cold-start runner, whose instance is `agentstack`).
 
-# a query's schema (§89) travels with the job as text; the runner writes it back to a file and
-# starts the step with the same --query
+# an output schema (§89, §102) travels with the job as text; the runner writes it back to a file
+# and starts the step with the same --output-schema. The environment travels as the profile's name.
 schema_file, model_id = "", ""
-if "--query" in sys.argv:
-    i = sys.argv.index("--query")
+if "--output-schema" in sys.argv:
+    i = sys.argv.index("--output-schema")
     schema_file = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
     del sys.argv[i:i + 2]
 # the model asked for (#62, §91) travels the same way; the runner gives it back as --model
@@ -46,8 +46,8 @@ principal = sys.argv[8] if len(sys.argv) > 8 and sys.argv[8] else ""
 run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 
 try:
-    # a query's payload goes byte for byte, and `-` is stdin (agent_task.py)
-    prompt = (sys.stdin.read() if schema_file and prompt_file == "-"
+    # `-` is stdin, as at the door (agent_task.py)
+    prompt = (sys.stdin.read() if prompt_file == "-"
               else open(prompt_file, encoding="utf-8", errors="surrogateescape").read())
     schema = open(schema_file, encoding="utf-8").read() if schema_file else ""
 except OSError as e:

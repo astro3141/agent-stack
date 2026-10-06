@@ -87,18 +87,18 @@ check("grok: use_tool on a preloop__ tool is decided downstream; a native tool i
   b.grok.governedDownstream({ toolCall: { _meta: { "x.ai/tool": { name: "use_tool" } }, rawInput: { variant: "UseTool", tool_name: "preloop__write_file" } } }) === true
   && b.grok.governedDownstream({ toolCall: { _meta: { "x.ai/tool": { name: "write" } }, rawInput: {} } }) === false);
 
-// a query (§89): every provider has its own way of asking for no tools, and none brings an MCP server
-const qdir = mkdtempSync(join(tmpdir(), "agentstack-query-"));
-check("query: every provider answers queryEnv", ["claude", "codex", "grok"].every((k) => typeof b[k].queryEnv === "function"));
-b.claude.queryEnv(qdir);
+// a closed call (§89, §102): every provider has its own way of asking for no tools, and none brings an MCP server
+const qdir = mkdtempSync(join(tmpdir(), "agentstack-closed-"));
+check("closed: every provider answers closedEnv", ["claude", "codex", "grok"].every((k) => typeof b[k].closedEnv === "function"));
+b.claude.closedEnv(qdir);
 const qdeny = JSON.parse(readFileSync(join(qdir, ".claude/settings.json"), "utf8")).permissions;
-check("claude: a query denies every tool disableNative denies, the read-only ones, the web ones and the Preloop server, and allows none",
+check("claude: a closed call denies every tool disableNative denies, the read-only ones, the web ones and the Preloop server, and allows none",
   ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "mcp__preloop"].every((t) => qdeny.deny.includes(t))
   && !("allow" in qdeny), qdeny);
-const qcfg = JSON.parse(b.codex.queryEnv().CODEX_CONFIG);
-check("codex: a query turns shell and web search off and defines no MCP server",
+const qcfg = JSON.parse(b.codex.closedEnv().CODEX_CONFIG);
+check("codex: a closed call turns shell and web search off and defines no MCP server",
   qcfg.features.shell_tool === false && qcfg.features.unified_exec === false && qcfg.web_search === "disabled" && !("mcp_servers" in qcfg), qcfg);
-check("grok: a query adds nothing — its posture is the login's", Object.keys(b.grok.queryEnv()).length === 0);
+check("grok: a closed call adds nothing — its posture is the login's", Object.keys(b.grok.closedEnv()).length === 0);
 rmSync(qdir, { recursive: true, force: true });
 
 // and the entry point keeps no per-call state of its own
