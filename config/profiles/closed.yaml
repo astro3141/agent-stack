@@ -1,0 +1,41 @@
+# Execution profile — a closed call (OPERATIONS §102): the vendor's agent is handed no tools
+# (tools.allowed: []), asked for one turn, and brought no MCP server; a permission request is
+# refused where it arrives. The answer is a function of the prompt and nothing else, which is
+# what a harness that pins its prompts to a schema needs (trading, #62). Pair it with the door's
+# --output-schema for a checked answer; the two are independent, this file says only the
+# environment. Providers, quota and record as research-default.
+name: closed
+description: No tools, one turn — the answer is a function of the prompt; pair with --output-schema for a judged shape.
+
+providers:                        # order = preference
+  - name: claude
+    route: direct
+    login: claude
+  - name: codex
+    route: direct
+    login: codex
+  - name: grok
+    route: direct
+    login: grok
+
+quota:
+  max_age_s: 1800
+  reuse_s: 120
+  require_windows:
+    claude: [weekly]
+    codex: [weekly]
+    grok: []
+  max_used_percent:
+    session: 80
+    weekly: 90
+
+tools:
+  native_tools: false
+  allowed: []                     # the closed call: handed to the agent as allowedTools [] (§102)
+  preloop_policy: policy/b-fsmcp.yaml
+
+execution:
+  timeout_ms: 600000
+
+record:
+  mlflow_experiment: p281-routing

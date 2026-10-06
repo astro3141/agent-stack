@@ -1,7 +1,7 @@
 """Conductor script step: one model task through the routing/execution layer.
 
 usage: agent_task.py <provider> <model_route> <label> <prompt-file|-> <expected-file>
-       [<profile> [<login> [<principal>]]] [--closed] [--raw] [--output-schema <schema.json>] [--model <id>]
+       [<profile> [<login> [<principal>]]] [--output-schema <schema.json>] [--model <id>]
 
 `--model <id>` asks the vendor for that model by name — the adapter already forwards `req.model`
 as a session option (run-agent.mjs); without it the login's default answers, which a pinned
@@ -13,20 +13,20 @@ every model step of the run shares, so a later step can read what an earlier one
 Writes are only possible through the Preloop MCP server (native write/shell are removed);
 Preloop's rules decide them. Emits the normalized result flat for Conductor.
 
-Three options shape a call, each on its own (§102; docs/packages.md "The shape of a call"):
-`--raw` sends the prompt file's bytes as they are (`-` reads stdin), no {WS}, nothing added — the
-record then carries exactly what the model saw. `--closed` asks the vendor for no tools and one
-turn (allowedTools [], maxTurns 1, no Preloop MCP server, every permission request refused by the
-adapter without asking) — the one value of the environment the door itself guarantees, whatever
-profile the call was bound to; a tool call the vendor made anyway is TOOLS_USED. `--output-schema
-<schema.json>` is the output contract: after the call the answer — the expected file when this
-attempt wrote it, else the model's text with one surrounding fence removed — is read as JSON and
-checked against the schema here, the same for every vendor. Valid → COMPLETED, the answer in the
-expected file and carried as `answer`; invalid → INVALID_OUTPUT with every break named, and no
-retry — a failure the model made is not retried (CONTRACT.md). With a schema, `produced` means a
-valid answer arrived. Retried once, as any call is: a login refresh; and, with a schema and no
-file written, a text that is not JSON at all (a cut stream, not an answer). What the query kind
-was (§89) is `--closed --raw --output-schema`; the record says which of the three held.
+Two things shape a call, and they are independent (§102; docs/packages.md "The shape of a call").
+The **environment** is the profile's: `tools.allowed: []` in the profile asks the vendor for no
+tools and one turn (the adapter's session options `allowedTools: []`, `maxTurns: 1`, no Preloop
+MCP server, every permission request refused by the adapter without asking) — a *closed* call; a
+tool call the vendor made anyway is TOOLS_USED. The **output contract** is this option's:
+`--output-schema <schema.json>` has the answer — the expected file when this attempt wrote it,
+else the model's text with one surrounding fence removed — read as JSON after the call and checked
+against the schema here, the same for every vendor. Valid → COMPLETED, the answer in the expected
+file and carried as `answer`; invalid → INVALID_OUTPUT with every break named, and no retry — a
+failure the model made is not retried (CONTRACT.md). With a schema, `produced` means a valid
+answer arrived. The prompt file may be `-` for stdin. Retried once, as any call is: a login
+refresh; and, with a schema and no file written, a text that is not JSON at all (a cut stream,
+not an answer). The query kind (§89) was these two bundled into one, with the stack deciding how
+they are used; now the profile and the option each say their own thing, and the record says both.
 
 Where it runs is the role's business, not the caller's: a principal that declares an egress
 profile is handed to the broker (steps/broker_dispatch.py, same argv) and runs in that profile's
@@ -46,41 +46,34 @@ import settings
 def split_options(argv):
     """The door's options, parted from its positionals.
 
-    The options may stand anywhere after the positional arguments, so the positionals are read
-    without them — and the options stay in argv, moved behind the positionals, because the two
-    re-executions below (the broker, the role's uid) pass argv on as it is: deleted for the
-    positional parse, they did not travel, and a confined role's closed call reached the dispatch
-    step as a plain one with `-` for a prompt file (`prompt unreadable`, §91).
-    Returns (positionals, options as given, values by option, why) — `why` names an option that
-    was given without its value.
+    `--output-schema <schema>` and `--model <id>` may stand anywhere after the positional arguments,
+    so the positionals are read without them — and the options stay in argv, moved behind the
+    positionals, because the two re-executions below (the broker, the role's uid) pass argv on as
+    it is: deleted for the positional parse, they did not travel, and a confined role's call with
+    a schema reached the dispatch step without it, with `-` for a prompt file (`prompt unreadable`,
+    §91). Returns (positionals, options as given, schema file, model id, why) — `why` names an
+    option that was given without its value.
     """
-    flags = ("--closed", "--raw")
-    valued = {"--output-schema": "the schema file", "--model": "the model id"}
-    pos, opts, vals, why = [], [], {"--closed": False, "--raw": False, "--output-schema": "", "--model": ""}, ""
+    pos, opts, vals, why = [], [], {"--output-schema": "", "--model": ""}, ""
     rest = list(argv)
     while rest:
         a = rest.pop(0)
-        if a in flags:
-            vals[a] = True
-            opts.append(a)
-        elif a in valued:
+        if a in vals:
             v = rest.pop(0) if rest else ""
             if not v:
-                why = f"{a} needs {valued[a]}"
+                why = f"{a} needs {'the schema file' if a == '--output-schema' else 'the model id'}"
             vals[a] = v
             opts += [a, v]
         else:
             pos.append(a)
-    return pos, opts, vals, why
+    return pos, opts, vals["--output-schema"], vals["--model"], why
 
 
-POSITIONAL, PASSTHROUGH, OPTS, _why = split_options(sys.argv[1:])
+POSITIONAL, PASSTHROUGH, schema_file, model_id, _why = split_options(sys.argv[1:])
 if _why:
     print(json.dumps(execution.record(status="FAILED", produced=False, failure=_why)))
     raise SystemExit(0)
 sys.argv[1:] = POSITIONAL + PASSTHROUGH          # the positionals first, the options behind them, nothing lost
-closed, raw_payload = OPTS["--closed"], OPTS["--raw"]
-schema_file, model_id = OPTS["--output-schema"], OPTS["--model"]
 provider, model_route, label, prompt_file, expected = POSITIONAL[:5]
 prof_name = POSITIONAL[5] if len(POSITIONAL) > 5 and POSITIONAL[5] else "research-default"
 login = POSITIONAL[6] if len(POSITIONAL) > 6 and POSITIONAL[6] else provider
@@ -92,12 +85,18 @@ RT, PROF = settings.runtime(), settings.profile(prof_name)
 # for a person until the step timed out (novel-v2, #79). Refused, with what there is instead.
 if PROF is None:
     print(json.dumps(execution.record(
-        status="FAILED", closed=closed, raw=raw_payload, provider=provider, principal=principal,
-        profile=prof_name, produced=False, attempts=0,
+        status="FAILED", provider=provider, principal=principal, profile=prof_name,
+        produced=False, attempts=0,
         failure=f"profile {prof_name!r} has no generated file — a profile yaml is live only after "
                 f"`cfg.py generate` (scripts/up.sh runs it); generated now: "
                 f"{', '.join(settings.profile_names()) or 'none'}")))
     raise SystemExit(0)
+# The environment is the profile's (§102): `tools.allowed` is the list the vendor's agent is handed
+# as its tools (the adapter's session option); `[]` is a closed call — no tools, one turn, every
+# permission request refused where it arrives — and the record says `closed`. No key: the agent's
+# own tools, under the profile's native_tools/native_allow and Preloop's rules, as before.
+ALLOWED = (PROF.get("tools") or {}).get("allowed")
+closed = isinstance(ALLOWED, list) and len(ALLOWED) == 0
 run = os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 ws = f"{RT['paths']['workspace_root']}/{run}"
 os.makedirs(ws, exist_ok=True)
@@ -214,7 +213,7 @@ if principal and not os.environ.get("AGENTSTACK_ROLE"):
                            "--", sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
 def _refused(why, **more):
     """A call that is not made: the record says why, with attempts 0, and the step ends."""
-    rec = execution.record(status="FAILED", closed=closed, raw=raw_payload, provider=provider, principal=principal,
+    rec = execution.record(status="FAILED", closed=closed, provider=provider, principal=principal,
                            run_id=run_id, workspace=ws, produced=False, produced_stale=False,
                            evidence_dir=evid, profile=prof_name, attempts=0, failure=why, **more)
     execution.write(evid, rec)
@@ -222,14 +221,11 @@ def _refused(why, **more):
     raise SystemExit(0)
 
 
-# `--raw`: the payload goes as it is — bytes, no {WS}, nothing added: what the model is told about
-# the shape it must answer in is the payload's business, and the record carries the payload the
-# model saw. `-` reads it from stdin either way, for a harness that never writes its prompt to
-# disk (#62); without --raw, {WS} is the run's shared workspace.
+# The prompt: a file, or `-` for stdin (a harness that never writes its prompt to disk, #62);
+# {WS} where it appears is the run's shared workspace. What the model is told about the shape it
+# must answer in is the prompt's business, and request.json carries the prompt the model saw.
 _bytes = sys.stdin.buffer.read() if prompt_file == "-" else open(prompt_file, "rb").read()
-prompt = _bytes.decode("utf-8", errors="surrogateescape")
-if not raw_payload:
-    prompt = prompt.replace("{WS}", ws)
+prompt = _bytes.decode("utf-8", errors="surrogateescape").replace("{WS}", ws)
 
 # The output schema is the step's to check, after the call; so it is read before, and a schema
 # this validator would only half-read is refused now, at no cost — an answer called valid against
@@ -253,7 +249,8 @@ if schema_file:
                  "against a half-read schema is not an answer (stack/query.py)", schema_sha256=schema_sha)
 
 req = {"run_id": run_id, "provider": provider, "model_route": model_route or "preloop_gateway",
-       "login": login, "profile": prof_name, "closed": closed, "raw": raw_payload,
+       "login": login, "profile": prof_name,
+       **({"allowed_tools": list(ALLOWED)} if isinstance(ALLOWED, list) else {}),
        **({"mcp_principal": principal} if principal else {}),
        "cwd": ws, "timeout_ms": (PROF.get("execution") or {}).get("timeout_ms", 600000),
        "native_tools": (PROF.get("tools") or {}).get("native_tools", False), "evidence_dir": evid,
@@ -375,9 +372,9 @@ meas = {"total_tokens": _tok, "wall_ms": _wall, **({"model_usage": _usage_rows} 
 status, answer, verdict = r.get("status", "FAILED"), {}, ""
 tool_calls, server_tool_use = tool_use(r)
 if closed and tool_calls:
-    status, verdict = "TOOLS_USED", (f"the call made {tool_calls} tool call(s) — a closed call is one prompt "
-                                     "with no tools; the vendor did not honour the ask, or the model "
-                                     "reached for one (events.jsonl)")
+    status, verdict = "TOOLS_USED", (f"the call made {tool_calls} tool call(s) — a closed call (the profile's "
+                                     "tools.allowed is []) is one prompt with no tools; the vendor did not "
+                                     "honour the ask, or the model reached for one (events.jsonl)")
 elif schema_file and status == "COMPLETED":
     wrote = stamp() not in (None, before)
     value, probs = None, []
@@ -418,7 +415,6 @@ stale = bool(after and after == before)
 rec = execution.record(**{
     "status": status,
     "closed": closed,
-    "raw": raw_payload,
     "provider": provider,
     "principal": principal,
     "model_route": r.get("model_route") or model_route,

@@ -160,7 +160,7 @@ class H(BaseHTTPRequestHandler):
                "expected": str(req.get("expected") or "out.txt"),
                "run_id": str(req.get("run_id") or f"broker-{int(time.time())}"),
                "timeout_s": timeout_s,
-               # a query's schema (§89): text, bounded like the prompt; the runner makes it a file
+               # an output schema (§89, §102): text, bounded like the prompt; the runner makes it a file
                **({"schema": str(req["schema"])[:200000]} if req.get("schema") else {}),
                # the model asked for (§91): a name, bounded; the runner checks its shape
                **({"model": str(req["model"])[:120]} if req.get("model") else {}),

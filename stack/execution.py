@@ -21,13 +21,12 @@ A record carries `contract`, the version of this shape, so a reader can tell an 
 """
 import copy, json, os
 
-CONTRACT = 2                             # 2: the query kind's keys (§89) — a 1 is a record from before them
+CONTRACT = 3                             # 3: `closed` for `kind` (§102); 2: the query kind's keys (§89); 1: before them
 
 # every key a model step answers with, and what it holds when the call did not get that far
 FIELDS = {
     "status": "FAILED",                  # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | …
-    "kind": "task",                      # task: the prompt may use tools and writes an artifact;
-                                         # query: one prompt, no tools, an answer in a declared shape (§89)
+    "closed": False,                     # the profile asked for no tools (tools.allowed: []): one prompt, one turn (§102)
     "provider": "",
     "principal": "",                     # the Preloop principal the call presented
     "model_route": "",
@@ -48,10 +47,10 @@ FIELDS = {
     "failure": "",                       # why, when status is not COMPLETED
     "ledger_error": "",
     "turns": 1,                          # one prompt is one turn over ACP; a retry is another call
-    "tool_calls": 0,                     # tool calls the turn made (events.jsonl); a query must say 0
+    "tool_calls": 0,                     # tool calls the turn made (events.jsonl); a closed call must say 0
     "server_tool_use": 0,                # of those, web lookups
-    "schema_sha256": "",                 # a query: the declared schema, by content
-    "answer": {},                        # a query: the validated answer; {} until there is one
+    "schema_sha256": "",                 # with --output-schema: the declared schema, by content
+    "answer": {},                        # with --output-schema: the validated answer; {} until there is one
     "measurements": {},                  # a number the adapter did not report is left out, never 0;
                                          # model_usage: per-model token counts, as the adapter reported them
 }

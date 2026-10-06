@@ -3,7 +3,8 @@
 usage: task_chain.py <member.json>          (started by steps/tasks.py, one process per member)
 
 member.json: {"label": str, "steps": [step, ...]}
-  step = {"kind": "model", "provider", "login", "route", "prompt", "expected", "principal"?}
+  step = {"kind": "model", "provider", "login", "route", "prompt", "expected", "principal"?,
+          "profile"? (this step's, over the member's), "schema"? (--output-schema), "model"?}
        | {"kind": "script", "argv": [...], "expected": <file or "">}
 
 A member is a *sequence*, because a lane of an experiment is often one: a deterministic base that
@@ -45,10 +46,12 @@ for i, st in enumerate(member["steps"], 1):
         # one door: agent_task.py hands a role that declares an egress profile to the broker
         # itself (§54), so this chain — like the fan-out — never has to know there are two
         argv = [PY, os.path.join(STEPS, "agent_task.py"), st["provider"], st.get("route", "direct"),
-                name, st["prompt"], st["expected"], prof, st.get("login", st["provider"]),
+                name, st["prompt"], st["expected"], st.get("profile") or prof, st.get("login", st["provider"]),
                 st.get("principal", ""),
-                # `query: <schema path>` makes this model step a query (§89): same door, same argv
-                *(["--query", str(st["query"])] if st.get("query") else [])]
+                # the call's shape (§102): the environment is the profile's (a closed one has
+                # tools.allowed: []), the output contract is `schema:`; same door, same argv
+                *(["--output-schema", str(st["schema"])] if st.get("schema") else []),
+                *(["--model", str(st["model"])] if st.get("model") else [])]
     else:
         argv = st["argv"]
     p = subprocess.run(argv, capture_output=True, text=True)
