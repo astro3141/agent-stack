@@ -30,7 +30,7 @@ PROMPT_BOUND = 200000
 # every key a model step answers with, and what it holds when the call did not get that far
 FIELDS = {
     "status": "FAILED",                  # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | REFUSED (a runner's 4xx, §103) | …
-    "closed": False,                     # the profile asked for no tools (tools.allowed: []): one prompt, one turn (§102)
+    "closed": False,                     # the profile's tools.allowed is []: one prompt, one turn, every known tool refused by name (§102, §104)
     "provider": "",
     "principal": "",                     # the Preloop principal the call presented
     "model_route": "",

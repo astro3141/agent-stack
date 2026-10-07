@@ -4,11 +4,13 @@
 //
 // request.json: { run_id, provider, model?, cwd, prompt, timeout_ms?, evidence_dir?,
 //                 mcp_principal?, allowed_tools? }   mcp_principal: present this role's Preloop credential
-//                 allowed_tools: the profile's tools.allowed, handed to the agent as the session's
-//                 allowedTools (§102). [] is a closed call — one prompt, no tools, no MCP server
-//                 (§89): the vendor is asked for none (allowedTools [], maxTurns 1, and each
-//                 provider's own switch) and every permission request is refused here without
-//                 asking Preloop. Whether the vendor honoured the ask is read by the door from the events.
+//                 allowed_tools: the profile's tools.allowed; [] is a closed call (§102) — one
+//                 prompt, one turn (maxTurns 1), no MCP server, every built-in tool the stack
+//                 knows refused by name (each provider's own switch, closedEnv), every permission
+//                 request refused here without asking Preloop. Not a smaller tool surface: the
+//                 SDK's `tools` option does not reach the agent through acpx, and `allowedTools`
+//                 is the SDK's auto-allow list, which the stack sent until §104 believing it was
+//                 a restriction. Whether the model reached for a tool is read from the events.
 //
 // Everything vendor-specific lives in stack/adapter/providers/<name>.mjs. The caller (Conductor),
 // Preloop and MLflow see the same request and result shape whichever provider runs.
@@ -224,10 +226,9 @@ async function main() {
   if (call.principal && !mcpOnly) {
     throw new Error("mcp_principal requires native_tools=false: without it the run does not go through the Preloop MCP server");
   }
-  // allowed_tools: [] (the profile's tools.allowed, §102) — a closed call: no tools at all, and so
-  // no Preloop MCP server either: each provider's own way of asking for none (closedEnv), on top of
-  // the session options below. A principal on a closed call names whose call it is (uid, egress)
-  // and brings no server with it.
+  // allowed_tools: [] (the profile's tools.allowed, §102) — a closed call: every built-in tool
+  // refused by name (closedEnv), no Preloop MCP server, one turn. A principal on a closed call
+  // names whose call it is (uid, egress) and brings no server with it.
   const allowed = Array.isArray(req.allowed_tools) ? req.allowed_tools : null;
   const closed = allowed !== null && allowed.length === 0;
   const extraEnv = closed ? (prof.closedEnv?.(req.cwd) ?? {})
@@ -266,11 +267,11 @@ async function main() {
   try {
     // A fresh session key per run: acpx keys sessions on (agent, cwd, name) with no account
     // or policy, so reuse across runs could carry one account's session into another's.
-    // the profile's tools.allowed goes to the agent as the session's allowedTools; [] also asks
-    // for one turn (maxTurns). What each agent makes of them is the live measurement's to say —
-    // [] is the measured case (§89) — and the door reads the answer from the events either way
+    // a closed call asks for one turn (maxTurns, which acpx forwards). It does not ask for
+    // `allowedTools: []` any more: that is the SDK's auto-allow list and never reduced the tool
+    // surface (§104); the surface option, `tools`, acpx 0.19.4 does not forward. The refusal by
+    // name is closedEnv's, and the door reads the events either way.
     const sessionOptions = { ...(req.model ? { model: req.model } : {}),
-                             ...(allowed !== null ? { allowedTools: allowed } : {}),
                              ...(closed ? { maxTurns: 1 } : {}) };
     handle = await runtime.ensureSession({
       sessionKey: `p281-${req.run_id}`, agent: prof.agent, mode: "oneshot", cwd: req.cwd,

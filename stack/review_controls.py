@@ -1610,6 +1610,77 @@ door_controls()
 instance_controls()
 panel_controls()
 next_controls()
+
+def denylist_controls():
+    """§104 (#93): a closed call is a refusal by name, and the names are one measured constant.
+    The constant names the report class (ReportFindings) and every tool a closed call denies is in
+    it; an open call keeps what reads and denies what reports; the adapter sends no `allowedTools`
+    session option (it was the SDK's auto-allow list, never a restriction); tools_seen.py reads
+    the same constant and names what a model reports outside it."""
+    print("the deny list is one measured constant; the adapter sends no allowedTools (§104)")
+    js = """
+      import fs from "node:fs"; import os from "node:os"; import path from "node:path";
+      const p = await import(process.argv[1] + "/stack/adapter/permissions.mjs");
+      const mk = (await import(process.argv[1] + "/stack/adapter/providers/claude.mjs")).default;
+      const c = mk({ login: null, principal: null, loginsRoot: "/route", loginDir: (q) => "/route/" + q,
+                     withPrincipal: (own) => own(), egress: {}, mcpUrl: "http://console/mcp/v1" });
+      const d = fs.mkdtempSync(path.join(os.tmpdir(), "agentstack-deny-"));
+      const env = c.closedEnv(d);
+      const s = JSON.parse(fs.readFileSync(path.join(d, ".claude", "settings.json"), "utf8"));
+      const d2 = fs.mkdtempSync(path.join(os.tmpdir(), "agentstack-deny-"));
+      c.disableNative(d2, ["WebSearch"]);
+      const s2 = JSON.parse(fs.readFileSync(path.join(d2, ".claude", "settings.json"), "utf8"));
+      console.log(JSON.stringify({
+        n: p.CLAUDE_BUILTIN_TOOLS.length, report: p.CLAUDE_BUILTIN_TOOLS.includes("ReportFindings"),
+        dup: new Set(p.CLAUDE_BUILTIN_TOOLS).size !== p.CLAUDE_BUILTIN_TOOLS.length,
+        closed_deny: s.permissions.deny, closed_allow: s.permissions.allow || [],
+        open_deny: s2.permissions.deny, open_allow: s2.permissions.allow,
+        keep_in_list: p.CLAUDE_OPEN_KEEP.every((t) => p.CLAUDE_BUILTIN_TOOLS.includes(t)),
+        env_keys: Object.keys(env).sort() }));
+    """
+    r = subprocess.run(["node", "--input-type=module", "-e", js, str(WORK)], capture_output=True, text=True, timeout=60)
+    try:
+        o = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        o = {"error": r.stdout + r.stderr}
+    check("denylist: the constant names ReportFindings, has no duplicate, and every kept name is in it",
+          (o.get("report"), o.get("dup"), o.get("keep_in_list")), (True, False, True))
+    check("denylist: a closed call denies every name in the constant and the Preloop server, and allows none",
+          set(o.get("closed_deny") or []) >= {"ReportFindings", "Read", "Bash", "WebSearch", "AskUserQuestion", "mcp__preloop"}
+          and len(o.get("closed_deny") or []) == (o.get("n") or 0) + 1 and o.get("closed_allow") == [],
+          {k: o.get(k) for k in ("n", "closed_allow", "error")})
+    check("denylist: an open call keeps what reads, denies what reports, writes, executes or steers, and allows the profile's web tools",
+          ({"Read", "Glob", "Grep", "WebSearch", "WebFetch", "ToolSearch"} & set(o.get("open_deny") or []),
+           {"ReportFindings", "SendUserFile", "Workflow", "Bash", "Write", "ScheduleWakeup"} <= set(o.get("open_deny") or []),
+           o.get("open_allow")), (set(), True, ["WebSearch"]))
+    sys.path.insert(0, str(HERE))
+    ts = importlib.import_module("tools_seen")
+    k = ts.known()
+    check("denylist: tools_seen.py reads the same constant (the count agrees, ReportFindings in)", (len(k), "ReportFindings" in k), (o.get("n"), True))
+    # the drift verdict, with the door stood in for: a report outside the list fails, one inside passes, a non-COMPLETED record fails
+    def stood_in(rec):
+        import types
+        fake = types.SimpleNamespace(stdout=json.dumps(rec) + "\n", stderr="")
+        return fake
+    out = []
+    real = ts.subprocess.run
+    try:
+        for rec in ({"status": "COMPLETED", "run_id": "r1", "tool_calls": 0, "answer": {"tools": ["Read", "ReportFindings"]}},
+                    {"status": "COMPLETED", "run_id": "r2", "tool_calls": 0, "answer": {"tools": ["Read", "NewThing", "mcp__x__y"]}},
+                    {"status": "TOOLS_USED", "run_id": "r3", "tool_calls": 1, "failure": "the call made 1 tool call(s)"}):
+            ts.subprocess.run = lambda *a, _r=rec, **kw: stood_in(_r)
+            import io, contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = ts.main()
+            out.append((rc, json.loads(buf.getvalue().strip().splitlines()[-1])))
+    finally:
+        ts.subprocess.run = real
+    check("denylist: names inside the list pass (rc 0, outside empty)", (out[0][0], out[0][1].get("outside")), (0, []))
+    check("denylist: a name outside the list fails and is named; an MCP name is listed apart, not judged",
+          (out[1][0], out[1][1].get("outside"), out[1][1].get("mcp")), (1, ["NewThing"], ["mcp__x__y"]))
+    check("denylist: a record that is not COMPLETED fails with its status and words", (out[2][0], out[2][1].get("status"), "1 tool call" in out[2][1].get("why", "")), (1, "TOOLS_USED", True))
+
 adapter_controls()
 update_controls()
 review3_controls()
@@ -1623,6 +1694,7 @@ install_controls()
 pinkind_controls()
 pylocal_controls()
 servers_controls()
+denylist_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

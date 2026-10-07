@@ -247,7 +247,7 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
 ```yaml
     output:
       status: {type: string}                 # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | REFUSED | ...
-      closed: {type: boolean}                # the profile asked for no tools (tools.allowed: []): one prompt, one turn (§102)
+      closed: {type: boolean}                # the profile's tools.allowed is []: one prompt, one turn, every known tool refused by name (§102, §104)
       provider: {type: string}
       principal: {type: string}              # the Preloop principal the call presented
       model_route: {type: string}
@@ -292,16 +292,25 @@ each as a knob and decides nothing about how they are combined — that is the w
 
 **The environment — what the model can reach — is the profile's and the principal's.** A profile
 says whether the vendor's native tools exist (`tools.native_tools`), which read-only ones run
-without asking (`tools.native_allow`), and, since §102, **`tools.allowed`**: the list the vendor's
-agent is handed as its tools (the adapter's session option `allowedTools`). `tools.allowed: []`
-is a **closed call**: the agent gets no tools and one turn (`maxTurns: 1`), no Preloop MCP server
-travels with the call, and every permission request is refused by the adapter without asking
-anyone (Claude's project deny list, Codex's shell and web search off, Grok's posture per login —
-each provider's own switch beside the session option). Whether the vendor honoured the ask is
-read from the events: **`tool_calls` is 0, or the status is `TOOLS_USED`**, whatever the model
-wrote. Only `[]` is accepted for now, because only it is measured; which calls an open call's
-tools may make is the principal's `tool_rules`, and where they reach is the egress profile's. The
-tracked profile **`closed`** is that environment, ready to name; the record says `closed: true`.
+without asking (`tools.native_allow`), and, since §102, **`tools.allowed`**. `tools.allowed: []`
+is a **closed call**: one turn (`maxTurns: 1`), no Preloop MCP server, every built-in tool the
+stack knows **refused by name** — Claude: a project deny list of every tool name this Claude Code
+build has, measured per pin (`CLAUDE_BUILTIN_TOOLS` in `stack/adapter/permissions.mjs`); Codex:
+shell and web search off; Grok: its posture per login — and every permission request refused by
+the adapter without asking anyone. **That is a refusal by name, not a smaller tool surface**
+(§104): the SDK options that take tools out of the model's view (`tools`, `disallowedTools`) do
+not reach the agent through acpx 0.19.4, which forwards only `model`, `allowedTools` and
+`maxTurns` — and `allowedTools` is the SDK's *auto-allow* list, not a restriction (§89 and §102
+said the vendor was asked for no tools; it was not — the stack sent `allowedTools: []` believing
+it was). So a tool the list does not name is visible to the model, and a use of any tool is
+**`TOOLS_USED`**, whatever the model wrote — fail-closed, and the record says so. A package whose
+prompt's vocabulary names a built-in tool (`ReportFindings` for "report your findings", trading
+#93) is the package's to word around, or to accept at its measured rate; `verify.sh --level full`
+asks a closed call what it can see and fails on a name outside the list. Only `[]` is accepted for
+`tools.allowed`; which calls an open call's tools may make is the principal's `tool_rules`, and
+where they reach is the egress profile's. An open call with `native_tools: false` refuses, by the
+same list, what writes, executes, reports, schedules or steers, and keeps what reads. The tracked
+profile **`closed`** is that environment, ready to name; the record says `closed: true`.
 
 **The output contract is `--output-schema <schema.json>` on `agent_task.py`**, on any call:
 
@@ -643,8 +652,8 @@ first run (novel-v2, #77 and #78):**
 #79). They are the vendor's native tools, and the switch is the execution **profile**: a profile's
 `tools.native_allow: [WebSearch, WebFetch]` lets those two run without asking (`routed:
 profile_native_allow` in `permissions.jsonl`); nothing else is allowed there (`cfg.py` refuses
-other names). The same block's `tools.allowed: []` is the opposite end — a closed call with no
-tools at all ("The shape of a call", above). Where `WebFetch` may reach is the egress allowlist's to decide — a role's profile
+other names). The same block's `tools.allowed: []` is the opposite end — a closed call, every
+known tool refused by name ("The shape of a call", above). Where `WebFetch` may reach is the egress allowlist's to decide — a role's profile
 pins its hosts at the proxy; `WebSearch` runs at the provider and no proxy limits it. So a
 researcher step takes a profile that allows them (`long-task` carries the devflow researcher's
 binding) and the workflow names it. **A profile yaml is live only after `cfg.py generate`** has
@@ -706,6 +715,19 @@ the package is four steps, and the fourth is the one that pays for the other thr
 
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
+
+**§104 (2026-10-07 — the closed claim corrected, #93).**
+- A closed call never had a smaller tool surface: `allowedTools: []` is the SDK's auto-allow
+  list, and the option that would shrink the surface (`tools`) does not pass through acpx. What
+  closes a call is a deny list by name, now one measured constant (`CLAUDE_BUILTIN_TOOLS`) that
+  names this build's tools — `ReportFindings` among them, the one that slipped. A tool the list
+  does not name is visible, and its use is `TOOLS_USED`. "The shape of a call" says so; §89 and
+  §102 below said otherwise.
+- An open call with `native_tools: false` now refuses the report/steer class too, by the same
+  list, instead of sending such a call to approval.
+- `verify.sh --level full` asks a closed call what tools it sees and fails on a name outside the
+  list (`stack/tools_seen.py`). Nothing to change in a package unless its prompt's words name a
+  built-in tool; then the wording is the package's.
 
 **§102 (2026-10-06 — the query kind goes; the shape of a call is two knobs).**
 - **`--query` is gone.** The environment is the profile's: `tools.allowed: []` (the tracked

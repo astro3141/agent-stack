@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { NATIVE_ALLOWABLE } from "../permissions.mjs";
+import { NATIVE_ALLOWABLE, CLAUDE_OPEN_DENY, CLAUDE_CLOSED_DENY } from "../permissions.mjs";
 
 export default function claude(ctx) {
   return {
@@ -42,23 +42,20 @@ export default function claude(ctx) {
       mkdirSync(join(cwd, ".claude"), { recursive: true });
       const safe = allow.filter((t) => NATIVE_ALLOWABLE.includes(t));
       writeFileSync(join(cwd, ".claude/settings.json"), JSON.stringify(
-        { permissions: { deny: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
+        { permissions: { deny: CLAUDE_OPEN_DENY,
                          ...(safe.length ? { allow: safe } : {}) } }) + "\n");
       return {};
     },
-    // A closed call (§89, §102): no tool at all. Every native tool Claude Code has, by name, and the Preloop MCP
-    // server the user tier may carry (the gateway route's ~/.claude.json) are denied in the
-    // workspace's project settings; the session is also asked for allowedTools [] and one turn.
-    // A name Claude does not have is ignored, so the list may be longer than one version's tools.
-    // Whether a denied tool is removed or only refused is the vendor's; a use shows as a
-    // tool_call event either way, and the door then says TOOLS_USED.
+    // A closed call (§89, §102, §104): every built-in tool the stack knows by name, and the Preloop
+    // MCP server the user tier may carry (the gateway route's ~/.claude.json), are denied in the
+    // workspace's project settings, and the session is asked for one turn. That is a refusal by
+    // name, not a smaller tool surface: the SDK's `tools` option does not reach the agent through
+    // acpx (§104), so a tool the list does not name stays visible, and a use of any tool shows as
+    // a tool_call event — the door then says TOOLS_USED. The list is measured per Claude Code pin.
     closedEnv(cwd) {
       mkdirSync(join(cwd, ".claude"), { recursive: true });
       writeFileSync(join(cwd, ".claude/settings.json"), JSON.stringify(
-        { permissions: { deny: ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep",
-                                "LS", "WebSearch", "WebFetch", "Task", "Agent", "TodoWrite", "NotebookRead",
-                                "ToolSearch", "Skill", "SlashCommand", "BashOutput", "KillShell",
-                                "ExitPlanMode", "EnterPlanMode", "AskUserQuestion", "mcp__preloop"] } }) + "\n");
+        { permissions: { deny: CLAUDE_CLOSED_DENY } }) + "\n");
       return {};
     },
     // A call to the Preloop MCP server that the adapter itself attached. Its decision is made

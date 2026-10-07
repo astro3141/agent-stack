@@ -5,6 +5,36 @@
 // Native tools a profile may let run without asking: read-only, and bounded by the egress allowlist.
 export const NATIVE_ALLOWABLE = ["WebSearch", "WebFetch"];
 
+// The built-in tools of Claude Code, by name — measured on the 2.1.x build (2026-10-07, §104,
+// #93), the SDK's aliases included (a name this version does not have is ignored by the
+// settings file). This is a deny list by name, and that is all the stack has on this path: the
+// SDK's `tools` option (the surface itself) does not reach the agent through acpx 0.19.4, and
+// `allowedTools` — what the stack sent until §104 — is the SDK's auto-allow list, not a
+// restriction. So a closed call refuses every name here and runs one turn; a tool this list does
+// not name is visible to the model, and its use is TOOLS_USED. A new Claude Code pin re-measures
+// the list (docs/update-day.md); the full verify level asks a closed call what it can see.
+export const CLAUDE_BUILTIN_TOOLS = [
+  "Agent", "Artifact", "ArtifactComments", "ArtifactData", "AskUserQuestion", "Bash", "BashOutput",
+  "Brief", "CronCreate", "CronDelete", "CronList", "DesignSync", "Edit", "EnterPlanMode",
+  "EnterWorktree", "ExitPlanMode", "ExitWorktree", "Glob", "Grep", "KillBash", "KillShell", "LS",
+  "ListAgents", "ListConnectors", "ListMcpResources", "ListMcpResourcesTool", "ListPeers",
+  "ListPlugins", "ListSkills", "Monitor", "MultiEdit", "NotebookEdit", "NotebookRead",
+  "PushNotification", "Read", "ReadMcpResource", "ReadMcpResourceDir", "ReadMcpResourceDirTool",
+  "ReadMcpResourceTool", "ReadNotifications", "ReportFindings", "ScheduleWakeup",
+  "SearchMcpRegistry", "SearchPlugins", "SearchSkills", "SendMessage", "SendUserFile",
+  "SendUserMessage", "ShowOnboardingRolePicker", "Skill", "SlashCommand", "SuggestConnectors",
+  "SuggestPluginInstall", "SuggestSkills", "Task", "TaskCreate", "TaskGet", "TaskList", "TaskStop",
+  "TaskUpdate", "TodoWrite", "ToolSearch", "WebFetch", "WebSearch", "Workflow", "Write",
+];
+// An open call with native_tools: false keeps what reads (and the loader of deferred tools, and
+// the question the ACP adapter renders as a form); everything that writes, executes, reports,
+// schedules or steers is refused by name — a report-class tool reached for because a prompt's
+// vocabulary matched it (ReportFindings, #93) is then refused instead of waiting on an approval.
+export const CLAUDE_OPEN_KEEP = ["Read", "Glob", "Grep", "LS", "NotebookRead", "TodoWrite", "ToolSearch",
+                                 "WebSearch", "WebFetch", "AskUserQuestion", "Agent", "Task", "Skill"];
+export const CLAUDE_OPEN_DENY = CLAUDE_BUILTIN_TOOLS.filter((t) => !CLAUDE_OPEN_KEEP.includes(t));
+export const CLAUDE_CLOSED_DENY = [...CLAUDE_BUILTIN_TOOLS, "mcp__preloop"];
+
 export function permissionBody(tc, inferredKind, source, runId, cwd) {
   return {
     tool_name: tc.title?.split(" ")[0] || tc.kind || "unknown",

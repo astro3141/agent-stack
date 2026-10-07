@@ -14,10 +14,11 @@ Writes are only possible through the Preloop MCP server (native write/shell are 
 Preloop's rules decide them. Emits the normalized result flat for Conductor.
 
 Two things shape a call, and they are independent (§102; docs/packages.md "The shape of a call").
-The **environment** is the profile's: `tools.allowed: []` in the profile asks the vendor for no
-tools and one turn (the adapter's session options `allowedTools: []`, `maxTurns: 1`, no Preloop
-MCP server, every permission request refused by the adapter without asking) — a *closed* call; a
-tool call the vendor made anyway is TOOLS_USED. The **output contract** is this option's:
+The **environment** is the profile's: `tools.allowed: []` in the profile is a *closed* call — one
+turn (`maxTurns: 1`), no Preloop MCP server, every built-in tool the stack knows refused by name
+(the provider's deny list, measured per pin; §104) and every permission request refused by the
+adapter without asking. The tool surface itself is not reduced (acpx forwards no option that
+would), so a tool call the vendor made anyway is TOOLS_USED. The **output contract** is this option's:
 `--output-schema <schema.json>` has the answer — the expected file when this attempt wrote it,
 else the model's text with one surrounding fence removed — read as JSON after the call and checked
 against the schema here, the same for every vendor. Valid → COMPLETED, the answer in the expected
@@ -92,8 +93,8 @@ if PROF is None:
                 f"{', '.join(settings.profile_names()) or 'none'}")))
     raise SystemExit(0)
 # The environment is the profile's (§102): `tools.allowed` is the list the vendor's agent is handed
-# as its tools (the adapter's session option); `[]` is a closed call — no tools, one turn, every
-# permission request refused where it arrives — and the record says `closed`. No key: the agent's
+# as its tools; `[]` is a closed call — one turn, every known tool refused by name, every
+# permission request refused where it arrives (§104) — and the record says `closed`. No key: the agent's
 # own tools, under the profile's native_tools/native_allow and Preloop's rules, as before.
 ALLOWED = (PROF.get("tools") or {}).get("allowed")
 closed = isinstance(ALLOWED, list) and len(ALLOWED) == 0
@@ -373,8 +374,9 @@ status, answer, verdict = r.get("status", "FAILED"), {}, ""
 tool_calls, server_tool_use = tool_use(r)
 if closed and tool_calls:
     status, verdict = "TOOLS_USED", (f"the call made {tool_calls} tool call(s) — a closed call (the profile's "
-                                     "tools.allowed is []) is one prompt with no tools; the vendor did not "
-                                     "honour the ask, or the model reached for one (events.jsonl)")
+                                     "tools.allowed is []) is one prompt with every known tool refused by name; "
+                                     "the model reached for one the list names, or one it does not (§104; "
+                                     "events.jsonl says which)")
 elif schema_file and status == "COMPLETED":
     wrote = stamp() not in (None, before)
     value, probs = None, []
