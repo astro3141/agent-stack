@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import claude from "./providers/claude.mjs";
 import codex from "./providers/codex.mjs";
 import grok from "./providers/grok.mjs";
+import { CLAUDE_BUILTIN_TOOLS } from "./permissions.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 let bad = 0, n = 0;
@@ -92,9 +93,18 @@ const qdir = mkdtempSync(join(tmpdir(), "agentstack-closed-"));
 check("closed: every provider answers closedEnv", ["claude", "codex", "grok"].every((k) => typeof b[k].closedEnv === "function"));
 b.claude.closedEnv(qdir);
 const qdeny = JSON.parse(readFileSync(join(qdir, ".claude/settings.json"), "utf8")).permissions;
-check("claude: a closed call denies every tool disableNative denies, the read-only ones, the web ones and the Preloop server, and allows none",
-  ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "mcp__preloop"].every((t) => qdeny.deny.includes(t))
+check("claude: a closed call denies every built-in tool the stack knows by name — the read-only ones, the web ones, the report class (ReportFindings, #93) — and the Preloop server, and allows none",
+  CLAUDE_BUILTIN_TOOLS.every((t) => qdeny.deny.includes(t)) && qdeny.deny.includes("mcp__preloop")
+  && ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "ReportFindings", "SendUserFile", "Workflow"].every((t) => qdeny.deny.includes(t))
   && !("allow" in qdeny), qdeny);
+const odir = mkdtempSync(join(tmpdir(), "agentstack-open-"));
+b.claude.disableNative(odir, ["WebSearch"]);
+const odeny = JSON.parse(readFileSync(join(odir, ".claude/settings.json"), "utf8")).permissions;
+check("claude: an open call refuses what writes, executes, reports, schedules or steers (ReportFindings, SendUserFile, Workflow, Bash, Write among them), keeps what reads and the deferred-tool loader, and allows only the profile's web tools",
+  ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "ReportFindings", "SendUserFile", "Workflow", "ScheduleWakeup", "SendMessage", "CronCreate"].every((t) => odeny.deny.includes(t))
+  && ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "ToolSearch", "AskUserQuestion"].every((t) => !odeny.deny.includes(t))
+  && JSON.stringify(odeny.allow) === JSON.stringify(["WebSearch"]), odeny);
+rmSync(odir, { recursive: true, force: true });
 const qcfg = JSON.parse(b.codex.closedEnv().CODEX_CONFIG);
 check("codex: a closed call turns shell and web search off and defines no MCP server",
   qcfg.features.shell_tool === false && qcfg.features.unified_exec === false && qcfg.web_search === "disabled" && !("mcp_servers" in qcfg), qcfg);

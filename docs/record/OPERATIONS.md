@@ -5807,3 +5807,60 @@ bring-up's `compose up` had already recreated three of them by the time the serv
 one that was still old, the broker — `restarting: agentstack-broker` — and the check passed;
 trial 549/549, review 277/277, stack 24/24. Run 140 red on the helper being defined after the
 bring-up used it (`stale_servers: command not found`) and the check printing its list twice.
+
+## 104. The closed claim was false: `allowedTools: []` never reduced the tool surface; the refusal is by name, now one measured list (#93, 2026-10-07)
+
+trading's judge ran `closed` with a prompt that said "report your findings" and the model called
+`ReportFindings` — a Claude Code built-in the §89 deny list did not name. The door said
+`TOOLS_USED` (fail-closed, as designed) and the package asked why a closed call had a tool to call
+at all. The question is the right one, and the answer is that **the stack's claim was false**.
+§89 and §102 said the vendor was "asked for no tools" through the session option `allowedTools:
+[]`. Measured on the unpacked sources (`@anthropic-ai/claude-agent-sdk` 0.3.286, `claude-agent-acp`
+0.85.1, `acpx` 0.19.4 — the pins the image carries):
+- the SDK's `allowedTools` is its **auto-allow list** — the tools that run without a permission
+  prompt — and `[]` means "nothing is pre-approved", which is what the adapter wants of an open
+  call and says nothing about a closed one. The option that sets the surface is `tools`
+  (`tools: []` disables every built-in) and `disallowedTools` removes names from the model's
+  context;
+- `claude-agent-acp` reads `_meta.claudeCode.options.{tools,disallowedTools}` and
+  `_meta.disableBuiltInTools` — the knob exists one layer down;
+- `acpx` forwards exactly three session options to that `_meta` (`assignClaudeCodeOptions`:
+  `model`, `allowedTools`, `maxTurns`) and nothing else; its in-process `ensureSession` keeps
+  unknown keys but never copies them across. The `system/init` message that lists the built-in
+  tool names is not surfaced over ACP either, so nothing on this path enumerates them.
+So what closed a call was always the provider's deny list by name (`closedEnv`, 23 names +
+`mcp__preloop`) and `maxTurns: 1`; the session option did nothing; and the SDK's current build has
+66 built-in names. A tool the list did not name was visible and callable, and its use was caught
+only after the fact. The surface knob is acpx's to add (a feature, not this fix; the operator may
+ask upstream — this session's GitHub scope is this repository). What is the stack's:
+- **One measured constant.** `CLAUDE_BUILTIN_TOOLS` (`stack/adapter/permissions.mjs`) names the 66
+  built-ins of this Claude Code build, `ReportFindings` among them; `CLAUDE_CLOSED_DENY` is that
+  plus `mcp__preloop`; `CLAUDE_OPEN_DENY` is that minus what reads (`Read`, `Glob`, `Grep`, `LS`,
+  `NotebookRead`, `TodoWrite`, `ToolSearch`, the two web tools, `AskUserQuestion`, `Agent`,
+  `Task`, `Skill`) — an open call with `native_tools: false` now refuses the report/steer class
+  (`ReportFindings`, `SendUserFile`, `Workflow`, `ScheduleWakeup`, `SendMessage`, `CronCreate`,
+  …) by name instead of sending such a call to approval; it denied five names before.
+- **The adapter no longer sends `allowedTools`** — it was a false claim in the request. `maxTurns:
+  1` stays (acpx forwards it).
+- **The docs say what is true.** packages.md "The shape of a call": a closed call is a refusal by
+  name, not a smaller surface; a tool the list does not name is visible, its use is
+  `TOOLS_USED`; a prompt whose vocabulary names a built-in tool is the package's to word around
+  or to accept at its measured rate. The door's header, the record field's comment, `closed.yaml`,
+  `cfg.py`'s refusal, update-day.md (a Claude Code pin bump re-measures the list) corrected.
+- **A drift control at the login level.** `stack/tools_seen.py` runs a closed call with
+  `--output-schema` asking the model to name every tool it can call (`stack/checks/tools_seen.md`,
+  `.schema.json`) and names what lies outside the constant; `verify.sh --level full` fails on one.
+  The model's report can be incomplete; it cannot be wrong about a name it gives.
+
+**Measured.** review_controls 284/284 — the new `denylist` group (7): the constant names
+`ReportFindings`, no duplicate, every kept name in it; `closedEnv` writes all 66 + `mcp__preloop`
+and allows none; `disableNative(["WebSearch"])` keeps the readers and denies `ReportFindings`,
+`SendUserFile`, `Workflow`, `Bash`, `Write`, `ScheduleWakeup`, allows `WebSearch`; `tools_seen`
+reads the same constant and, with the door stood in for, passes names inside the list, fails and
+names `NewThing` while listing `mcp__x__y` apart, fails a `TOOLS_USED` record with its words.
+`providers_check.mjs` 25/25 (the closed and open checks rewritten against the constant). trial's
+shape group here against `/work` 34/34 (the request still carries `allowed_tools: []` — that is
+the adapter's switch for `closedEnv`; only the session option went). Pins at the ratchets
+(51 / 167); `verify.sh --level static` 13/13. The tools-seen call itself needs a claude login and
+is the operator's to run (`verify.sh --level full`); the cold start has none and runs the stack
+level as before.

@@ -97,7 +97,10 @@ Its exit code is the checks': an update whose every step is done still exits 1 w
 --recreate` fails a check, and the script says which kind — a check the update cannot have caused
 (a login whose token expired, §100) is yours to fix on the panel, any other is the rollback's.
 
-4. `verify.sh --level full` makes the cheap runs (`hello-lane`, `auto`, `novel-a`). For a provider
+4. `verify.sh --level full` makes the cheap runs (`hello-lane`, `auto`, `novel-a`) and asks a
+   closed call on claude what tools it sees, against `CLAUDE_BUILTIN_TOOLS`
+   (`stack/adapter/permissions.mjs`, §104): a Claude Code pin that moved brings new names, and
+   the list is re-measured when that check names them. For a provider
    CLI change, add the N7 native-tool check on the vendor that changed (OPERATIONS §7) by hand:
    what you are looking for is the thing a control cannot see — a CLI that now writes through its
    own tool instead of Preloop's, a session file that moved, a login that stopped refreshing.

@@ -1,6 +1,6 @@
-# Execution profile — a closed call (OPERATIONS §102): the vendor's agent is handed no tools
-# (tools.allowed: []), asked for one turn, and brought no MCP server; a permission request is
-# refused where it arrives. The answer is a function of the prompt and nothing else, which is
+# Execution profile — a closed call (OPERATIONS §102, §104): one turn, no MCP server, every
+# built-in tool the stack knows refused by name (tools.allowed: []); a permission request is
+# refused where it arrives. The tool surface is not smaller — a use of any tool is TOOLS_USED. The answer is a function of the prompt and nothing else, which is
 # what a harness that pins its prompts to a schema needs (trading, #62). Pair it with the door's
 # --output-schema for a checked answer; the two are independent, this file says only the
 # environment. Providers, quota and record as research-default.
@@ -31,7 +31,7 @@ quota:
 
 tools:
   native_tools: false
-  allowed: []                     # the closed call: handed to the agent as allowedTools [] (§102)
+  allowed: []                     # the closed call: every known tool refused by name, one turn (§102, §104)
   preloop_policy: policy/b-fsmcp.yaml
 
 execution:

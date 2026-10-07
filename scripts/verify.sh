@@ -372,5 +372,20 @@ if run_and_show "$RID" novel-a max_repairs=1; then
   ok "novel-a: roles on separate principals, fan-out reviews, recorded — decision $dec ($RID)"
 else bad "novel-a did not complete ($RID)" "$(tail -2 "$TMP/$RID.log" | tr '\n' ';')"; fi
 
+# §104 (#93): a closed call's refusal is by name, and the only enumeration of the names this
+# path has is the model's own report — a closed call on claude is asked what it can see, and a
+# name outside CLAUDE_BUILTIN_TOOLS (stack/adapter/permissions.mjs) is a tool the list does not refuse
+ts="$(in_agent /work/stack/tools_seen.py 2>/dev/null | tail -1 | nocr)"
+ts_status="$(printf '%s' "$ts" | $PY -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null)"
+ts_outside="$(printf '%s' "$ts" | $PY -c 'import json,sys; print(" ".join(json.load(sys.stdin).get("outside") or []))' 2>/dev/null)"
+ts_n="$(printf '%s' "$ts" | $PY -c 'import json,sys; print(len(json.load(sys.stdin).get("seen") or []))' 2>/dev/null)"
+if [ "$ts_status" = COMPLETED ] && [ -z "$ts_outside" ]; then
+  ok "closed: the model names no tool the deny list does not (it named ${ts_n:-0})"
+elif [ "$ts_status" = COMPLETED ]; then
+  bad "closed: the model sees tools the deny list does not name — $ts_outside" "add them to CLAUDE_BUILTIN_TOOLS (stack/adapter/permissions.mjs, §104)"
+else
+  bad "closed: the tools-seen call did not complete (${ts_status:-no answer})" "$(printf '%s' "$ts" | head -c 300)"
+fi
+
 echo; echo "full: $((CHECKS-FAILS))/$CHECKS passed"
 [ $FAILS = 0 ] && exit 0 || exit 1
