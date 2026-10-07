@@ -5863,4 +5863,5 @@ shape group here against `/work` 34/34 (the request still carries `allowed_tools
 the adapter's switch for `closedEnv`; only the session option went). Pins at the ratchets
 (51 / 167); `verify.sh --level static` 13/13. The tools-seen call itself needs a claude login and
 is the operator's to run (`verify.sh --level full`); the cold start has none and runs the stack
-level as before.
+level as before. **Cold-start run 143 green** on 8af807d: provider checks 25/25, trial 549/549,
+review 284/284, stack 24/24.
