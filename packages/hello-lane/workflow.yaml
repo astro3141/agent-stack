@@ -3,7 +3,7 @@
 workflow:
   name: pkg-hello-lane
   description: Prove that a workflow package runs without the platform knowing it
-  entry_point: write
+  entry_point: route
   input:
     profile:
       type: string
@@ -20,6 +20,20 @@ workflow:
     timeout_seconds: 300
 
 agents:
+  # A stack step, called by name through the public entry point (§105): the first run of a fresh
+  # install proves that a workflow reaches the stack without naming its layout.
+  - name: route
+    type: script
+    description: Resolve the execution profile through the stack's route step
+    command: agentstack
+    args: ["step", "route", "{{ workflow.input.profile }}"]
+    output:
+      decision: {type: string}
+      provider: {type: string}
+      reason: {type: string}
+    routes:
+      - to: write
+
   - name: write
     type: script
     description: Write the given text into the run's workspace and report what it wrote

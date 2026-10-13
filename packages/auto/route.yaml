@@ -75,8 +75,8 @@ agents:
   - name: record
     type: script
     description: Record the routed execution in MLflow (shared, vendor-neutral)
-    command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/stack/steps/record.py"]
+    command: agentstack
+    args: ["step", "record"]
     stdin: "{{ {'execute': execute.output, 'check': check.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}

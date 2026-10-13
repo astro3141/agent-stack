@@ -9,7 +9,10 @@ Two rules for reading this list:
   network (OPERATIONS §21).
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/<script>.py …    # reads, runs, MCP
+docker exec agentstack-agent agentstack run …                                  # run_workflow.py: start, show, tail, resume (§105)
+docker exec agentstack-agent agentstack packages …                             # packages.py
+docker exec agentstack-agent agentstack step <name> …                          # a stack step, by name
+docker exec agentstack-agent /opt/venv/bin/python /work/stack/<script>.py …    # any other script: reads, runs, MCP
 docker exec agentstack-admin /opt/venv/bin/python /work/stack/<script>.py …    # writes to Preloop
 ```
 

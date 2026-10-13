@@ -97,9 +97,9 @@ packages:
 EOF
 scripts/packages.sh install trading-port     # fetches it into packages/ and writes the lock
 scripts/up.sh                                # its principals are created with their rights
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/packages.py          # listed, with no reason against it
+docker exec agentstack-agent agentstack packages                     # listed, with no reason against it
 scripts/cycle.sh trading-port research-default                                     # or, by hand:
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py start first-port-1 trading-port research-default
+docker exec agentstack-agent agentstack run start first-port-1 trading-port research-default
 ```
 
 A run id is `[a-z0-9-]`, 6 to 40 characters (`run_workflow.py` refuses a shorter one and says so).

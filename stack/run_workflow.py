@@ -308,8 +308,9 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
     meta_path(ui).write_text(json.dumps(meta))
     argv = conductor_argv(workflow, profile, inputs)
     env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor"),
-           # this run's own Conductor sets CONDUCTOR_SELF_RUN_ID afresh; the parent travels apart
-           "AGENTSTACK_PARENT_RUN": parent}
+           # this run's own Conductor sets CONDUCTOR_SELF_RUN_ID afresh; the parent travels apart,
+           # and so does the stack's own id for the run (step.stack_run_id, §105)
+           "AGENTSTACK_PARENT_RUN": parent, "AGENTSTACK_RUN_ID": ui}
     with open(d / "run.log", "wb") as log:
         rc = run_conductor(ui, argv, env, log)
     meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})
@@ -438,8 +439,9 @@ def cmd_resume(ui):
     argv = ["conductor", "--silent", "resume", "--from", str(cps[-1]), "--no-interactive"]
     env = {**os.environ, "TMPDIR": str(tmp), "CONDUCTOR_EVENT_DIR": str(tmp / "conductor"),
            # the parent travels with a resumed run as it did with the first start, so the record
-           # step tags the same parent the panel shows (review 3, §79)
-           "AGENTSTACK_PARENT_RUN": str(meta.get("parent") or "")}
+           # step tags the same parent the panel shows (review 3, §79); the stack's id is the same
+           # one too — a resume changes the Conductor id, not the run (§105)
+           "AGENTSTACK_PARENT_RUN": str(meta.get("parent") or ""), "AGENTSTACK_RUN_ID": ui}
     with open(d / "run.log", "ab") as log:
         rc = run_conductor(ui, argv, env, log)
     meta.update({"state": "finished", "exit": rc, "ended_at": time.time()})

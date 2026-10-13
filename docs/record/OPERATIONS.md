@@ -5865,3 +5865,61 @@ the adapter's switch for `closedEnv`; only the session option went). Pins at the
 is the operator's to run (`verify.sh --level full`); the cold start has none and runs the stack
 level as before. **Cold-start run 143 green** on 8af807d: provider checks 25/25, trial 549/549,
 review 284/284, stack 24/24.
+
+## 105. The platform-implementation coupling the existing packages show: the stack is called by name, and the two run ids are told apart (2026-10-13)
+
+A design review set four workflows side by side (the three that run here and ARTEX, a
+Go-engine explorer read from a preserved source) and asked what the platform's common contract
+should be. Most of what it proposed — a runtime adapter, a `caused_by` lineage, a general
+Subject/Work/Evidence reference, an effect receipt with an UNKNOWN outcome — is wanted by the
+fourth workflow only, which has never run here; the stack's rule (CONTRACT.md: a capability is
+extracted from what packages already do, not from what one might do) says those wait for an
+observation. Two items are observations already, in the packages that exist:
+- **The layout as the contract.** Every workflow named the stack's file layout to call it:
+  `command: /opt/venv/bin/python`, `args: ["/work/stack/steps/route.py", …]` — 18 times in the
+  stack's own packages, 60 more in novel-v2, devflow and trading (78 in six packages, counted on
+  the review's checkouts); devflow's `drive.py` runs `/work/stack/run_workflow.py` by path. A
+  package that depends on where a script lives breaks when the stack moves it, and the stack
+  cannot move it.
+- **Conductor's id as the run's.** `step.run_id()` is `CONDUCTOR_SELF_RUN_ID`; the stack's own
+  id for a run (`ui_id`, what `run_workflow.py start <id>` is given and the panel shows) was not
+  readable from a step at all, so a package that names its run to the world named Conductor's —
+  which a resume changes — and novel's controls set the Conductor variable by hand to stand in.
+  A reviewer's note was right that this is one id used for two things, not two ids missing.
+
+**What changed.**
+- `docker/agent/agentstack`, installed at `/usr/local/bin/agentstack` in the image (agent and
+  admin run it): `agentstack step <name> [args…]` → `<stack>/steps/<name>.py`, `agentstack run …`
+  → `run_workflow.py`, `agentstack packages …` → `packages.py`. A name is `[a-z][a-z0-9_]*` and
+  must exist, else 2 and nothing runs; the interpreter is `POC_PY` when set (the controls' stub
+  stays possible), the root `AGENTSTACK_STACK` when set (a control on a host). Arguments, results
+  and exit codes are the script's; the launcher resolves a name and nothing else. The old form
+  still runs and the docs say it is not promised.
+- The stack's own workflows moved (18 calls, four files); hello-lane now calls `agentstack step
+  route` before its own step, so a fresh install's first run is also the proof that a workflow
+  reaches the stack by name through Conductor.
+- `step.stack_run_id()` reads `AGENTSTACK_RUN_ID`, which `run_workflow.py` now sets for a start
+  and a resume beside `AGENTSTACK_PARENT_RUN`; `""` by hand. `step.conductor_run_id()` is
+  `run_id()` under its right name. Nothing is re-keyed: workspace, record, evidence, the
+  recorder's parent link all stay on Conductor's id, as the review asked.
+- Docs: packages.md ("Which container runs what", contract item 1, the §105 entry), CONTRACT.md's
+  door sentence, commands.md, install.md, reading-a-run.md, runbook.md use the names.
+- Deferred, by the review's own list: ARTEX runtime adapter, `caused_by`, a reference graph, an
+  effect receipt, a scheduler. Trading's `UNKNOWN_OUTCOME` and devflow's `lose_response` are two
+  observations of result uncertainty with different meanings; a common receipt wants a third.
+
+**Measured.** review_controls 304/304 — the new `entry` group (14): a name resolves and the
+arguments pass through untouched (empties included), the exit code is the step's, `../x` and an
+unknown name refused with 2 and nothing run, `run`/`packages` mapped, usage on no or an unknown
+command; the four in-tree workflow files name no layout (an absence, read as text); by hand
+`stack_run_id` is `""` while `run_id`/`conductor_run_id` are Conductor's, and under the door
+the stack's id is the one given while the workspace stays keyed on Conductor's. trial_controls
++1: the environment `cmd_start` hands a Conductor carries `AGENTSTACK_RUN_ID` = the id and the
+parent apart (the stand-in for `run_conductor` reads it). `verify.sh --level stack` asks
+`agentstack step route` in the agent and `agentstack run workflows` in the admin and runs
+hello-lane through Conductor. Pins at the ratchets (51 / 167); static 13/13. **Cold-start run
+147 green** on bb09fb5: the entry point answered in both containers, hello-lane completed with
+`agentstack step route` as its first step, the panel's command ran as printed; trial 550/550,
+review 304/304, stack 25/25. Run 144 red on the new trial check only: it pinned the parent to
+`""` where an earlier group had left a Conductor id in the process; it now asks that the key is
+present and pins the stack's id.

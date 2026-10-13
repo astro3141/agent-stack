@@ -47,6 +47,9 @@ RUN useradd -m -u 1000 -s /bin/bash agent && groupadd -g 1099 roles && usermod -
 #
 # The role users themselves are created at bring-up (scripts/up.sh), because which roles exist is
 # declared, not baked.
+# The stack's public entry point (§105): `agentstack step <name>`, `agentstack run …`,
+# `agentstack packages …` — a package depends on these names, not on where the scripts live.
+COPY --chown=root:root agent/agentstack /usr/local/bin/agentstack
 COPY --chown=root:root agent/role-exec /usr/local/bin/role-exec
 RUN chmod 0755 /usr/local/bin/role-exec \
  && printf '%s\n' 'Cmnd_Alias ROLE_EXEC = /usr/local/bin/role-exec' \

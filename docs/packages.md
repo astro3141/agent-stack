@@ -131,13 +131,18 @@ packages declare is carried by neither, and `packages.py` and any refused run na
 you can rename one. Check yours against what is already installed:
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py workflows
+docker exec agentstack-agent agentstack run workflows
 ```
 
 ## Which container runs what
 
 Every step runs in the **agent**, with `/work` mounted and `PYTHONPATH=/work/stack:/work/stack/steps`,
-so `import settings` works from wherever the step lives. See [containers.md](containers.md) for the
+so `import settings` works from wherever the step lives. **A workflow calls the stack by name, not
+by path** (§105): `command: agentstack` with `args: ["step", "route", …]`, `["step", "agent_task",
+…]`, `["step", "record"]` — and a process of the package's own runs `agentstack run start …`,
+`agentstack packages …` the same way. The names are the contract; where the scripts live under
+`/work/stack` is the stack's to change. The old form (`/opt/venv/bin/python
+/work/stack/steps/<name>.py …`) still runs and is not promised; the stack's own packages moved. See [containers.md](containers.md) for the
 rest — in particular, anything that writes to Preloop belongs on the admin side, and a package's
 steps never need to.
 
@@ -147,9 +152,18 @@ steps never need to.
 
 ```python
 import step                  # stack/steps/step.py — on the PYTHONPATH the stack sets for every step
-RUN = step.run_id()          # Conductor's id for this run
+RUN = step.run_id()          # Conductor's id for this run (step.conductor_run_id() says so by name)
 WS  = step.workspace()       # <workspace_root>/<run id>, from the stack's settings; not created
+UI  = step.stack_run_id()    # the stack's id: what `run start <id>` was given and `tail <id>` shows; "" by hand
 ```
+
+Two ids, told apart by name since §105. **Conductor's** is the key of the workspace, the record
+and the evidence, and a resume gives the run a new one. **The stack's** is the run as a person and
+the panel know it — the `<id>` of `agentstack run start`, `tail`, `stop`, `resume` — and it stays
+the same across a resume. A step that names its run to the world outside (a state directory, an
+issue, a report) names the stack's; a step that addresses the workspace uses Conductor's, through
+the helper. By hand (a control, a shell) there is no stack run, and `stack_run_id()` is `""`: a
+step must not invent one.
 
 The run's workspace is `<workspace_root>/<conductor run id>`, and every other reader — the
 recorder, the evidence index, the panel — resolves it the same way. A step that invents its own
@@ -563,7 +577,7 @@ requires:
 ```
 
 ```bash
-docker exec cadp278-agent /opt/venv/bin/python /work/stack/packages.py needs
+docker exec cadp278-agent agentstack packages needs
 my-lane   MY_LANE_TOKEN   MISSING  docker/package.env — read the issues it reviews
 ```
 
@@ -716,6 +730,16 @@ the package is four steps, and the fourth is the one that pays for the other thr
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
 
+**§105 (2026-10-13 — the stack is called by name, not by path; two run ids, told apart).**
+- `command: agentstack` / `args: ["step", "<name>", …]` replaces `command: /opt/venv/bin/python`
+  / `args: ["/work/stack/steps/<name>.py", …]` in a workflow; `agentstack run …` replaces
+  `/opt/venv/bin/python /work/stack/run_workflow.py …` in a package's own process, `agentstack
+  packages …` likewise. Arguments and results are unchanged; the old form still runs and is not
+  promised. Six packages named the layout 78 times when this was measured; the stack's own moved.
+- `step.stack_run_id()` is the run's id as the panel and `run start <id>` know it, the same across
+  a resume; `step.conductor_run_id()` is `step.run_id()` by its right name. Nothing else moved: the
+  workspace, the record and the evidence stay keyed on Conductor's id.
+
 **§104 (2026-10-07 — the closed claim corrected, #93).**
 - A closed call never had a smaller tool surface: `allowedTools: []` is the SDK's auto-allow
   list, and the option that would shrink the surface (`tools`) does not pass through acpx. What
@@ -858,12 +882,11 @@ per package, what each one still does its own way; this list is what came after 
 ## Before you call it done
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/packages.py          # is it usable
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py workflows --detail
-scripts/up.sh                                                                  # principals applied
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py \
-  start <id> <workflow> research-default --detach
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py tail <id> --follow
+docker exec agentstack-agent agentstack packages                     # is it usable
+docker exec agentstack-agent agentstack run workflows --detail
+scripts/up.sh                                                        # principals applied
+docker exec agentstack-agent agentstack run start <id> <workflow> research-default --detach
+docker exec agentstack-agent agentstack run tail <id> --follow
 ```
 
 Then read it back the way everyone else will: [reading-a-run.md](reading-a-run.md).

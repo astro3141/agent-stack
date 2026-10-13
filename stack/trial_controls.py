@@ -2212,16 +2212,25 @@ def controls_packages():
     (_rwb.runstate.RUNS / "zz-twice-1" / "tmp" / "conductor").mkdir(parents=True)
     import io as _io7, contextlib as _ctx7
     _buf7 = _io7.StringIO()
+    # §105: the environment a run's Conductor gets names the stack's id for the run (AGENTSTACK_RUN_ID)
+    # beside the parent; read from a stand-in for run_conductor on a fresh id, before the used one
+    _envs7, _rc_real7 = [], _rwb.run_conductor
+    _rwb.run_conductor = lambda ui, argv, env, log: (_envs7.append(dict(env)), 0)[1]
     try:
         with _ctx7.redirect_stdout(_buf7):
+            _rwb.cmd_start("zz-twice-0", "hello-lane", "research-default", [])
             _rc7 = _rwb.cmd_start("zz-twice-1", "hello-lane", "research-default", [])
     finally:
+        _rwb.run_conductor = _rc_real7
         _rwb.capabilities.probe, _rwb.capabilities.missing = _caps_real
         shutil.rmtree(_runs_tmp, ignore_errors=True)
     try: _ans7 = json.loads(_buf7.getvalue().strip().splitlines()[-1])
     except Exception: _ans7 = {"raw": _buf7.getvalue()[-200:]}
     check("a run id used twice is an answer, not a traceback",
           (_rc7, "has been used already" in str(_ans7.get("error", ""))), (2, True))
+    # the parent is whatever CONDUCTOR_SELF_RUN_ID an earlier group left in this process (#13): present, not pinned
+    check("a run's Conductor is given the stack's id for the run beside the parent (step.stack_run_id, §105)",
+          (_envs7[-1].get("AGENTSTACK_RUN_ID"), "AGENTSTACK_PARENT_RUN" in _envs7[-1]) if _envs7 else _envs7, ("zz-twice-0", True))
 
     # More than one onboarded agent means more than one hook file in the home. Taking whichever
     # sorts first worked and attributed every permission request to the wrong agent.

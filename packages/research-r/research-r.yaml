@@ -25,8 +25,8 @@ agents:
   - name: route
     type: script
     description: Collect quota observations and choose a provider (fail closed on HOLD)
-    command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/stack/steps/route.py", "{{ workflow.input.profile }}"]
+    command: agentstack
+    args: ["step", "route", "{{ workflow.input.profile }}"]
     output:
       decision: {type: string}
       provider: {type: string}
@@ -58,8 +58,8 @@ agents:
   - name: propose
     type: script
     description: Routed model step — propose a candidate as term lists
-    command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/stack/steps/agent_task.py", "{{ route.output.provider }}", "{{ route.output.model_route }}",
+    command: agentstack
+    args: ["step", "agent_task", "{{ route.output.provider }}", "{{ route.output.model_route }}",
            "propose", "/work/packages/research-r/prompts/r-propose.md", "proposal.json",
            "{{ route.output.profile }}", "{{ route.output.login }}"]
     timeout: 700
@@ -142,8 +142,8 @@ agents:
   - name: review
     type: script
     description: Routed model step — review opinion, not evidence
-    command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/stack/steps/agent_task.py", "{{ route.output.provider }}", "{{ route.output.model_route }}",
+    command: agentstack
+    args: ["step", "agent_task", "{{ route.output.provider }}", "{{ route.output.model_route }}",
            "review", "/work/packages/research-r/prompts/r-review.md", "review.json",
            "{{ route.output.profile }}", "{{ route.output.login }}"]
     timeout: 700
@@ -190,8 +190,8 @@ agents:
   - name: record
     type: script
     description: Record the routed research run in MLflow (a record failure never changes the outcome)
-    command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/stack/steps/record.py"]
+    command: agentstack
+    args: ["step", "record"]
     stdin: "{{ {'execute': propose.output, 'executions': ([review.output] if review is defined else []), 'check': {'decision': gate.output.decision, 'reason': gate.output.reason, 'file_sha256': normalize.output.candidate_sha256}, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
@@ -209,8 +209,8 @@ agents:
   - name: record_hold
     type: script
     description: Record the HOLD decision in MLflow — not starting is a result too
-    command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/stack/steps/record.py"]
+    command: agentstack
+    args: ["step", "record"]
     stdin: "{{ {'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}

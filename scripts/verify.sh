@@ -296,6 +296,14 @@ grep -E '^\s*none' "$TMP/pkg.log" | sed 's/^/        /' || true
 floors="$(in_agent /work/stack/packages.py stack 2>&1)"
 if echo "$floors" | grep -q "too_old"; then bad "a package needs a newer stack" "$(echo "$floors" | grep too_old)"; else ok "no package floor is violated"; fi
 
+# §105: the public entry point answers by name in both containers — a package depends on it, not on
+# the layout; and hello-lane below calls `agentstack step route` through Conductor
+ep_agent="$(docker exec "$STACK-agent" agentstack step route research-default 2>&1 | tail -1 | nocr)"
+ep_admin="$(docker exec "$STACK-admin" agentstack run workflows 2>&1 | tail -1 | nocr)"
+if printf '%s' "$ep_agent" | grep -q '"decision"' && printf '%s' "$ep_admin" | grep -q 'hello-lane'; then
+  ok "the public entry point answers by name in the agent and the admin (agentstack step route, agentstack run workflows)"
+else bad "the public entry point did not answer in both containers" "agent: $(printf '%s' "$ep_agent" | cut -c1-120); admin: $(printf '%s' "$ep_admin" | cut -c1-120)"; fi
+
 RID="verify-$(date +%s | tail -c 7)"
 if in_agent /work/stack/run_workflow.py start "$RID" hello-lane research-default text=verify > "$TMP/hello.log" 2>&1 \
    && in_agent /work/stack/run_workflow.py show "$RID" 2>/dev/null | tail -1 | grep -q '"completed_ok": true'; then
