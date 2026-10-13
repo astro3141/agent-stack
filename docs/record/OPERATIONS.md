@@ -5917,4 +5917,9 @@ the stack's id is the one given while the workspace stays keyed on Conductor's. 
 +1: the environment `cmd_start` hands a Conductor carries `AGENTSTACK_RUN_ID` = the id and the
 parent apart (the stand-in for `run_conductor` reads it). `verify.sh --level stack` asks
 `agentstack step route` in the agent and `agentstack run workflows` in the admin and runs
-hello-lane through Conductor. Pins at the ratchets (51 / 167); static 13/13.
+hello-lane through Conductor. Pins at the ratchets (51 / 167); static 13/13. **Cold-start run
+147 green** on bb09fb5: the entry point answered in both containers, hello-lane completed with
+`agentstack step route` as its first step, the panel's command ran as printed; trial 550/550,
+review 304/304, stack 25/25. Run 144 red on the new trial check only: it pinned the parent to
+`""` where an earlier group had left a Conductor id in the process; it now asks that the key is
+present and pins the stack's id.
