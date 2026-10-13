@@ -273,8 +273,8 @@ docker exec agentstack-agent sh -c 'ps -eo pid,etime,args | grep "[r]un_workflow
 **Do:** stop it the way a person would, so it keeps a checkpoint, then continue it when you want:
 
 ```bash
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py stop <id>
-docker exec agentstack-agent /opt/venv/bin/python /work/stack/run_workflow.py resume <id>
+docker exec agentstack-agent agentstack run stop <id>
+docker exec agentstack-agent agentstack run resume <id>
 ```
 
 or use **중지** / **재개** in the panel. Resume re-enters the step that did not finish; the steps

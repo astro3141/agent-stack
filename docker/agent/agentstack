@@ -1,0 +1,38 @@
+#!/bin/sh
+# The stack's public execution entry point (OPERATIONS §105).
+#
+#   agentstack step <name> [args…]     a stack step: route, roles, agent_task, tasks, task_chain,
+#                                      broker_dispatch, fanout, admit_models, record
+#   agentstack run <subcommand> [args…] run_workflow.py: start, resume, stop, tail, view, workflows, …
+#   agentstack packages [args…]        packages.py
+#
+# A package used to name the stack's file layout to call it (`/opt/venv/bin/python
+# /work/stack/steps/route.py …`, 78 times across six packages when this was measured). The layout
+# is the stack's to change; the names above are what a package may depend on. Arguments and
+# results are exactly those of the script behind the name — this resolves a name, nothing more.
+# The interpreter is POC_PY when set (a control stands a stub in its place), the stack root
+# AGENTSTACK_STACK when set (a control on a host); otherwise the image's.
+set -eu
+
+STACK="${AGENTSTACK_STACK:-/work/stack}"
+PY="${POC_PY:-/opt/venv/bin/python}"
+
+usage() { echo "usage: agentstack step <name> [args…] | run <subcommand> [args…] | packages [args…]" >&2; exit 2; }
+
+[ $# -ge 1 ] || usage
+what="$1"; shift
+case "$what" in
+  step)
+    [ $# -ge 1 ] || usage
+    name="$1"; shift
+    case "$name" in
+      [a-z][a-z0-9_]*) : ;;
+      *) echo "agentstack: a step name is [a-z][a-z0-9_]*, not '$name'" >&2; exit 2 ;;
+    esac
+    [ -f "$STACK/steps/$name.py" ] || { echo "agentstack: no step named '$name' in $STACK/steps" >&2; exit 2; }
+    exec "$PY" "$STACK/steps/$name.py" "$@" ;;
+  run)      exec "$PY" "$STACK/run_workflow.py" "$@" ;;
+  packages) exec "$PY" "$STACK/packages.py" "$@" ;;
+  -h|--help|help) usage ;;
+  *) echo "agentstack: unknown command '$what'" >&2; usage ;;
+esac

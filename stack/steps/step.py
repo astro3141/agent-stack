@@ -46,6 +46,20 @@ def run_id():
     return os.environ.get("CONDUCTOR_SELF_RUN_ID", "manual")
 
 
+def conductor_run_id():
+    """The same id, under the name that says whose it is (§105): Conductor's, set afresh by the
+    Conductor that runs this step. The workspace, the record and the evidence are keyed on it."""
+    return run_id()
+
+
+def stack_run_id():
+    """The stack's id for this run — the one `agentstack run start <id> …` was given, `tail <id>`
+    and the panel show, and a stop or resume names (§105). A resumed run keeps it while its
+    Conductor id changes. "" when nothing started this step through the door (by hand, a control):
+    there is no stack run to name, and a step must not invent one."""
+    return os.environ.get("AGENTSTACK_RUN_ID", "")
+
+
 def runtime():
     """The stack's generated runtime settings. Raises when they are not there to be read."""
     import settings

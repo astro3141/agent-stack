@@ -31,8 +31,8 @@ agents:
   - name: route
     type: script
     description: Collect quota observations and choose a provider (fail closed on HOLD)
-    command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/stack/steps/route.py", "{{ workflow.input.profile }}"]
+    command: agentstack
+    args: ["step", "route", "{{ workflow.input.profile }}"]
     output:
       decision: {type: string}
       provider: {type: string}
@@ -96,8 +96,8 @@ agents:
   - name: record
     type: script
     description: Record the routed execution in MLflow (shared, vendor-neutral)
-    command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/stack/steps/record.py"]
+    command: agentstack
+    args: ["step", "record"]
     stdin: "{{ {'execute': execute.output, 'check': check.output, 'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}
@@ -113,8 +113,8 @@ agents:
   - name: record_hold
     type: script
     description: Record the HOLD decision in MLflow — not starting is a result too
-    command: "${POC_PY:-/opt/venv/bin/python}"
-    args: ["/work/stack/steps/record.py"]
+    command: agentstack
+    args: ["step", "record"]
     stdin: "{{ {'route': route.output} | tojson }}"
     output:
       mlflow_run_id: {type: string}

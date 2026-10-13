@@ -1070,7 +1070,7 @@ def review3_controls():
     check("hub: a failed read of the approvals leaves the table and its drafts in place",
           "if (!Array.isArray(a)) {" in hub and hub.index("if (!Array.isArray(a)) {") < hub.index("const typed = {}; let focused = null;"))
     inst = (WORK / "docs" / "install.md").read_text()
-    m = re.search(r"run_workflow\.py start (\S+) ", inst)
+    m = re.search(r"(?:run_workflow\.py|agentstack run) start (\S+) ", inst)
     check("docs: the install example declares the package before running it, and its run id is one run_workflow.py accepts",
           "packages.local.yaml" in inst and "scripts/packages.sh install" in inst and bool(m) and re.fullmatch(r"[a-z0-9-]{6,40}", m.group(1) or "") is not None,
           m.group(1) if m else None)
@@ -1681,6 +1681,56 @@ def denylist_controls():
           (out[1][0], out[1][1].get("outside"), out[1][1].get("mcp")), (1, ["NewThing"], ["mcp__x__y"]))
     check("denylist: a record that is not COMPLETED fails with its status and words", (out[2][0], out[2][1].get("status"), "1 tool call" in out[2][1].get("why", "")), (1, "TOOLS_USED", True))
 
+
+def entry_controls():
+    """§105: the stack is called by name through one launcher (docker/agent/agentstack), driven here
+    against a temporary stack tree and this interpreter: a step name resolves to <stack>/steps/<name>.py
+    with the arguments and the exit code passed through; a name that is not a name, or names no
+    step, is refused with 2 and runs nothing; `run` and `packages` map to their scripts; the two run
+    ids a step reads are told apart (step.stack_run_id from AGENTSTACK_RUN_ID, "" by hand; run_id and
+    conductor_run_id the same, Conductor's); the stack's own workflows name no layout."""
+    print("the public entry point: a name, not a path (§105)")
+    launcher = WORK / "docker" / "agent" / "agentstack"
+    root = Path(tempfile.mkdtemp(prefix="agentstack-entry-"))
+    (root / "steps").mkdir()
+    (root / "steps" / "echo_args.py").write_text("import json, sys; print(json.dumps(sys.argv[1:])); sys.exit(3 if 'fail' in sys.argv else 0)\n")
+    (root / "run_workflow.py").write_text("import sys; print('run_workflow', *sys.argv[1:])\n")
+    (root / "packages.py").write_text("import sys; print('packages', *sys.argv[1:])\n")
+    env = {**os.environ, "AGENTSTACK_STACK": str(root), "POC_PY": sys.executable}
+    def go(*args):
+        r = subprocess.run(["sh", str(launcher), *args], env=env, capture_output=True, text=True, timeout=30)
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+    rc, out, err = go("step", "echo_args", "a b", "", "--flag")
+    check("entry: a step name resolves to <stack>/steps/<name>.py and the arguments pass through untouched, empties included",
+          (rc, out) == (0, '["a b", "", "--flag"]'), (rc, out, err))
+    check("entry: the step's exit code is the launcher's", go("step", "echo_args", "fail")[0] == 3)
+    rc, out, err = go("step", "../run_workflow")
+    check("entry: a name that is not [a-z][a-z0-9_]* is refused with 2 and nothing runs", (rc, out) == (2, "") and "not '../run_workflow'" in err, err)
+    rc, out, err = go("step", "nope")
+    check("entry: a name with no step behind it is refused with 2, naming the directory looked in", rc == 2 and "no step named 'nope'" in err, err)
+    check("entry: `run …` is run_workflow.py with the arguments", go("run", "start", "x", "y")[1] == "run_workflow start x y")
+    check("entry: `packages …` is packages.py with the arguments", go("packages", "needs")[1] == "packages needs")
+    check("entry: no command, or an unknown one, is usage with 2", go()[0] == 2 and go("fly")[0] == 2 and "usage:" in go("fly")[2])
+    # the stack's own workflows call the stack by name (an absence, read as text: there is no behaviour to drive)
+    for wf in (WORK / "packages").glob("*/*.yaml"):
+        wf_text = (WORK / wf).read_text()      # a repository file's text: the check is an absence in it
+        check("entry: a workflow of the stack's own packages calls the stack by name, not by its layout", "/work/stack" not in wf_text, str(wf))
+    # the two run ids, by behaviour of the helper
+    sys.path.insert(0, str(HERE / "steps"))
+    st = importlib.import_module("step")
+    saved = {k: os.environ.get(k) for k in ("CONDUCTOR_SELF_RUN_ID", "AGENTSTACK_RUN_ID")}
+    try:
+        os.environ["CONDUCTOR_SELF_RUN_ID"] = "c-1"; os.environ.pop("AGENTSTACK_RUN_ID", None)
+        check("ids: by hand there is no stack run — stack_run_id is \"\", run_id and conductor_run_id are Conductor's",
+              (st.stack_run_id(), st.run_id(), st.conductor_run_id()) == ("", "c-1", "c-1"))
+        os.environ["AGENTSTACK_RUN_ID"] = "u-7"
+        check("ids: under the door the stack's id is the one the run was started with, and Conductor's is still the workspace key",
+              (st.stack_run_id(), st.conductor_run_id(), os.path.basename(st.workspace("c-1"))) == ("u-7", "c-1", "c-1"))
+    finally:
+        for k, v in saved.items():
+            if v is None: os.environ.pop(k, None)
+            else: os.environ[k] = v
+
 adapter_controls()
 update_controls()
 review3_controls()
@@ -1695,6 +1745,7 @@ pinkind_controls()
 pylocal_controls()
 servers_controls()
 denylist_controls()
+entry_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

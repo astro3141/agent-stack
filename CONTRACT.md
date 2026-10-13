@@ -89,10 +89,11 @@ treated, which nothing in the platform may decide for it.
 Some work is not a graph of steps: a desk that runs all day, a harness with its own loop, a
 process that waits on a market. Such a package keeps its runtime — its process, its lifetime,
 its scheduling, its state (`requires.state`, docs/packages.md), its remote mechanics — and the
-contract is about the doors, not the shape. **Every model call goes through
-`stack/steps/agent_task.py`**: it is a command any process in the agent container can run
-(`agent_task.py <provider> <route> <label> <prompt-file> <expected> [<profile> [<login>
-[<principal>]]]`), it picks the broker or the local door from the role's declaration, it presents
+contract is about the doors, not the shape. **Every model call goes through the door,
+`agentstack step agent_task`** (`stack/steps/agent_task.py`): it is a command any process in the
+agent container can run (`agentstack step agent_task <provider> <route> <label> <prompt-file>
+<expected> [<profile> [<login> [<principal>]]]`, §105 — the name, not the path, is what a package
+depends on), it picks the broker or the local door from the role's declaration, it presents
 the principal, and it leaves the execution record in the evidence directory where the recorder
 collects it whether or not the package lists it. Approvals are Preloop's and nothing else answers
 them. A result is recorded by the record step or by the evidence it left — a package writes no
