@@ -2228,8 +2228,9 @@ def controls_packages():
     except Exception: _ans7 = {"raw": _buf7.getvalue()[-200:]}
     check("a run id used twice is an answer, not a traceback",
           (_rc7, "has been used already" in str(_ans7.get("error", ""))), (2, True))
+    # the parent is whatever CONDUCTOR_SELF_RUN_ID an earlier group left in this process (#13): present, not pinned
     check("a run's Conductor is given the stack's id for the run beside the parent (step.stack_run_id, §105)",
-          (_envs7[-1].get("AGENTSTACK_RUN_ID"), _envs7[-1].get("AGENTSTACK_PARENT_RUN")) if _envs7 else _envs7, ("zz-twice-0", ""))
+          (_envs7[-1].get("AGENTSTACK_RUN_ID"), "AGENTSTACK_PARENT_RUN" in _envs7[-1]) if _envs7 else _envs7, ("zz-twice-0", True))
 
     # More than one onboarded agent means more than one hook file in the home. Taking whichever
     # sorts first worked and attributed every permission request to the wrong agent.
