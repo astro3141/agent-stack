@@ -5949,4 +5949,4 @@ screen); the research profiles stand behind the two drawn runners.
 the composition, not the README's words: every always-on service plus the record and the panel is
 named in the first diagram (a profile proxy by the name docs/containers.md uses), the README
 carries both diagrams, and the network the caption calls internal is internal in the
-composition. 307/307; pins at the ratchets (51 / 167); static 13/13.
+composition. 307/307; pins at the ratchets (51 / 167); static 13/13. **Cold-start run 149 green** on ea2c301.
