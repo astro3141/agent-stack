@@ -1731,6 +1731,33 @@ def entry_controls():
             if v is None: os.environ.pop(k, None)
             else: os.environ[k] = v
 
+
+def diagram_services():
+    """The README's topology diagram against the composition it claims to draw (§106): the
+    compose services that are always on, plus the record and the panel, each by the name the
+    diagram uses (a profile proxy's `-proxy` suffix dropped, as docs/containers.md names them),
+    and whether the governed network is internal as the diagram says. Parsed, not grepped."""
+    import yaml
+    comp = yaml.safe_load(open(WORK / "docker" / "compose.poc.yaml", encoding="utf-8"))
+    want = {n for n, sv in comp["services"].items()
+            if not sv.get("profiles") or set(sv["profiles"]) & {"record", "ui"}} - {"replay"}
+    names = {n[:-len("-proxy")] if n.endswith("-proxy") else n for n in want}
+    readme = (WORK / "README.md").read_text(encoding="utf-8")
+    blocks = re.findall(r"```mermaid\n(.*?)```", readme, re.S)
+    drawn = blocks[0] if blocks else ""
+    missing = sorted(n for n in names if not re.search(rf"\b{re.escape(n)}\b", drawn))
+    return {"blocks": len(blocks), "missing": missing,
+            "governed_internal": bool((comp.get("networks") or {}).get("governed", {}).get("internal"))}
+
+
+def diagram_controls():
+    """§106: the README draws the topology; the drawing is checked against the composition."""
+    print("the README's diagram is the composition's (§106)")
+    d = diagram_services()
+    check("diagram: the README carries the topology diagram and the call diagram", d["blocks"] == 2, d["blocks"])
+    check("diagram: every always-on service, the record and the panel are drawn by name", d["missing"] == [], d["missing"])
+    check("diagram: the governed network it calls internal is internal in the composition", d["governed_internal"])
+
 adapter_controls()
 update_controls()
 review3_controls()
@@ -1746,6 +1773,7 @@ pylocal_controls()
 servers_controls()
 denylist_controls()
 entry_controls()
+diagram_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

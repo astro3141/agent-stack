@@ -5923,3 +5923,30 @@ hello-lane through Conductor. Pins at the ratchets (51 / 167); static 13/13. **C
 review 304/304, stack 25/25. Run 144 red on the new trial check only: it pinned the parent to
 `""` where an earlier group had left a Conductor id in the process; it now asks that the key is
 present and pins the stack's id.
+
+## 106. The README draws the topology, and the drawing is checked against the composition (2026-10-15)
+
+The README said what runs and where things are, and the containers page said what each one may
+and may not reach, but nothing showed the shape at a glance; the operator asked for a diagram.
+Two Mermaid drawings (GitHub renders them in place) sit under "The shape of it":
+- **what may reach what** — the operator on loopback → hub → ops → Preloop for approvals; the
+  governed network (agent, broker) with its three ways out drawn as the boundaries they are:
+  `egress` to the vendors, `apiguard` to Preloop (and Preloop to `fsmcp` for the governed tool
+  call), the broker to the per-profile runners behind their own proxies; `admin` writing the
+  control plane from another network; the record to MLflow. The caption says the rule: an arrow
+  is a route the composition allows, and a route not drawn is refused by the network.
+- **one model call** — the door (`agentstack step agent_task`), the direct and the brokered
+  path, the permission request to Preloop, the call through the proxy, the evidence directory
+  the recorder reads.
+
+Drawn from `docker/compose.poc.yaml` (each service's networks and profiles; `governed`,
+`toolnet`, `services`, `dispatch`, `adminnet` and the profile networks internal),
+`docker/preloop.agentstack.yaml` (Preloop's `api` on `adminnet` and `toolnet`, never on
+`governed`) and `docker/apiguard.conf`. `quota` and `replay` are not drawn (optional, and a
+screen); the research profiles stand behind the two drawn runners.
+
+**Measured.** A drawing drifts like any document, so review_controls' `diagram` group (3) parses
+the composition, not the README's words: every always-on service plus the record and the panel is
+named in the first diagram (a profile proxy by the name docs/containers.md uses), the README
+carries both diagrams, and the network the caption calls internal is internal in the
+composition. 307/307; pins at the ratchets (51 / 167); static 13/13. **Cold-start run 149 green** on ea2c301.
