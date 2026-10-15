@@ -27,6 +27,8 @@ is what it means*. Two questions settle most arguments:
 That line is why, for example, this stack records **what a run did** and refuses to compute whether
 the run was *right*: the first needs no domain knowledge, the second is the whole of it.
 
+The topology — which container may reach which — is drawn in the [README](../README.md#the-shape-of-it).
+
 ## A run, end to end
 
 ```

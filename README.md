@@ -16,6 +16,62 @@ Most of the work is not the routing layer itself: it is making those four hold t
 constraints — network isolation, an egress allowlist, credentials that never leave their own
 directory, and the operations that let the result survive a restart, an update or a bad week.
 
+## The shape of it
+
+What may reach what. An arrow is a route the composition allows; a route that is not drawn is
+refused by the network, not by a rule somebody remembers (`docker/compose.poc.yaml`,
+`docker/preloop.agentstack.yaml`, `docker/apiguard.conf`).
+
+```mermaid
+flowchart LR
+  person([operator]) -->|127.0.0.1 only| hub[hub<br/>the panel]
+  hub --> ops[ops<br/>panel API, Docker socket]
+  ops -->|approvals, with its own credential| preloop
+
+  subgraph governed [governed network — internal, no internet]
+    agent[agent<br/>Conductor, the steps, the provider logins]
+    broker[broker<br/>role credentials, dispatch]
+  end
+
+  agent -->|every vendor call| egress[egress<br/>allowlist proxy] --> vendors((Claude · Codex · Grok))
+  agent -->|permission-check, MCP| apiguard[apiguard<br/>refuses control-plane writes] --> preloop[Preloop OSS<br/>api · console · gateway]
+  preloop -->|the governed tool call| fsmcp[fsmcp<br/>file tools on /ws]
+  agent -->|a step whose role declares an egress profile| broker
+  broker --> runners
+
+  subgraph runners [one runner per egress profile, behind its own proxy]
+    probe[agent-probe ⇄ egress-probe]
+    closed[agent-closed ⇄ egress-closed]
+  end
+  runners -->|MCP, under a job token| broker
+
+  admin[admin<br/>writes policy, principals] -->|control plane| preloop
+  agent -->|the record| mlflow[(MLflow)]
+```
+
+Three things the picture is drawn around:
+
+- **The governed party cannot change the control plane.** The agent reaches Preloop only through
+  `apiguard`, which forwards permission checks and MCP and refuses approvals, tool rights and
+  credentials; those writes come from `admin`, on another network ([docs/containers.md](docs/containers.md)).
+- **An agent with a route to the internet is not isolated.** Every vendor call leaves through an
+  allowlist proxy; a role that declares its own egress profile runs on that profile's network,
+  behind that profile's proxy, with its credential held by the broker and never by the runner.
+- **One door for every model call.** `agentstack step agent_task` picks the local adapter or the
+  broker from the role's declaration, presents the principal, and leaves an evidence directory
+  the recorder reads whether or not the workflow listed the call:
+
+```mermaid
+flowchart LR
+  step[a workflow step] -->|agentstack step agent_task| door[agent_task.py<br/>the door]
+  door -->|direct| adapter[run-agent.mjs<br/>acpx → the vendor's CLI]
+  door -->|brokered| broker[broker] --> runner[agent-&lt;profile&gt;] --> adapter2[run-agent.mjs]
+  adapter -->|permission request| preloop[Preloop]
+  adapter -->|the call| egress[egress proxy] --> vendor((vendor))
+  adapter --> ev[(evidence/p281/&lt;run&gt;-&lt;label&gt;-&lt;provider&gt;)]
+  ev --> record[record step] --> mlflow[(MLflow)]
+```
+
 ## Where things are
 
 | | |
