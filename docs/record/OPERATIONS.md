@@ -6006,4 +6006,5 @@ call and no file are one turn; the bound is between 2 and 8 and `RemoteTrigger` 
 is `TOOLS_USED` with both counted; three refusals and `max_turn_requests` with no text is
 `INVALID_OUTPUT` naming the bound, nothing produced, no retry; the §104 case (a tool ran) is
 `TOOLS_USED` with `tool_denied 0` and the tool named. providers_check 25/25; pins at the ratchets
-(51 / 167); static 13/13. The live proof is trading's: the lanes re-measured on the new revision.
+(51 / 167); static 13/13. **Cold-start run 151 green** on 67e74ea: trial 554/554, review
+315/315, stack 25/25. The live proof is trading's: the lanes re-measured on the new revision.
