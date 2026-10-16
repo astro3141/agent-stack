@@ -14,11 +14,12 @@ Writes are only possible through the Preloop MCP server (native write/shell are 
 Preloop's rules decide them. Emits the normalized result flat for Conductor.
 
 Two things shape a call, and they are independent (§102; docs/packages.md "The shape of a call").
-The **environment** is the profile's: `tools.allowed: []` in the profile is a *closed* call — one
-turn (`maxTurns: 1`), no Preloop MCP server, every built-in tool the stack knows refused by name
-(the provider's deny list, measured per pin; §104) and every permission request refused by the
-adapter without asking. The tool surface itself is not reduced (acpx forwards no option that
-would), so a tool call the vendor made anyway is TOOLS_USED. The **output contract** is this option's:
+The **environment** is the profile's: `tools.allowed: []` in the profile is a *closed* call — no
+Preloop MCP server, every built-in tool the stack knows refused by name (the provider's deny
+list, measured per pin; §104), every permission request refused by the adapter without asking,
+and a few round-trips (`CLOSED_MAX_TURNS`) so a refused call is shown to the model and it answers
+in words (§107). The tool surface itself is not reduced (acpx forwards no option that would), so
+a refused call is `tool_denied` and a tool that ran is TOOLS_USED. The **output contract** is this option's:
 `--output-schema <schema.json>` has the answer — the expected file when this attempt wrote it,
 else the model's text with one surrounding fence removed — read as JSON after the call and checked
 against the schema here, the same for every vendor. Valid → COMPLETED, the answer in the expected
@@ -365,18 +366,31 @@ if first is not None:
     _usage_rows = _usage(first) + _usage_rows
 meas = {"total_tokens": _tok, "wall_ms": _wall, **({"model_usage": _usage_rows} if _usage_rows else {})}
 
-# The door's own verdicts (§89, §102). A closed call that made a tool call anyway is TOOLS_USED,
-# whatever else happened. With an output schema, a completed call's answer — the expected file
-# when this attempt wrote it, else the text with one fence removed — is read as JSON and checked;
-# what passes from the text is written to the expected file. "produced" then means a valid
-# answer arrived, from either source.
+# The door's own verdicts (§89, §102, §107). A closed call's tool calls are read from the events:
+# one that was refused before running (the deny list's, the adapter's — the CLI marks it, and
+# claude-agent-acp carries the mark) is `tool_denied` and not a use; one that ran, or whose end
+# the events do not show, is a use, and the call is TOOLS_USED whatever else happened. A closed
+# call that spent its bounded turns reaching for tools and ended without a word is INVALID_OUTPUT
+# in those words — the model's doing, like a broken schema, not a failure a member retries. With
+# an output schema, a completed call's answer — the expected file when this attempt wrote it,
+# else the text with one fence removed — is read as JSON and checked; what passes from the text
+# is written to the expected file. "produced" then means a valid answer arrived, from either source.
 status, answer, verdict = r.get("status", "FAILED"), {}, ""
 tool_calls, server_tool_use = tool_use(r)
-if closed and tool_calls:
-    status, verdict = "TOOLS_USED", (f"the call made {tool_calls} tool call(s) — a closed call (the profile's "
-                                     "tools.allowed is []) is one prompt with every known tool refused by name; "
-                                     "the model reached for one the list names, or one it does not (§104; "
-                                     "events.jsonl says which)")
+outcomes = queryk.tool_outcomes(os.path.join(evid, "events.jsonl"))
+tool_denied = sum(1 for o in outcomes.values() if o["refused"])
+turns = queryk.turn_count(os.path.join(evid, "events.jsonl"))
+stop_reason = (r.get("turn") or {}).get("stopReason") or ""
+if closed and tool_calls > tool_denied:
+    ran = sorted(o["name"] or cid for cid, o in outcomes.items() if not o["refused"]) or ["one the events do not name"]
+    status, verdict = "TOOLS_USED", (f"the call made {tool_calls} tool call(s) and {tool_calls - tool_denied} ran "
+                                     f"({', '.join(ran)[:200]}) — a closed call (the profile's tools.allowed is []) "
+                                     "is one prompt with every known tool refused by name; a tool that ran is one "
+                                     "the list does not name (§104, §107; events.jsonl)")
+elif closed and stop_reason == "max_turn_requests" and not (r.get("text") or "").strip():
+    status, verdict = "INVALID_OUTPUT", (f"no answer: the call reached the closed turn bound ({turns} turn(s)) still "
+                                         f"reaching for tools — {tool_denied} call(s) refused, none ran, no text "
+                                         "followed (§107; events.jsonl names the tools)")
 elif schema_file and status == "COMPLETED":
     wrote = stamp() not in (None, before)
     value, probs = None, []
@@ -440,8 +454,9 @@ rec = execution.record(**{
     # the request by hand on another machine (reported from the second install).
     "failure": execution.failure_of(r) if not verdict else verdict,
     "ledger_error": r.get("ledger_error") or "",
-    "turns": 1,
+    "turns": turns,
     "tool_calls": tool_calls,
+    "tool_denied": tool_denied,
     "server_tool_use": server_tool_use,
     "schema_sha256": schema_sha,
     "answer": answer,

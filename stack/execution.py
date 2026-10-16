@@ -21,7 +21,7 @@ A record carries `contract`, the version of this shape, so a reader can tell an 
 """
 import copy, json, os
 
-CONTRACT = 3                             # 3: `closed` for `kind` (§102); 2: the query kind's keys (§89); 1: before them
+CONTRACT = 4                             # 4: `tool_denied`, turns as counted (§107); 3: `closed` for `kind` (§102); 2: the query kind's keys (§89); 1: before them
 # A brokered call carries its prompt and its schema as text inside the job the broker forwards;
 # each is bounded here, and the bound is the dispatch step's to refuse before the hand-over (§103,
 # #88) — a direct call has no bound. Named once, read by the dispatch, the broker and the runner.
@@ -30,7 +30,7 @@ PROMPT_BOUND = 200000
 # every key a model step answers with, and what it holds when the call did not get that far
 FIELDS = {
     "status": "FAILED",                  # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | REFUSED (a runner's 4xx, §103) | …
-    "closed": False,                     # the profile's tools.allowed is []: one prompt, one turn, every known tool refused by name (§102, §104)
+    "closed": False,                     # the profile's tools.allowed is []: one prompt, every known tool refused by name, a bounded few turns (§102, §104, §107)
     "provider": "",
     "principal": "",                     # the Preloop principal the call presented
     "model_route": "",
@@ -50,8 +50,9 @@ FIELDS = {
     "attempts": 1,                       # 2 when the one bounded login-refresh retry ran
     "failure": "",                       # why, when status is not COMPLETED
     "ledger_error": "",
-    "turns": 1,                          # one prompt is one turn over ACP; a retry is another call
-    "tool_calls": 0,                     # tool calls the turn made (events.jsonl); a closed call must say 0
+    "turns": 1,                          # model turns the events show (§107): 1, plus one per round of tool calls answered; a retry is another call
+    "tool_calls": 0,                     # tool calls the model made (events.jsonl), refused ones included
+    "tool_denied": 0,                    # of those, refused before running (a closed call's, §107); tool_calls - tool_denied ran
     "server_tool_use": 0,                # of those, web lookups
     "schema_sha256": "",                 # with --output-schema: the declared schema, by content
     "answer": {},                        # with --output-schema: the validated answer; {} until there is one
@@ -106,7 +107,7 @@ def note_refusal(logins_root, provider, login, rec):
         return ""
 TYPES = {"produced": bool, "produced_stale": bool, "retryable_elsewhere": bool,
          "approvals_requested": int, "mcp_rule_denials": int, "attempts": int, "measurements": dict,
-         "turns": int, "tool_calls": int, "server_tool_use": int, "answer": dict}
+         "turns": int, "tool_calls": int, "tool_denied": int, "server_tool_use": int, "answer": dict}
 
 
 def record(**fields):

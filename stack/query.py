@@ -169,6 +169,70 @@ def _name(v):
             else "an array" if isinstance(v, list) else "an object" if isinstance(v, dict) else type(v).__name__)
 
 
+# A tool call that was refused, not run: the CLI marks the tool_result with a non-execution kind
+# that claude-agent-acp carries as _meta.claudeCode.nonExecutionKind on the failed update (§107,
+# measured on 2.1.287: permission_denied — the adapter's reject over ACP; deny_rule — the project
+# settings' deny list; hook_blocked). Anything else — a completed call, a pending one, an
+# "interrupted" one, an unknown kind — is read as executed: fail-closed. The texts are the
+# fallback for a CLI that sends no kind (claude-agent-acp's own reject message, the CLI's).
+REFUSAL_KINDS = ("permission_denied", "deny_rule", "hook_blocked")
+REFUSAL_RE = re.compile(r"User refused permission to run tool|has been denied by your rule|permissions deny rule|Permission denied by", re.I)
+
+
+def tool_outcomes(events_path):
+    """{tool call id: {"name", "status", "refused"}} from the adapter's events.jsonl: the start
+    names the call, the last update says how it ended, and `refused` is true only on a failed
+    update that carries a refusal kind or a refusal text. {} when there is no file."""
+    out = {}
+    try:
+        with open(events_path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                if ev.get("type") != "tool_call":
+                    continue
+                cid = ev.get("toolCallId") or f"#{len(out)}"
+                o = out.setdefault(cid, {"name": "", "status": "pending", "refused": False})
+                if ev.get("tag") == "tool_call":
+                    o["name"] = " ".join(str(x) for x in (ev.get("title"), ev.get("text")) if x)
+                    continue
+                st = ev.get("status") or o["status"]
+                o["status"] = st
+                if st == "failed":
+                    kind = ((ev.get("_meta") or {}).get("claudeCode") or {}).get("nonExecutionKind") or ""
+                    text = json.dumps(ev.get("rawOutput") if ev.get("rawOutput") is not None else ev.get("content") or "")
+                    o["refused"] = kind in REFUSAL_KINDS or bool(REFUSAL_RE.search(text))
+    except OSError:
+        return {}
+    return out
+
+
+def turn_count(events_path):
+    """Model turns the events show: one, plus one more each time the model spoke or called again
+    after a round of tool calls had ended. 1 when there is no file."""
+    turns, in_round, ended = 1, False, False
+    try:
+        with open(events_path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                if ev.get("type") == "tool_call" and ev.get("tag") == "tool_call":
+                    if ended:
+                        turns, ended = turns + 1, False
+                    in_round = True
+                elif ev.get("type") == "tool_call" and ev.get("status") in ("completed", "failed", "cancelled"):
+                    ended = in_round
+                elif ev.get("type") == "text_delta" and ev.get("stream") != "thought" and ended:
+                    turns, ended, in_round = turns + 1, False, False
+    except OSError:
+        return 1
+    return turns
+
+
 def tool_counts(events_path):
     """(tool calls the turn made, how many of them were web lookups), read from the adapter's
     events.jsonl: one per `tool_call` start (acpx tags a start `tool_call`, its progress

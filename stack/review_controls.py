@@ -1271,9 +1271,9 @@ def shape_controls():
           q.tool_counts(root / "ev.jsonl") == (2, 1), q.tool_counts(root / "ev.jsonl"))
     shutil.rmtree(root, ignore_errors=True)
     rec = ex.record(provider="claude", run_id="r")
-    check("shape: the record carries closed, turns, tool_calls, server_tool_use, schema_sha256, answer with their nothing-values, no kind, and says contract 3",
-          (rec["closed"], rec["turns"], rec["tool_calls"], rec["server_tool_use"], rec["schema_sha256"], rec["answer"], rec["contract"], "kind" in rec)
-          == (False, 1, 0, 0, "", {}, 3, False), rec)
+    check("shape: the record carries closed, turns, tool_calls, tool_denied, server_tool_use, schema_sha256, answer with their nothing-values, no kind, and says contract 4",
+          (rec["closed"], rec["turns"], rec["tool_calls"], rec["tool_denied"], rec["server_tool_use"], rec["schema_sha256"], rec["answer"], rec["contract"], "kind" in rec)
+          == (False, 1, 0, 0, 0, "", {}, 4, False), rec)
     check("query: a wrong-typed count is a named problem", ex.problems({"run_id": "r", "provider": "p", "status": "COMPLETED", "tool_calls": "0"}) == ["tool_calls is not int"])
     r = subprocess.run(["node", "--input-type=module", "-e",
                         'import { refusedLocally } from "' + str(WORK / "stack" / "adapter" / "permissions.mjs") + '";'
@@ -1758,6 +1758,55 @@ def diagram_controls():
     check("diagram: every always-on service, the record and the panel are drawn by name", d["missing"] == [], d["missing"])
     check("diagram: the governed network it calls internal is internal in the composition", d["governed_internal"])
 
+
+def continuation_controls():
+    """§107 (#97): what the door reads of a closed call's tool calls from the events — a failed
+    update that carries the CLI's non-execution kind, or a refusal text, is a refusal; a completed,
+    pending or otherwise-failed call is read as having run (fail-closed); the turn count grows by
+    one per round of tool calls the model was answered on; the closed turn bound is more than one,
+    so a refusal can return to the model."""
+    print("a refused tool call returns to the model; the door tells it from a use (§107)")
+    sys.path.insert(0, str(HERE))
+    q = importlib.import_module("query")
+    root = Path(tempfile.mkdtemp(prefix="agentstack-cont-"))
+    def evs(*rows):
+        p = root / "ev.jsonl"
+        p.write_text("".join(json.dumps(r) + "\n" for r in rows) + "not json\n")
+        return p
+    start = lambda cid, title: {"type": "tool_call", "tag": "tool_call", "title": title, "toolCallId": cid}
+    upd = lambda cid, status, **k: {"type": "tool_call", "tag": "tool_call_update", "toolCallId": cid, "status": status, **k}
+    text = lambda t: {"type": "text_delta", "text": t}
+    p = evs(start("a", "RemoteTrigger"), upd("a", "failed", _meta={"claudeCode": {"nonExecutionKind": "permission_denied"}}),
+            text(""), start("b", "ReportFindings"), upd("b", "failed", _meta={"claudeCode": {"nonExecutionKind": "deny_rule"}}),
+            text(""), start("c", "Bash"), upd("c", "failed", rawOutput=[{"type": "text", "text": "User refused permission to run tool"}]),
+            # one round of four calls: the starts stream first, the results after, as ACP carries them
+            text(""), start("d", "Read"), start("e", "Write"), start("f", "Glob"), start("g", "Edit"),
+            upd("d", "completed"), upd("e", "failed", rawOutput="ENOENT"),
+            upd("g", "failed", _meta={"claudeCode": {"nonExecutionKind": "interrupted"}}),
+            text("the answer"))
+    o = q.tool_outcomes(p)
+    check("continuation: a failed update with the CLI's refusal kind (permission_denied, deny_rule) is a refusal",
+          (o["a"]["refused"], o["b"]["refused"], o["a"]["name"]) == (True, True, "RemoteTrigger"), o)
+    check("continuation: a failed update with claude-agent-acp's reject text and no kind is a refusal", o["c"]["refused"])
+    check("continuation: a completed call, a call that ran and failed, a pending call and an interrupted one are not refusals — fail-closed",
+          [o[k]["refused"] for k in "defg"] == [False] * 4 and o["f"]["status"] == "pending", o)
+    check("continuation: the turn count is one per answered round plus the first — here 5 (three refusals each answered, one mixed round, the answer)",
+          q.turn_count(p) == 5, q.turn_count(p))
+    p2 = evs(text("just words"))
+    check("continuation: no tool call is one turn and no outcomes", (q.turn_count(p2), q.tool_outcomes(p2)) == (1, {}))
+    check("continuation: no file is one turn and no outcomes", (q.turn_count(root / "none"), q.tool_outcomes(root / "none")) == (1, {}))
+    shutil.rmtree(root, ignore_errors=True)
+    r = subprocess.run(["node", "--input-type=module", "-e",
+                        'import { CLOSED_MAX_TURNS, CLAUDE_BUILTIN_TOOLS } from "' + str(WORK / "stack" / "adapter" / "permissions.mjs") + '";'
+                        'console.log(JSON.stringify([CLOSED_MAX_TURNS, CLAUDE_BUILTIN_TOOLS.includes("RemoteTrigger")]));'],
+                       capture_output=True, text=True, timeout=60)
+    got = json.loads(r.stdout.strip() or "null")
+    check("continuation: a closed call has more than one round-trip, and a bounded few; RemoteTrigger is on the list",
+          isinstance(got, list) and 2 <= got[0] <= 8 and got[1], r.stdout + r.stderr)
+    ex = importlib.import_module("execution")
+    check("continuation: the record carries tool_denied as an int, and problems() types it",
+          ex.FIELDS.get("tool_denied") == 0 and ex.problems({"run_id": "r", "provider": "p", "status": "COMPLETED", "tool_denied": "1"}) == ["tool_denied is not int"])
+
 adapter_controls()
 update_controls()
 review3_controls()
@@ -1774,6 +1823,7 @@ servers_controls()
 denylist_controls()
 entry_controls()
 diagram_controls()
+continuation_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

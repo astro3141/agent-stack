@@ -361,7 +361,7 @@ def controls_lanes_step():
           open(f"{ws}/lane_ai.json", encoding="utf-8").read() if os.path.isfile(f"{ws}/lane_ai.json") else None, doc)
     rec = json.load(open(f"{ws}/lanes_round.json"))
     check("the receipt carries the cycle's context unchanged", rec.get("context"), "packet-sha")
-    check("and the contract version", rec.get("contract"), 3)
+    check("and the contract version", rec.get("contract"), 4)
     shutil.rmtree(root, ignore_errors=True)
     shutil.rmtree(ws, ignore_errors=True)
 
@@ -1874,13 +1874,22 @@ for (let i = 0; i < (p.tool_calls || 0); i++) {
   ev.push({ type: "tool_call", tag: "tool_call", title: i === 0 && p.web ? "WebSearch" : "Read", toolCallId: "t" + i, status: "pending" });
   ev.push({ type: "tool_call", tag: "tool_call_update", toolCallId: "t" + i, status: "completed" });
 }
-ev.push({ type: "text_delta", text: p.say });
+// §107: a refused call — the CLI's non-execution kind on a failed update, as claude-agent-acp carries it;
+// each refusal is its own round, answered before the model goes on (so the turn count grows)
+for (let i = 0; i < (p.denied || 0); i++) {
+  ev.push({ type: "tool_call", tag: "tool_call", title: i === 0 ? "RemoteTrigger" : "ReportFindings", toolCallId: "d" + i, status: "pending" });
+  ev.push({ type: "tool_call", tag: "tool_call_update", toolCallId: "d" + i, status: "failed",
+            _meta: { claudeCode: { toolName: "RemoteTrigger", nonExecutionKind: i === 0 ? "permission_denied" : "deny_rule" } },
+            rawOutput: [{ type: "text", text: "User refused permission to run tool" }] });
+  if (i + 1 < (p.denied || 0)) ev.push({ type: "text_delta", text: "" });
+}
+if (p.say) ev.push({ type: "text_delta", text: p.say });
 // a call with tools that writes its answer (§102): the payload names the file and its text
 if (p.write) { mkdirSync(req.cwd, { recursive: true }); writeFileSync(join(req.cwd, p.write.name), p.write.text); }
 writeFileSync(join(req.evidence_dir, "events.jsonl"), ev.map((e) => JSON.stringify(e)).join("\n") + "\n");
 const out = { run_id: req.run_id, status: p.status || "COMPLETED", provider: req.provider, text: p.say, wall_ms: 7,
   permissions: [], mcp_denials: [], model_route: req.model_route, native_tools: req.native_tools, allowed_tools: req.allowed_tools,
-  turn: { _meta: { quota: { token_count: { totalTokens: 11 }, model_usage: [{ model: "m-1", token_count: { totalTokens: 11 } }] } } } };
+  turn: { stopReason: p.stop || "end_turn", _meta: { quota: { token_count: { totalTokens: 11 }, model_usage: [{ model: "m-1", token_count: { totalTokens: 11 } }] } } } };
 writeFileSync(join(req.evidence_dir, "result.json"), JSON.stringify(out));
 process.stdout.write(JSON.stringify(out) + "\n");
 """
@@ -1953,9 +1962,21 @@ def controls_shape():
     check("… the raw text kept beside the evidence", os.path.isfile(os.path.join(ev("c3"), "answer.raw.txt")), True)
     check("… and the expected file not written", os.path.exists(os.path.join(ws, "c3.json")), False)
     r, n = door("c4", say('{"verdict":"buy","confidence":0.7}', tool_calls=2, web=True))
-    check("closed: a tool call the vendor made anyway is TOOLS_USED whatever the text, the calls counted, the web one told apart",
-          (r.get("status"), r.get("tool_calls"), r.get("server_tool_use"), r.get("answer"), r.get("produced")),
-          ("TOOLS_USED", 2, 1, {}, False))
+    check("closed: a tool call that ran is TOOLS_USED whatever the text, the calls counted, the web one told apart, none denied",
+          (r.get("status"), r.get("tool_calls"), r.get("tool_denied"), r.get("server_tool_use"), r.get("answer"), r.get("produced")),
+          ("TOOLS_USED", 2, 0, 1, {}, False))
+    check("… and the failure names what ran", "2 ran" in (r.get("failure") or "") and "WebSearch" in (r.get("failure") or ""), True)
+    # §107 (#97): a refused call is not a use — the refusal returned to the model, the answer followed
+    r, n = door("c4d", say('{"verdict":"buy","confidence":0.7}', denied=2))
+    check("closed: tool calls refused before running are tool_denied, not TOOLS_USED — the answer that followed is judged as usual",
+          (r.get("status"), r.get("tool_calls"), r.get("tool_denied"), r.get("answer"), r.get("produced"), r.get("turns")),
+          ("COMPLETED", 2, 2, {"verdict": "buy", "confidence": 0.7}, True, 3))
+    r, n = door("c4m", say('{"verdict":"buy","confidence":0.7}', denied=1, tool_calls=1))
+    check("closed: one refused and one that ran is TOOLS_USED, both counted", (r.get("status"), r.get("tool_calls"), r.get("tool_denied")), ("TOOLS_USED", 2, 1))
+    r, n = door("c4b", say("", denied=3, stop="max_turn_requests"))
+    check("closed: the turn bound reached still reaching for tools, no text: INVALID_OUTPUT in those words, no retry, nothing produced",
+          (r.get("status"), r.get("tool_denied"), r.get("produced"), r.get("attempts"), n, "turn bound" in (r.get("failure") or ""), "3 call(s) refused" in (r.get("failure") or "")),
+          ("INVALID_OUTPUT", 3, False, 1, 1, True, True))
     r, n = door("c5", say("I think buy."))
     check("a text that is not JSON at all is a cut stream: one retry, then INVALID_OUTPUT",
           (r.get("status"), r.get("attempts"), n, r.get("attempt_outcomes")), ("INVALID_OUTPUT", 2, 2, ["COMPLETED", "COMPLETED"]))
