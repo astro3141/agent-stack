@@ -250,8 +250,8 @@ block; three packages had each copied their own subset, one of them twice
 recorder turns into an MLflow run, and what `trajectory.py` sums; a copy is written beside the
 adapter's raw result as `<evidence_dir>/execution.json`, so the evidence directory carries the
 platform's record of the call whether or not any step passed it on. A record carries
-`contract: 3`, the version of this shape (3 since `closed` replaced `kind`, §102; 2 the query
-kind's keys, §89; 1 before them); so do a fan-out's receipt and a chain's answer. The
+`contract: 4`, the version of this shape (4 since `tool_denied` and counted turns, §107; 3 since
+`closed` replaced `kind`, §102; 2 the query kind's keys, §89; 1 before them); so do a fan-out's receipt and a chain's answer. The
 recorder also reads the evidence directories of the run directly, so a call your workflow made
 and did not list is recorded all the same (#22); and a run a step of yours starts through
 `run_workflow.py start` carries your run's id as its parent and inherits your `--suite`/`--case`
@@ -261,7 +261,7 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
 ```yaml
     output:
       status: {type: string}                 # COMPLETED | FAILED | DENIED | TIMED_OUT | INVALID_OUTPUT | TOOLS_USED | REFUSED | ...
-      closed: {type: boolean}                # the profile's tools.allowed is []: one prompt, one turn, every known tool refused by name (§102, §104)
+      closed: {type: boolean}                # the profile's tools.allowed is []: one prompt, every known tool refused by name, a bounded few turns (§102, §104, §107)
       provider: {type: string}
       principal: {type: string}              # the Preloop principal the call presented
       model_route: {type: string}
@@ -281,8 +281,9 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
       attempts: {type: number}               # 2 when the one bounded login-refresh retry ran
       failure: {type: string}                # why, when status is not COMPLETED
       ledger_error: {type: string}
-      turns: {type: number}                  # one prompt is one turn over ACP; a retry is another call
-      tool_calls: {type: number}             # tool calls the turn made, from the adapter's events; a closed call says 0
+      turns: {type: number}                  # model turns the events show: 1, plus one per round of tool calls answered (§107); a retry is another call
+      tool_calls: {type: number}             # tool calls the model made, from the adapter's events, refused ones included
+      tool_denied: {type: number}            # of those, refused before running (§107); tool_calls - tool_denied ran — a closed call's must be 0
       server_tool_use: {type: number}        # of those, web lookups
       schema_sha256: {type: string}          # with --output-schema: the declared schema, by content
       answer: {type: object}                 # with --output-schema: the validated answer; {} until there is one
@@ -307,8 +308,8 @@ each as a knob and decides nothing about how they are combined — that is the w
 **The environment — what the model can reach — is the profile's and the principal's.** A profile
 says whether the vendor's native tools exist (`tools.native_tools`), which read-only ones run
 without asking (`tools.native_allow`), and, since §102, **`tools.allowed`**. `tools.allowed: []`
-is a **closed call**: one turn (`maxTurns: 1`), no Preloop MCP server, every built-in tool the
-stack knows **refused by name** — Claude: a project deny list of every tool name this Claude Code
+is a **closed call**: no Preloop MCP server, every built-in tool the stack knows **refused by
+name** — Claude: a project deny list of every tool name this Claude Code
 build has, measured per pin (`CLAUDE_BUILTIN_TOOLS` in `stack/adapter/permissions.mjs`); Codex:
 shell and web search off; Grok: its posture per login — and every permission request refused by
 the adapter without asking anyone. **That is a refusal by name, not a smaller tool surface**
@@ -316,11 +317,18 @@ the adapter without asking anyone. **That is a refusal by name, not a smaller to
 not reach the agent through acpx 0.19.4, which forwards only `model`, `allowedTools` and
 `maxTurns` — and `allowedTools` is the SDK's *auto-allow* list, not a restriction (§89 and §102
 said the vendor was asked for no tools; it was not — the stack sent `allowedTools: []` believing
-it was). So a tool the list does not name is visible to the model, and a use of any tool is
-**`TOOLS_USED`**, whatever the model wrote — fail-closed, and the record says so. A package whose
+it was). So a tool the list does not name is visible to the model, and a tool that **ran** is
+**`TOOLS_USED`**, whatever the model wrote — fail-closed, and the record says so. A tool the model
+reached for and was **refused** (the deny list's, the adapter's) is not a use: the record counts
+it in **`tool_denied`**, the refusal is shown to the model and the call goes on to its answer in
+words — a closed call has a few round-trips for exactly that (`CLOSED_MAX_TURNS`, 4; §107, #97:
+with one round-trip the refusal was made but never shown, no text followed, and trading's judges
+produced nothing for ten days). A call that spends them all reaching for tools and ends without a
+word is `INVALID_OUTPUT` in those words, the model's doing like a broken schema. A package whose
 prompt's vocabulary names a built-in tool (`ReportFindings` for "report your findings", trading
-#93) is the package's to word around, or to accept at its measured rate; `verify.sh --level full`
-asks a closed call what it can see and fails on a name outside the list. Only `[]` is accepted for
+#93; `RemoteTrigger` for "trigger", #97) is still the package's to word around, but a refusal no
+longer costs it the answer; `verify.sh --level full` asks a closed call what it can see and fails
+on a name outside the list. Only `[]` is accepted for
 `tools.allowed`; which calls an open call's tools may make is the principal's `tool_rules`, and
 where they reach is the egress profile's. An open call with `native_tools: false` refuses, by the
 same list, what writes, executes, reports, schedules or steers, and keeps what reads. The tracked
@@ -730,6 +738,18 @@ the package is four steps, and the fourth is the one that pays for the other thr
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
 
+**§107 (2026-10-16 — a refused tool call returns to the model; `tool_denied`; contract 4; #97).**
+- A closed call's tool call that was **refused** is no longer `TOOLS_USED`: the record counts it
+  in `tool_denied`, the model is shown the refusal and finishes in words, and the answer is
+  judged as usual. `TOOLS_USED` is now exactly "a tool ran" (`tool_calls - tool_denied > 0`).
+- A closed call has `CLOSED_MAX_TURNS` (4) round-trips instead of one. With one, a model that
+  reached for a tool produced no answer at all (trading, ten days). A call that spends them all
+  reaching for tools is `INVALID_OUTPUT` with the words — not retried by a member's default.
+- `turns` is counted from the events (1 plus one per answered round of tool calls); it said 1.
+- `contract: 4`. A reader that checks for 3 needs the number; the keys of 3 are all still there.
+- Five names read from the 2.1.287 binary join the deny list (`RemoteTrigger` among them). The
+  list is still a name list; the continuation above is what makes a miss survivable.
+
 **§105 (2026-10-13 — the stack is called by name, not by path; two run ids, told apart).**
 - `command: agentstack` / `args: ["step", "<name>", …]` replaces `command: /opt/venv/bin/python`
   / `args: ["/work/stack/steps/<name>.py", …]` in a workflow; `agentstack run …` replaces
@@ -861,8 +881,9 @@ behaviour you notice has a name.
   which ones the judgement rests on.
 - **A run your step starts** through `run_workflow.py start` carries your run as its parent and
   inherits `--suite`/`--case` (#13). Pass nothing extra.
-- **`contract: 3`** travels in the execution record, a fan-out's receipt and a chain's answer; a
-  reader of yours may check it (#26). 2 is a record with `kind` (§89), 1 one from before its keys.
+- **`contract: 4`** travels in the execution record, a fan-out's receipt and a chain's answer; a
+  reader of yours may check it (#26). 3 is one before `tool_denied` (§107), 2 a record with
+  `kind` (§89), 1 one from before its keys.
 - **A package with its own runtime** (a desk, a harness, a loop) keeps its runtime and uses the
   stack's doors: `agent_task.py` for every model call, Preloop for every approval, the recorder
   or the evidence directory for every record; it never writes into `/route` (#25, CONTRACT.md "A

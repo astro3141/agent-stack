@@ -5950,3 +5950,60 @@ the composition, not the README's words: every always-on service plus the record
 named in the first diagram (a profile proxy by the name docs/containers.md uses), the README
 carries both diagrams, and the network the caption calls internal is internal in the
 composition. 307/307; pins at the ratchets (51 / 167); static 13/13. **Cold-start run 149 green** on ea2c301.
+
+## 107. A refused tool call never reached the model: the closed call's one round-trip ate the answer (#97, 2026-10-16)
+
+trading measured ten trading days of it (#97): after §104 the judges' `ReportFindings` calls
+stopped and the model moved to **`RemoteTrigger`**, a name the list did not have (51 of 56
+`TOOLS_USED` evidence directories); their compose rule telling the model to ignore every tool
+changed nothing; and — the finding that mattered — after the refused call the events showed no
+text at all, `result.text` empty. Not a judgement problem: no answer existed.
+
+**Measured** on the pins the image carries (Claude Code 2.1.287 binary, read as strings;
+claude-agent-acp 0.85.1; acpx 0.19.4):
+- the SDK's `maxTurns` is "Maximum number of agentic turns (API round-trips) before stopping".
+  §102 set it to 1 for a closed call. A model that spends round-trip 1 on a tool call ends it
+  there; the refusal (the deny list's or the adapter's) is produced as the tool result, and the
+  round-trip that would show it to the model is the second, which is not allowed: the CLI ends
+  with `error_max_turns` ("Reached maximum number of turns (1)"), claude-agent-acp reports
+  `stopReason: max_turn_requests`, and no text follows. The refusal happened; the model never
+  saw it.
+- deny rules do not shrink the surface: the CLI puts them in the system prompt — "User Deny
+  Rules: The user has configured these permission deny rules … already hard-blocked for that
+  tool" — and the model picks another name. The surface option (`tools`) is still acpx's missing
+  knob (§104). Five names read from the binary's strings join the list (`RemoteTrigger`,
+  `SendFile`, `ArtifactCheck`, `LSP`, `PowerShell`; 71 now); the list stays a name list.
+- a refused call is marked: the CLI attaches `non_execution_kind` to the tool result
+  (`permission_denied` for a reject over ACP, `deny_rule` for the settings deny list,
+  `hook_blocked`; `interrupted` and `user_abort` are the others), and claude-agent-acp carries it
+  as `_meta.claudeCode.nonExecutionKind` on the `tool_call_update` whose `status` is `failed`,
+  with the tool result's text as `rawOutput` ("User refused permission to run tool" for its own
+  reject). That is the signal the door reads.
+
+**What changed.**
+- `CLOSED_MAX_TURNS = 4` (`stack/adapter/permissions.mjs`): the answer turn and up to three
+  refusals shown to the model. Nothing runs in those turns; what they cost is model time.
+- The door reads each tool call's end from the events (`query.tool_outcomes`): a failed update
+  with a refusal kind or a refusal text is **refused**; completed, pending, "interrupted" or an
+  unknown kind is read as **ran** — fail-closed. `TOOLS_USED` is now exactly "a tool ran"
+  (`tool_calls - tool_denied > 0`), and its words name the tools that ran. A closed call whose
+  calls were all refused goes on to its answer, judged as before, with `tool_denied: n`.
+- A closed call that reached the bound still reaching for tools and said nothing is
+  `INVALID_OUTPUT` in those words (the model's doing: a member's default retry does not run it
+  again, as for a broken schema), not a `COMPLETED` with empty text.
+- `turns` is counted from the events (`query.turn_count`: one, plus one per round of tool calls
+  the model was answered on); the record said 1 whatever happened. `contract: 4` for the new
+  key.
+- docs: packages.md "The shape of a call", the record's shape, the §107 entry; the door's header.
+
+**Measured.** review_controls 315/315 — the `continuation` group (8): the two refusal kinds and
+the reject text are refusals; a completed, a ran-and-failed, a pending and an interrupted call are
+not; the turn count over three answered refusals, one mixed round and the answer is 5; no tool
+call and no file are one turn; the bound is between 2 and 8 and `RemoteTrigger` is listed;
+`tool_denied` is typed. trial's shape group here against `/work` 38/38 with the stand-in extended
+(a refused call carries the kind on a failed update): two refused calls then a valid answer is
+`COMPLETED`, `tool_calls 2`, `tool_denied 2`, `turns 3`, produced; one refused and one that ran
+is `TOOLS_USED` with both counted; three refusals and `max_turn_requests` with no text is
+`INVALID_OUTPUT` naming the bound, nothing produced, no retry; the §104 case (a tool ran) is
+`TOOLS_USED` with `tool_denied 0` and the tool named. providers_check 25/25; pins at the ratchets
+(51 / 167); static 13/13. The live proof is trading's: the lanes re-measured on the new revision.

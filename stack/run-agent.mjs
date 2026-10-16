@@ -5,7 +5,8 @@
 // request.json: { run_id, provider, model?, cwd, prompt, timeout_ms?, evidence_dir?,
 //                 mcp_principal?, allowed_tools? }   mcp_principal: present this role's Preloop credential
 //                 allowed_tools: the profile's tools.allowed; [] is a closed call (§102) — one
-//                 prompt, one turn (maxTurns 1), no MCP server, every built-in tool the stack
+//                 prompt, a bounded few round-trips (CLOSED_MAX_TURNS: a refused tool call is
+//                 shown to the model so it answers in words, §107), no MCP server, every built-in tool the stack
 //                 knows refused by name (each provider's own switch, closedEnv), every permission
 //                 request refused here without asking Preloop. Not a smaller tool surface: the
 //                 SDK's `tools` option does not reach the agent through acpx, and `allowedTools`
@@ -32,7 +33,7 @@ import { createAgentRegistry } from "/opt/npm-global/lib/node_modules/acpx/dist/
 // how the status is decided, the one result shape; what a permission request says to Preloop and
 // how the answer becomes an outcome; the codex ledger line.
 import { accumulator, take, normalizeStatus, buildResult, exitCodeFor } from "/work/stack/adapter/result.mjs";
-import { NATIVE_ALLOWABLE, permissionBody, permissionEvent, decidedLocally, refusedLocally } from "/work/stack/adapter/permissions.mjs";
+import { CLOSED_MAX_TURNS, NATIVE_ALLOWABLE, permissionBody, permissionEvent, decidedLocally, refusedLocally } from "/work/stack/adapter/permissions.mjs";
 import { ledgerLine } from "/work/stack/adapter/ledger.mjs";
 // One module per provider, each a function of the call's context: what a vendor needs (its
 // login directory, its egress, its principal) is handed to it per call, never kept in this
@@ -267,12 +268,14 @@ async function main() {
   try {
     // A fresh session key per run: acpx keys sessions on (agent, cwd, name) with no account
     // or policy, so reuse across runs could carry one account's session into another's.
-    // a closed call asks for one turn (maxTurns, which acpx forwards). It does not ask for
+    // a closed call asks for a few round-trips (maxTurns, which acpx forwards): the answer turn
+    // and the refusals a model that reaches for a tool must be shown before it answers in words
+    // (§107, #97 — with 1 the refusal never reached the model). It does not ask for
     // `allowedTools: []` any more: that is the SDK's auto-allow list and never reduced the tool
     // surface (§104); the surface option, `tools`, acpx 0.19.4 does not forward. The refusal by
     // name is closedEnv's, and the door reads the events either way.
     const sessionOptions = { ...(req.model ? { model: req.model } : {}),
-                             ...(closed ? { maxTurns: 1 } : {}) };
+                             ...(closed ? { maxTurns: CLOSED_MAX_TURNS } : {}) };
     handle = await runtime.ensureSession({
       sessionKey: `p281-${req.run_id}`, agent: prof.agent, mode: "oneshot", cwd: req.cwd,
       sessionOptions: Object.keys(sessionOptions).length ? sessionOptions : undefined,
