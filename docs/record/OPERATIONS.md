@@ -6125,5 +6125,5 @@ missing one and a missing file → no request, named; five minutes before the en
 expired. The §109 router and ops_health checks (5): a twenty-day-old reading is used while the
 credential's refresh token has two days left; once it has ended, unknown, dated; the verdict
 carries the collector's outcome; the wall is named two days ahead in days and not ten days ahead.
-Pins at the ratchets (51 / 167); static 13/13. The live proof is the next 02:4x: the summary says
-`refreshed` and the 18:40 route reads fresh.
+Pins at the ratchets (51 / 167); static 13/13. **Cold-start run 158 green** on dd3351b. The live proof
+is the next 02:4x: the summary says `refreshed` and the 18:40 route reads fresh.
