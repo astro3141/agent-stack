@@ -16,10 +16,10 @@ Rules, in order, per candidate (policy "candidates" order is preference order):
   2. observed_account != executing_account -> ineligible (account_mismatch) — never "close enough"
   3. observation older than max_age_s     -> ineligible (stale) — a stale number is not a number;
      except a reading that aged because the login's access token expired (live_failed_kind
-     login_expired): the first call refreshes that token (measured, §96 and #44), so the last
-     good reading is used as long as it is younger than refreshable_age_s (default 14 days,
-     the vendor's observed refresh-token life), and the verdict says so (§108). Older than that
-     it is unknown: a login idle that long needs a person
+     login_expired): the collector renews that token with the refresh token before reading
+     (§109), and a call renews it too, so the last good reading is used until the credential's
+     own refresh_token_expires_at (carried on the observation; without it, refreshable_age_s,
+     default 14 days), and the verdict says so (§108). Past that it is unknown: a person signs in
   4. a window in require_windows missing   -> ineligible (unknown); other missing windows are
      recorded as "not reported", never assumed empty. require_windows is a list (every
      candidate) or a mapping provider -> list: a vendor that reports no usage figure at all
@@ -32,9 +32,10 @@ First eligible candidate wins. None eligible -> HOLD: the run does not start (fa
 import json, math, os, sys
 from datetime import datetime, timezone
 
-# How old a kept reading may be and still be used behind an expired access token (§108): the
-# vendor's refresh token has been observed to live about two weeks (#44); it is not published,
-# and nothing here reads it. A profile may set quota.refreshable_age_s.
+# How old a kept reading may be and still be used behind an expired access token when the
+# observation does not say when the refresh token ends (§108; since §109 the collector carries
+# the credential's own refreshTokenExpiresAt and this is the fallback): the vendor's refresh
+# token has been observed to live about two weeks (#44). A profile may set quota.refreshable_age_s.
 REFRESHABLE_AGE_S = 14 * 86400
 
 
@@ -114,8 +115,19 @@ def evaluate(cand, obs, policy, now):
             # refusal, which the door leaves beside the login (§88) and the next route holds on.
             # Said as `unknown:` only past that bound: a login idle that long needs a person.
             # Before §108 this said "nothing here refreshes it; sign in" — false, measured.
+            # §109: the credential says when its refresh token ends, and the collector carries it;
+            # past that, no refresh is possible and a person signs in. Without it, the observed life.
+            rexp = obs.get("refresh_token_expires_at")
+            try:
+                rexp_s = (parse_ts(rexp) - now).total_seconds() if rexp else None
+            except Exception:
+                rexp_s = None
+            if rexp_s is not None and rexp_s <= 0:
+                return {**r, "eligible": False, "login_expired": True,
+                        "why": f"unknown: the login's refresh token expired at {rexp} — nothing can renew it; "
+                               f"sign in on the panel"}
             bound = policy.get("refreshable_age_s", REFRESHABLE_AGE_S)
-            if age > bound:
+            if rexp_s is None and age > bound:
                 return {**r, "eligible": False, "login_expired": True,
                         "why": f"unknown: the login's token expired and its last good reading is {round(age)}s old "
                                f"(> {bound}s, the refresh token's observed life) — a login idle that long needs "
@@ -151,9 +163,12 @@ def evaluate(cand, obs, policy, now):
         # none. Eligible, and the record says on what basis — identity and freshness only.
         return {**r, "eligible": True, "why": "within limits (no usage window reported; none required of this provider)"}
     if r.get("refreshable"):
+        lr = obs.get("login_refresh") or {}
         return {**r, "eligible": True,
-                "why": f"within limits as last read {round(age)}s ago — the login's access token expired since "
-                       f"and the first call refreshes it (§108); a refusal that call meets is left for the next route"}
+                "why": f"within limits as last read {round(age)}s ago — the login's access token expired since; "
+                       f"the collector's refresh came back `{lr.get('outcome') or 'not tried'}`"
+                       f"{(' (' + str(lr.get('error'))[:80] + ')') if lr.get('error') else ''}, and a call renews it too "
+                       f"(§108, §109); a refusal either meets is left for the next route"}
     return {**r, "eligible": True, "why": "within limits"}
 
 

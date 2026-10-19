@@ -6066,3 +6066,64 @@ names the idle login; a credential refreshed nine days ago is named idle in days
 unchanged, three days ago (seconds, not ms) is not, and no file or no field is nothing. Pins at
 the ratchets (51 / 167); static 13/13. **Cold-start run 156 green** on b067547. The live proof is
 trading's next expiry morning.
+
+## 109. Decision 2 narrowed: the stack renews an expired access token with the refresh token it already holds — no login, no model call (#44, 2026-10-19)
+
+§108 stopped the router from holding on an expired access token and let "the first call" renew
+it. The operator's objection was exact: renewing a token by making a model call is a workaround,
+and the workaround existed only to keep decision 2 (DECISIONS-2026-10-04: the stack does not
+sign a person in). trading's reading of #44 said the same from its side: two tokens, an access
+token for 8 hours and a refresh token until a date the credential states, and the CLI renews the
+first with the second in the middle of a call — the neighbouring workflow was never "refreshing",
+it was calling. So the thing to do is what the CLI does between calls, and nothing more.
+
+**Measured on Claude Code 2.1.287 (its strings).** `claude auth` has `login` and `status`; no
+subcommand renews without a prompt. The renewal is one request: `POST
+https://platform.claude.com/v1/oauth/token` with `{grant_type: refresh_token, refresh_token,
+client_id, scope}` — `clientId` and `scopes` are in the credential file; the host is on every
+egress allowlist (shared, probe, closed). The answer carries `access_token`, `expires_in`,
+optionally `refresh_token` (else the old one stays) and `refresh_token_expires_in`, `scope`. The
+CLI stores `accessToken, refreshToken, expiresAt, refreshTokenExpiresAt, scopes, subscriptionType,
+rateLimitTier, clientId` and writes only when the refresh token on disk is still the one it read
+(its CAS: a sibling that refreshed first wins; `tengu_oauth_refresh_save_adopted_newer_write`). On
+`invalid_grant` it clears the tokens and marks the refresh token dead.
+
+**Decision 2, narrowed, not reversed.** The stack still makes no login — that is a person's, on
+the panel. It does renew an expired access token with the refresh token the file already holds,
+the way the CLI does, with the CLI's own write rule. The §50 line (nothing but a person writes
+under `/route`) gains that one exception, stated here and in the module.
+
+**What changed.**
+- `stack/login_refresh.py`: `refresh(path, …)` — read the credential, decide (`fresh` with more
+  than five minutes left: nothing; `expired` with a live refresh token: the request;
+  `refresh_expired`, `no_refresh_token`, `no_credential`: nothing, said), exchange through the
+  egress proxy, write back CAS-style (the file's other keys and its mode kept; `adopted` when a
+  sibling wrote first), and leave a summary beside the quota reading
+  (`/route/.quota/claude-<login>.refresh.json`). The vendor's 4xx (`invalid_grant`) writes nothing
+  and leaves the door's refusal note (§88) with the vendor's words, so the router holds on it
+  saying a person is needed; a transport failure writes nothing and leaves no note.
+- `collect_obs.py` runs it before the Claude reading and carries `login_refresh` and the
+  credential's `refresh_token_expires_at` on the observation.
+- `router.py`: the bound is the credential's own `refresh_token_expires_at` when the observation
+  carries it (`unknown: the login's refresh token expired at T — nothing can renew it; sign in on
+  the panel`); the 14-day guess is the fallback for an observation without it. The eligible
+  verdict names what the collector's refresh came back with.
+- `ops_health.py`: the standing risk is the dated wall, three days ahead (`the claude login's
+  refresh token ends at T (2.1 days)`), read from the credential, never written; the idle-days
+  risk of §108 is gone with its premise.
+- `execution.REFUSAL_WORDS` knows `invalid_grant` and `refresh token`.
+- runbook.md's expired-login entry; DECISIONS-2026-10-04 carries a dated note under decision 2.
+
+**Measured.** review_controls 333/333 — the `refresh` group (10) against a local token endpoint
+and a temporary credential: fresh → no request; expired → the request body is the file's refresh
+token, client id and scopes, the answer written as the CLI writes it (ms timestamps from now,
+scopes, the file's other keys and its 0600 mode kept), the summary beside the reading; an answer
+without a refresh token keeps the one on disk; `invalid_grant` → nothing written, the §88 note
+with the vendor's words, `login_refusal` true; a 503 → nothing written, no note; a refresh token
+that changed on disk mid-request → `adopted`, the sibling's write kept; an ended refresh token, a
+missing one and a missing file → no request, named; five minutes before the end counts as
+expired. The §109 router and ops_health checks (5): a twenty-day-old reading is used while the
+credential's refresh token has two days left; once it has ended, unknown, dated; the verdict
+carries the collector's outcome; the wall is named two days ahead in days and not ten days ahead.
+Pins at the ratchets (51 / 167); static 13/13. **Cold-start run 158 green** on dd3351b. The live proof
+is the next 02:4x: the summary says `refreshed` and the 18:40 route reads fresh.

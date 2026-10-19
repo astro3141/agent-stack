@@ -103,31 +103,30 @@ used while young and then as one that aged out — and until §88 that aged-out 
 `stale`, the ordinary word for a collection that has not run, which fails no check and names no
 remedy; novel-a held three times in two days on it. §88 then said `unknown: … nothing here
 refreshes it; sign in on the panel` — and that was false too, measured (novel-v2, trading, #44):
-the access token lives 8 hours and **any call through the CLI refreshes it**, so the hold existed
-only because the observation stopped the call. Since §108 the router says what is true:
+the access token lives 8 hours and the refresh token beside it (`refreshTokenExpiresAt`, weeks)
+renews it — the CLI does that in the middle of a call, and until §109 nothing else did, so the
+hold existed only because nobody had called. **Since §109 the collector renews it itself, before
+reading**: one POST to the vendor's token endpoint with the refresh token, client id and scopes
+the credential file already holds, the answer written back the way the CLI writes it
+(`stack/login_refresh.py`; the file is written only if its refresh token is still the one read).
+No login, no model call. So the ordinary case now reads fresh and routes `within limits`, and the
+summary beside the reading (`/route/.quota/claude-<login>.refresh.json`, and `login_refresh` on
+the observation) says `refreshed`. Two things can still show:
 
 ```
-claude: within limits as last read 239698s ago — the login's access token expired since
-        and the first call refreshes it (§108); a refusal that call meets is left for the next route
+claude: within limits as last read 239698s ago — the login's access token expired since;
+        the collector's refresh came back `failed` (URLError: …), and a call renews it too (§108, §109); …
+claude: unknown: the login's refresh token expired at 2026-11-01T02:41:00Z — nothing can renew it; sign in on the panel
 ```
 
-The run routes; its first call refreshes the token (or meets the vendor's refusal — an
-organisation that disabled access, a dead refresh token — which the door leaves beside the login,
-§88, and the next route holds on with that sentence). The quota numbers in that verdict are the
-last known, not the current; the next collection after the refresh is fresh again. The panel's
-계정 tab shows `연결됨 · 토큰 만료` beside the provider meanwhile. One bound: a reading older than
-the refresh token's observed life (`quota.refreshable_age_s`, default 14 days) is **unknown** —
-a login idle that long needs a person:
-
-```
-claude: unknown: the login's token expired and its last good reading is 1382400s old
-        (> 1209600s, the refresh token's observed life) — a login idle that long needs a person; sign in on the panel
-```
-
-Before that wall, `ops_health` names the risk at half the way: `the claude login has not been
-refreshed for 8.0 days` (read from the credential file's own `expiresAt`, never written) — run
-anything on it, or sign in. A workflow that would rather run on another vendor than hold names its
-order: `author=claude|codex:novel-author` in its roles step binds the first the admission admitted.
+The first is a refresh that did not complete (transport): the last good reading is used, a call
+renews the token as it always did, and the next collection tries again. The second is the wall:
+the refresh token's own end, read from the credential, and only a person passes it. A refusal from
+the vendor (`invalid_grant`: a revoked login, an organisation that disabled access) is left beside
+the login as the door's note (§88) and the router holds on with the vendor's words. `ops_health`
+names the wall three days ahead, dated: `the claude login's refresh token ends at … (2.1 days)`.
+A workflow that would rather run on another vendor than hold names its order:
+`author=claude|codex:novel-author` in its roles step binds the first the admission admitted.
 
 The login itself is usually fine — the CLI refreshes its token on its next call. Measured by
 novel-v2 (#44): one call **inside the agent container, through the proxy**, clears it, because the
@@ -140,9 +139,9 @@ docker exec <stack>-agent sh -c 'HTTPS_PROXY=http://egress:8888 CLAUDE_CONFIG_DI
 Without the proxy variables the same call hangs (the refresh cannot leave the governed network).
 CodexBar's `--source cli` for claude refreshes nothing (measured §100: it answers `Could not parse
 Claude usage: Missing Current session` and the credentials file is byte-for-byte what it was), so
-the call above is the only remedy short of signing in again — and since §108 a run makes it on
-its own, by routing: the manual call is for a login the router has given up on, or for a check
-you want green before a run. One case still measured open (#44): a call pinned with `--model`
+the call above was the only remedy short of signing in again — and since §109 the collector
+renews the token without a call (`login_refresh.py`), so the manual call is for a check you want
+green before a collection runs, nothing more. One case still measured open (#44): a call pinned with `--model`
 sets the model on the session before the prompt, and whether that step fails on an expired
 token (then no call refreshes it, and the run fails before any model turn) is a measurement
 trading owes; until then a pinned call on an expired token may fail where an unpinned one

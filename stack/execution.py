@@ -69,7 +69,7 @@ REQUIRED = ("run_id", "provider", "status")
 # completed call removes it. Only sentences of that class are kept; a model's own failure is not.
 REFUSAL_WORDS = ("organization has disabled", "not logged in", "token expired", "oauth",
                  "authenticate", "api key", "unauthorized", "invalid_api_key", "credentials not found",
-                 "subscription", "403", "401")
+                 "subscription", "403", "401", "invalid_grant", "refresh token")
 
 
 def login_refusal(text):

@@ -262,7 +262,7 @@ fi
     aged = route(27152, "login_expired")
     check("§108: aged out behind an expired access token it is still eligible — the first call refreshes it — and the verdict says so, with the age and the dead login beside it",
           aged["eligible"] is True and aged.get("login_expired") is True and aged.get("refreshable") is True
-          and aged["why"].startswith("within limits as last read 27152s ago") and "first call refreshes" in aged["why"], aged)
+          and aged["why"].startswith("within limits as last read 27152s ago") and "the collector's refresh came back" in aged["why"] and "a call renews it too" in aged["why"], aged)
     check("§108: the same reading three days old is still used (the bound is the refresh token's life, not the reading's)",
           route(3 * 86400, "login_expired")["eligible"] is True)
     old = route(16 * 86400, "login_expired")
@@ -278,24 +278,43 @@ fi
     import importlib.util as il
     spec = il.spec_from_file_location("oh_fb", str(HERE / "ops_health.py"))
     oh = il.module_from_spec(spec); spec.loader.exec_module(oh)
-    check("§108: the standing risk's remedy names the idle login and why the login check still says true",
-          "idle" in oh.fix_for({"provider": "claude", "why": old["why"]}) and "login check" in oh.fix_for({"provider": "claude", "why": old["why"]}))
-    # §108: the idle-login risk, read from the credential file's own expiresAt (ms or s), never written
+    check("§109: the standing risk's remedy names the ended refresh token and why the login check still says true",
+          "refresh token has ended" in oh.fix_for({"provider": "claude", "why": old["why"]}) and "login check" in oh.fix_for({"provider": "claude", "why": old["why"]}))
+    # §109: the router's bound is the credential's own refresh_token_expires_at when the observation carries it
+    o_live = {**e, "observed_at": (now - timedelta(days=20)).isoformat(), "live_failed_kind": "login_expired",
+              "refresh_token_expires_at": (now + timedelta(days=2)).isoformat()}
+    o_dead = {**o_live, "refresh_token_expires_at": (now - timedelta(hours=1)).isoformat()}
+    def route_obs(o):
+        d2 = Path(tempfile.mkdtemp(prefix="agentstack-r109-"))
+        json.dump(pol, open(d2 / "p.json", "w")); json.dump(o, open(d2 / "claude.json", "w"))
+        r = json.loads(subprocess.run([sys.executable, str(HERE / "router.py"), str(d2 / "p.json"), str(d2)],
+                                      capture_output=True, text=True, env={**os.environ, "ROUTER_NOW": now.isoformat()}).stdout)
+        shutil.rmtree(d2, ignore_errors=True)
+        return r["evaluated"][0]
+    check("§109: a twenty-day-old reading behind an expired access token is still used while the credential's refresh token has two days left",
+          route_obs(o_live)["eligible"] is True and route_obs(o_live).get("refreshable") is True, route_obs(o_live))
+    rd = route_obs(o_dead)
+    check("§109: once the credential's refresh token has ended it is unknown, dated, with the remedy — whatever the reading's age",
+          rd["eligible"] is False and rd["why"].startswith("unknown: the login's refresh token expired at") and "sign in on the panel" in rd["why"], rd)
+    check("§109: the verdict carries what the collector's refresh did",
+          "the collector's refresh came back `refused` (the vendor said no)" in route_obs({**o_live, "login_refresh": {"outcome": "refused", "error": "the vendor said no"}})["why"])
+    # §109: the ending-login risk, read from the credential file's own refreshTokenExpiresAt, never written
     import time as _t
-    lr = Path(tempfile.mkdtemp(prefix="agentstack-idle-"))
+    lr = Path(tempfile.mkdtemp(prefix="agentstack-ending-"))
     (lr / "claude").mkdir()
     cred = lr / "claude" / ".credentials.json"
     now_s = _t.time()
-    cred.write_text(json.dumps({"claudeAiOauth": {"accessToken": "x", "refreshToken": "y", "expiresAt": int((now_s - 9 * 86400 + 8 * 3600) * 1000)}}))
+    cred.write_text(json.dumps({"claudeAiOauth": {"accessToken": "x", "refreshToken": "y", "expiresAt": int(now_s * 1000),
+                                                  "refreshTokenExpiresAt": int((now_s + 2 * 86400) * 1000)}}))
     before = cred.read_bytes()
-    idle = oh.idle_logins(str(lr), now_s)
-    check("§108: a login refreshed nine days ago is named idle, in days, with nothing written to the file",
-          [i["provider"] for i in idle] == ["claude"] and 8.9 <= idle[0]["idle_days"] <= 9.1 and cred.read_bytes() == before, idle)
-    cred.write_text(json.dumps({"claudeAiOauth": {"expiresAt": now_s - 3 * 86400 + 8 * 3600}}))
-    recent = oh.idle_logins(str(lr), now_s)
+    ending = oh.ending_logins(str(lr), now_s)
+    check("§109: a refresh token two days from its end is named, dated and in days, with nothing written to the file",
+          [i["provider"] for i in ending] == ["claude"] and 1.9 <= ending[0]["days_left"] <= 2.1 and ending[0]["ends_at"].endswith("Z") and cred.read_bytes() == before, ending)
+    cred.write_text(json.dumps({"claudeAiOauth": {"refreshTokenExpiresAt": now_s + 10 * 86400}}))
+    far = oh.ending_logins(str(lr), now_s)
     cred.write_text("{}")
-    check("§108: three days ago (seconds, not ms) is not idle; no file and no field are nothing, not a crash",
-          recent == [] and oh.login_refreshed_at(str(lr / "nope")) is None and oh.login_refreshed_at(str(cred)) is None)
+    check("§109: ten days away (seconds, not ms) is not named; no file and no field are nothing, not a crash",
+          far == [] and oh.login_ends_at(str(lr / "nope")) is None and oh.login_ends_at(str(cred)) is None)
     shutil.rmtree(lr, ignore_errors=True)
     # #44, trading's variant: the vendor refused the call for the account's sake while the
     # observer still said "token expired, run claude login". The door leaves the sentence beside
@@ -1835,6 +1854,117 @@ def continuation_controls():
     check("continuation: the record carries tool_denied as an int, and problems() types it",
           ex.FIELDS.get("tool_denied") == 0 and ex.problems({"run_id": "r", "provider": "p", "status": "COMPLETED", "tool_denied": "1"}) == ["tool_denied is not int"])
 
+
+def refresh_controls():
+    """§109 (#44): the stack trades an expired access token for a new one with the refresh token
+    the credential holds, the way the CLI does — one POST, the answer written back only if the
+    refresh token on disk is still the one read, the vendor's refusal left as the §88 note, a
+    transport failure leaving nothing. Driven against a local token endpoint and a temporary
+    credential file; the collector's own call is the same function."""
+    print("the stack renews an expired access token with the refresh token, and nothing else (§109)")
+    import http.server as hs, threading as th, time as _t
+    sys.path.insert(0, str(HERE))
+    lr = importlib.import_module("login_refresh")
+    ex = importlib.import_module("execution")
+    root = Path(tempfile.mkdtemp(prefix="agentstack-refresh-"))
+    (root / "claude").mkdir(); (root / ".quota").mkdir()
+    cred = root / "claude" / ".credentials.json"
+    now = _t.time()
+    def write_cred(expires_in_s, refresh_in_s=10 * 86400, rt="rt-1", extra=None):
+        c = {"accessToken": "at-old", "refreshToken": rt, "expiresAt": int((now + expires_in_s) * 1000),
+             "refreshTokenExpiresAt": int((now + refresh_in_s) * 1000), "scopes": ["user:inference", "user:profile"],
+             "subscriptionType": "max", "clientId": "cid-1", **(extra or {})}
+        cred.write_text(json.dumps({"claudeAiOauth": c, "other": 1}))
+        os.chmod(cred, 0o600)
+    seen, mode = [], {"answer": "ok"}
+    class Tok(hs.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+            seen.append((self.path, dict(self.headers), body))
+            if mode["answer"] == "ok":
+                out = {"access_token": "at-new", "refresh_token": "rt-2", "expires_in": 28800, "refresh_token_expires_in": 12 * 86400, "scope": "user:inference user:profile", "token_type": "Bearer"}
+                code = 200
+            elif mode["answer"] == "same-rt":
+                out, code = {"access_token": "at-new2", "expires_in": 28800}, 200
+            elif mode["answer"] == "invalid_grant":
+                out, code = {"error": "invalid_grant", "error_description": "refresh token has been revoked"}, 400
+            else:
+                out, code = {"error": "server"}, 503
+            if mode.get("race"):
+                write_cred(-10, rt="rt-raced")           # a sibling refreshed while this request was out
+            data = json.dumps(out).encode()
+            self.send_response(code); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+        def log_message(self, *a): pass
+    srv = hs.HTTPServer(("127.0.0.1", 0), Tok)
+    th.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}/v1/oauth/token"
+    def post(body):
+        import urllib.request, urllib.error
+        req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            text = e.read().decode()
+            if 400 <= e.code < 500:
+                j = json.loads(text)
+                raise lr.Refused(f"the vendor refused the token refresh (HTTP {e.code}, {j.get('error')}: {j.get('error_description')})")
+            raise
+    def go(**kw):
+        return lr.refresh(str(cred), logins_root=str(root), provider="claude", login="claude", post=post, now=now, **kw)
+    # fresh: nothing asked
+    write_cred(3600); n = len(seen)
+    s0 = go()
+    check("refresh: an access token with an hour left is fresh — no request, nothing written",
+          s0["outcome"] == "fresh" and len(seen) == n and json.loads(cred.read_text())["claudeAiOauth"]["accessToken"] == "at-old", s0)
+    # expired, the vendor answers: written the way the CLI writes, the file's other keys and mode kept
+    write_cred(-60); mode["answer"] = "ok"
+    s1 = go()
+    c1 = json.loads(cred.read_text())
+    check("refresh: an expired access token is traded — the body carries the file's refresh token, client id and scopes",
+          seen[-1][2] == {"grant_type": "refresh_token", "refresh_token": "rt-1", "client_id": "cid-1", "scope": "user:inference user:profile"}, seen[-1][2])
+    check("refresh: the answer is written as the CLI writes it — new access and refresh tokens, expiresAt and refreshTokenExpiresAt in ms from now, scopes, the rest untouched, mode kept",
+          s1["outcome"] == "refreshed" and c1["claudeAiOauth"]["accessToken"] == "at-new" and c1["claudeAiOauth"]["refreshToken"] == "rt-2"
+          and abs(c1["claudeAiOauth"]["expiresAt"] / 1000 - (now + 28800)) < 2 and abs(c1["claudeAiOauth"]["refreshTokenExpiresAt"] / 1000 - (now + 12 * 86400)) < 2
+          and c1["claudeAiOauth"]["subscriptionType"] == "max" and c1["other"] == 1 and (os.stat(cred).st_mode & 0o777) == 0o600, (s1, c1))
+    check("refresh: the summary beside the quota reading says what happened and when the tokens end",
+          json.load(open(lr.summary_path(str(root), "claude", "claude")))["outcome"] == "refreshed" and s1.get("expires_at", "").endswith("Z") and s1.get("refresh_expires_at", "").endswith("Z"), s1)
+    # an answer without a new refresh token keeps the old one
+    write_cred(-60, rt="rt-keep"); mode["answer"] = "same-rt"
+    s2 = go(); c2 = json.loads(cred.read_text())["claudeAiOauth"]
+    check("refresh: an answer with no refresh token keeps the one on disk; its own end is kept too",
+          s2["outcome"] == "refreshed" and c2["refreshToken"] == "rt-keep" and c2["accessToken"] == "at-new2" and abs(c2["refreshTokenExpiresAt"] / 1000 - (now + 10 * 86400)) < 2, (s2, c2))
+    # the vendor refuses: nothing written, the §88 note left with the vendor's words
+    write_cred(-60); mode["answer"] = "invalid_grant"
+    s3 = go(); c3 = json.loads(cred.read_text())["claudeAiOauth"]
+    note = json.load(open(ex.refusal_path(str(root), "claude", "claude")))
+    check("refresh: the vendor's refusal writes nothing and leaves the door's note with the vendor's words — the router then says a person is needed",
+          s3["outcome"] == "refused" and c3["accessToken"] == "at-old" and "invalid_grant" in note["failure"] and "sign in on the panel" in note["failure"]
+          and ex.login_refusal(note["failure"]), (s3, note))
+    os.remove(ex.refusal_path(str(root), "claude", "claude"))
+    # transport failure: nothing written, no note
+    mode["answer"] = "500"
+    s4 = go()
+    check("refresh: a transport failure writes nothing and leaves no note — the next collection tries again",
+          s4["outcome"] == "failed" and json.loads(cred.read_text())["claudeAiOauth"]["accessToken"] == "at-old" and not os.path.exists(ex.refusal_path(str(root), "claude", "claude")), s4)
+    # a sibling refreshed while the request was out: its write is kept, this one dropped
+    write_cred(-60); mode["answer"] = "ok"; mode["race"] = True
+    s5 = go(); c5 = json.loads(cred.read_text())["claudeAiOauth"]
+    mode["race"] = False
+    check("refresh: a refresh token that changed on disk while the request was out means a sibling wrote first — adopted, not overwritten",
+          s5["outcome"] == "adopted" and c5["refreshToken"] == "rt-raced" and c5["accessToken"] == "at-old", (s5, c5))
+    # the refresh token itself has ended, or is missing, or there is no file: no request
+    write_cred(-60, refresh_in_s=-5); n = len(seen)
+    s6 = go()
+    write_cred(-60, rt=""); s7 = go()
+    s8 = lr.refresh(str(root / "none.json"), logins_root=str(root), post=post, now=now)
+    check("refresh: an ended refresh token, a missing one and a missing file make no request and say which",
+          (s6["outcome"], s7["outcome"], s8["outcome"], len(seen) == n) == ("refresh_expired", "no_refresh_token", "no_credential", True) and "person signs in" in s6.get("error", ""), (s6, s7, s8))
+    check("refresh: a token within five minutes of its end is renewed now, not at its end",
+          lr.state({"refreshToken": "r", "expiresAt": int((now + 120) * 1000)}, now) == "expired" and lr.state({"refreshToken": "r", "expiresAt": int((now + 600) * 1000)}, now) == "fresh")
+    srv.shutdown(); srv.server_close()
+    shutil.rmtree(root, ignore_errors=True)
+
 adapter_controls()
 update_controls()
 review3_controls()
@@ -1852,6 +1982,7 @@ denylist_controls()
 entry_controls()
 diagram_controls()
 continuation_controls()
+refresh_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)
