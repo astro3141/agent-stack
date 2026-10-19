@@ -6016,3 +6016,52 @@ six days of seven), G passed with every call one turn, `TOOLS_USED 0`, `tool_den
 one `INVALID` was a schema miss unrelated to tools. Not one refusal round-trip was needed: with
 the five names listed the model stopped reaching; the continuation stands as the net under the
 next name the list does not have.
+
+## 108. An expired access token is refreshable, not unknown: the router routes on the last good reading and the first call refreshes (#44, 2026-10-19)
+
+§88 made the router say, of a kept reading that aged behind an expired login, `unknown: the
+login's token expired — … nothing here refreshes it; sign in on the panel`. Measured since, by
+novel-v2 (§96) and by trading (#44, four samples): the Claude access token lives 8 hours
+(`expiresAt` = refresh + 8 h, from the credential file), and **any call through the CLI refreshes
+it** — the hold existed only because the observation stopped the call. trading's weekday runs
+survived on an accident: the epoch workflow's claude call, two minutes before route, refreshed the
+token; on 10/19 that call failed twice and the 18:40 route held on a 66-hour-old reading
+(`PROVIDER_HOLD`, the day's decision 2.5 hours late through catch-up). "Nothing here refreshes
+it" was false, like §104's claim, and this corrects it. The refresh token itself the vendor does
+not publish and nothing here reads; observed about two weeks.
+
+**What changed.**
+- `router.py`: a reading older than `max_age_s` whose `live_failed_kind` is `login_expired` is
+  **used** — its quota numbers the last known — with `login_expired: true`, `refreshable: true`
+  and the verdict `within limits as last read Ns ago — the login's access token expired since
+  and the first call refreshes it (§108); a refusal that call meets is left for the next route`,
+  as long as it is younger than `quota.refreshable_age_s` (default `REFRESHABLE_AGE_S`, 14
+  days, the refresh token's observed life; `cfg.py` validates the knob). Older: `unknown: … a
+  login idle that long needs a person; sign in on the panel`. The first call is the measurement:
+  it refreshes, or it meets the vendor's refusal, which the door leaves beside the login (§88,
+  `execution_refusal`) and the next route holds on with that sentence — the fail-closed path
+  §88 built is what makes routing on a stale token safe. The operator's decision 2 stands: the
+  stack still refreshes nothing and writes nothing under `/route`.
+- `ops_health.py`: a standing risk before the wall — `the claude login has not been refreshed
+  for N days` at half the observed life (7 days), read from the credential file's own
+  `expiresAt` (ms or s), never written; the remedy: run anything on it, or sign in. `fix_for`'s
+  words for the past-the-bound verdict say idle, not "the stack does not refresh it".
+- runbook.md's expired-login entry says what is true now, and names the one case still open:
+  a call pinned with `--model` sets the model on the session before the prompt (§91's path,
+  unchanged since; trading's `set_config_option -32603` ×2 on 10/19), and whether that step
+  fails on an expired token — so no call refreshes it — is a measurement trading owes (a pinned
+  and an unpinned call, same login, first thing after 02:4x). If it does, the first call after
+  expiry wants no pin, or the stack reads the pin's failure as a login's; decided on the number.
+- Deferred, with the reasons: trading's (b) — the collector performing the refresh-token
+  exchange itself — reverses decision 2 and has the stack write a person's login store (§50);
+  it also cannot pass the two-week wall, which only a person or a service credential (an API
+  key) passes. Both are the operator's to want; an API-key credential class is the candidate
+  when "unattended for N weeks" is an actual requirement.
+
+**Measured.** review_controls 320/320 — the §108 checks (8): a reading 27152 s old behind an
+expired token is eligible, `refreshable`, with the age and the dead login in the verdict; three
+days old likewise; sixteen days old is unknown with "needs a person" and the remedy; a profile's
+`refreshable_age_s` moves the bound; any other reason for age is still `stale`; the remedy
+names the idle login; a credential refreshed nine days ago is named idle in days with the file
+unchanged, three days ago (seconds, not ms) is not, and no file or no field is nothing. Pins at
+the ratchets (51 / 167); static 13/13. The live proof is trading's next expiry morning.

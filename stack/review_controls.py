@@ -259,16 +259,44 @@ fi
     young = route(60, "login_expired")
     check("#44: a kept reading still young enough is used, and the dead login is said beside the verdict",
           young["eligible"] is True and young.get("login_expired") is True, young)
-    old = route(27152, "login_expired")
-    check("#44: aged out behind an expired login it is unknown — a person's job — with the remedy",
-          old["eligible"] is False and old["why"].startswith("unknown: the login's token expired") and "sign in on the panel" in old["why"], old["why"])
+    aged = route(27152, "login_expired")
+    check("§108: aged out behind an expired access token it is still eligible — the first call refreshes it — and the verdict says so, with the age and the dead login beside it",
+          aged["eligible"] is True and aged.get("login_expired") is True and aged.get("refreshable") is True
+          and aged["why"].startswith("within limits as last read 27152s ago") and "first call refreshes" in aged["why"], aged)
+    check("§108: the same reading three days old is still used (the bound is the refresh token's life, not the reading's)",
+          route(3 * 86400, "login_expired")["eligible"] is True)
+    old = route(16 * 86400, "login_expired")
+    check("§108: past the refresh token's observed life (14 days) it is unknown — a login idle that long needs a person — with the remedy",
+          old["eligible"] is False and old.get("login_expired") is True and old["why"].startswith("unknown: the login's token expired")
+          and "needs a person" in old["why"] and "sign in on the panel" in old["why"], old["why"])
+    pol["refreshable_age_s"] = 3600
+    check("§108: a profile may set the bound (quota.refreshable_age_s): past it unknown, under it refreshable, young as before",
+          route(7200, "login_expired")["eligible"] is False and route(3000, "login_expired").get("refreshable") is True and route(60, "login_expired")["eligible"] is True)
+    pol.pop("refreshable_age_s")
     check("#44: aged out for any other reason it is still stale, the ordinary word",
           route(27152, None)["why"].startswith("stale:") and route(27152, "rate_limited")["why"].startswith("stale:"))
     import importlib.util as il
     spec = il.spec_from_file_location("oh_fb", str(HERE / "ops_health.py"))
     oh = il.module_from_spec(spec); spec.loader.exec_module(oh)
-    check("#44: the standing risk's remedy names the expired token and why the login check still says true",
-          "token expired" in oh.fix_for({"provider": "claude", "why": old["why"]}) and "login check" in oh.fix_for({"provider": "claude", "why": old["why"]}))
+    check("§108: the standing risk's remedy names the idle login and why the login check still says true",
+          "idle" in oh.fix_for({"provider": "claude", "why": old["why"]}) and "login check" in oh.fix_for({"provider": "claude", "why": old["why"]}))
+    # §108: the idle-login risk, read from the credential file's own expiresAt (ms or s), never written
+    import time as _t
+    lr = Path(tempfile.mkdtemp(prefix="agentstack-idle-"))
+    (lr / "claude").mkdir()
+    cred = lr / "claude" / ".credentials.json"
+    now_s = _t.time()
+    cred.write_text(json.dumps({"claudeAiOauth": {"accessToken": "x", "refreshToken": "y", "expiresAt": int((now_s - 9 * 86400 + 8 * 3600) * 1000)}}))
+    before = cred.read_bytes()
+    idle = oh.idle_logins(str(lr), now_s)
+    check("§108: a login refreshed nine days ago is named idle, in days, with nothing written to the file",
+          [i["provider"] for i in idle] == ["claude"] and 8.9 <= idle[0]["idle_days"] <= 9.1 and cred.read_bytes() == before, idle)
+    cred.write_text(json.dumps({"claudeAiOauth": {"expiresAt": now_s - 3 * 86400 + 8 * 3600}}))
+    recent = oh.idle_logins(str(lr), now_s)
+    cred.write_text("{}")
+    check("§108: three days ago (seconds, not ms) is not idle; no file and no field are nothing, not a crash",
+          recent == [] and oh.login_refreshed_at(str(lr / "nope")) is None and oh.login_refreshed_at(str(cred)) is None)
+    shutil.rmtree(lr, ignore_errors=True)
     # #44, trading's variant: the vendor refused the call for the account's sake while the
     # observer still said "token expired, run claude login". The door leaves the sentence beside
     # the login; the collector carries it when it is newer than the reading; the router says it.

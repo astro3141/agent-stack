@@ -101,22 +101,37 @@ and cannot. Then `up.sh --check` should show `0` again (OPERATIONS §24).
 last good reading beside the login (§64), so an expired token first shows as a reading that is
 used while young and then as one that aged out — and until §88 that aged-out reading was called
 `stale`, the ordinary word for a collection that has not run, which fails no check and names no
-remedy; novel-a held three times in two days on it. The router now says what it is:
+remedy; novel-a held three times in two days on it. §88 then said `unknown: … nothing here
+refreshes it; sign in on the panel` — and that was false too, measured (novel-v2, trading, #44):
+the access token lives 8 hours and **any call through the CLI refreshes it**, so the hold existed
+only because the observation stopped the call. Since §108 the router says what is true:
 
 ```
-claude: unknown: the login's token expired — the last reading is 27152s old (> 1800s) and
-        nothing here refreshes it; sign in on the panel
+claude: within limits as last read 239698s ago — the login's access token expired since
+        and the first call refreshes it (§108); a refusal that call meets is left for the next route
 ```
 
-`up.sh --check` fails `every provider's state is knowable` on it, the panel's 계정 tab shows
-`연결됨 · 토큰 만료` beside the provider while the reading is still young, and the standing risk
-carries the remedy. A workflow that would rather run on another vendor than hold names its order:
-`author=claude|codex:novel-author` in its roles step binds the first the admission admitted.
+The run routes; its first call refreshes the token (or meets the vendor's refusal — an
+organisation that disabled access, a dead refresh token — which the door leaves beside the login,
+§88, and the next route holds on with that sentence). The quota numbers in that verdict are the
+last known, not the current; the next collection after the refresh is fresh again. The panel's
+계정 tab shows `연결됨 · 토큰 만료` beside the provider meanwhile. One bound: a reading older than
+the refresh token's observed life (`quota.refreshable_age_s`, default 14 days) is **unknown** —
+a login idle that long needs a person:
 
-The login itself is usually fine — the CLI refreshes its token on its next call, and the hold
-exists because no call is made. Measured by novel-v2 (#44): one call **inside the agent container,
-through the proxy**, clears it, because the refresh goes to `console.anthropic.com`, which the
-shared allowlist carries:
+```
+claude: unknown: the login's token expired and its last good reading is 1382400s old
+        (> 1209600s, the refresh token's observed life) — a login idle that long needs a person; sign in on the panel
+```
+
+Before that wall, `ops_health` names the risk at half the way: `the claude login has not been
+refreshed for 8.0 days` (read from the credential file's own `expiresAt`, never written) — run
+anything on it, or sign in. A workflow that would rather run on another vendor than hold names its
+order: `author=claude|codex:novel-author` in its roles step binds the first the admission admitted.
+
+The login itself is usually fine — the CLI refreshes its token on its next call. Measured by
+novel-v2 (#44): one call **inside the agent container, through the proxy**, clears it, because the
+refresh goes to `console.anthropic.com`, which the shared allowlist carries:
 
 ```bash
 docker exec <stack>-agent sh -c 'HTTPS_PROXY=http://egress:8888 CLAUDE_CONFIG_DIR=/route/claude claude -p "say OK"'
@@ -125,7 +140,13 @@ docker exec <stack>-agent sh -c 'HTTPS_PROXY=http://egress:8888 CLAUDE_CONFIG_DI
 Without the proxy variables the same call hangs (the refresh cannot leave the governed network).
 CodexBar's `--source cli` for claude refreshes nothing (measured §100: it answers `Could not parse
 Claude usage: Missing Current session` and the credentials file is byte-for-byte what it was), so
-the call above is the only remedy short of signing in again.
+the call above is the only remedy short of signing in again — and since §108 a run makes it on
+its own, by routing: the manual call is for a login the router has given up on, or for a check
+you want green before a run. One case still measured open (#44): a call pinned with `--model`
+sets the model on the session before the prompt, and whether that step fails on an expired
+token (then no call refreshes it, and the run fails before any model turn) is a measurement
+trading owes; until then a pinned call on an expired token may fail where an unpinned one
+refreshes.
 
 An update made while the login is expired ends the same way: every step done, `FAIL  every
 provider's state is knowable`, exit 1 — the update's checks are the bring-up's. The script says so;
