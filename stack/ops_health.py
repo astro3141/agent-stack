@@ -141,10 +141,9 @@ def fix_for(e):
                 f"reason is the remedy (an organisation setting, an API key, a login), not the quota "
                 f"observer's hint. The note clears itself on the next completed call")
     if "token expired" in why:
-        return (f"the {who} login has been idle past its refresh token's observed life (#44, §108): any "
-                f"call would have refreshed the access token, but none ran for that long. Sign in again "
-                f"on the panel's 계정 tab — the login file is still there, which is why the bring-up's "
-                f"login check still says true")
+        return (f"the {who} login's refresh token has ended (#44, §109): nothing can renew the access token "
+                f"now. Sign in again on the panel's 계정 tab — the login file is still there, which is why "
+                f"the bring-up's login check still says true")
     return (f"sign in again for {who} (the panel's 계정 tab, or the provider's own login "
             f"under /route)")
 
@@ -164,33 +163,30 @@ def unknowable(profile="research-default"):
         return [{"provider": "(all)", "why": "unknown: the router did not answer"}]
 
 
-ACCESS_TOKEN_LIFE_S = 8 * 3600          # Claude's OAuth access token, measured (#44): expiresAt = refresh + 8 h
-LOGIN_IDLE_WARN_S = 7 * 86400           # half the refresh token's observed life: said before the wall, not at it
+LOGIN_END_WARN_S = 3 * 86400            # the refresh token's end is said this far ahead: before the wall, not at it
 
 
-def login_refreshed_at(path):
-    """When this Claude login's access token was last refreshed, from the credential file's own
-    `expiresAt` (ms or s since the epoch) minus the token's life. The file is read, never written;
-    only the timestamp is used. None when there is no file or no such field."""
+def login_ends_at(path):
+    """When this Claude login's refresh token ends, from the credential file's own
+    `refreshTokenExpiresAt` (ms or s since the epoch; the CLI writes it on every refresh, §109).
+    The file is read, never written. None when there is no file or no such field."""
     try:
         d = json.load(open(path))
-        exp = (d.get("claudeAiOauth") or {}).get("expiresAt")
-        exp = float(exp)
-        if exp > 1e11:                 # milliseconds
-            exp /= 1000.0
-        return exp - ACCESS_TOKEN_LIFE_S
+        v = float((d.get("claudeAiOauth") or {}).get("refreshTokenExpiresAt"))
+        return v / 1000.0 if v > 1e11 else v
     except Exception:
         return None
 
 
-def idle_logins(logins_root, now=None):
-    """Logins that no call has refreshed for LOGIN_IDLE_WARN_S: the standing risk §108 names
-    before the refresh token lapses. Claude only — the other vendors' files carry no such field."""
+def ending_logins(logins_root, now=None):
+    """Logins whose refresh token ends within LOGIN_END_WARN_S, or has ended: the standing risk
+    §109 names, dated. Claude only — the other vendors' files carry no such field."""
     now = time.time() if now is None else now
     out = []
-    at = login_refreshed_at(os.path.join(logins_root, "claude", ".credentials.json"))
-    if at is not None and now - at > LOGIN_IDLE_WARN_S:
-        out.append({"provider": "claude", "idle_days": round((now - at) / 86400, 1)})
+    at = login_ends_at(os.path.join(logins_root, "claude", ".credentials.json"))
+    if at is not None and at - now <= LOGIN_END_WARN_S:
+        out.append({"provider": "claude", "ends_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(at)),
+                    "days_left": round((at - now) / 86400, 1)})
     return out
 
 
@@ -220,16 +216,18 @@ def risks():
                     "why_it_matters": "a run that needs this provider will hold, and the login "
                                       "check will still say the login is there",
                     "what_would_fix_it": fix_for(e)})
-    # A login nothing has called for days (§108, #44): the access token is refreshed by use, the
-    # refresh token behind it is not, and the vendor does not say when it lapses (observed: about
-    # two weeks). Said at half that, so the person signs in before the wall, not at it.
+    # A login whose refresh token is about to end (§109, #44): the access token the collector
+    # renews needs a live refresh token, and the credential says when that one ends. Said three
+    # days ahead, dated, so the person signs in before the wall, not at it.
     try:
-        for i in idle_logins(settings.runtime()["paths"]["logins_root"]):
-            out.append({"risk": f"the {i['provider']} login has not been refreshed for {i['idle_days']} days",
-                        "detail": "no call has run on it for that long; the access token refreshes on use, "
-                                  "the refresh token lapses after about two weeks (observed, not published)",
-                        "why_it_matters": "past that, every run that needs this provider holds until a person signs in",
-                        "what_would_fix_it": "run anything on it (a cycle, a probe), or sign in again on the panel's 계정 tab"})
+        for i in ending_logins(settings.runtime()["paths"]["logins_root"]):
+            past = i["days_left"] <= 0
+            out.append({"risk": (f"the {i['provider']} login's refresh token ended at {i['ends_at']}" if past
+                                 else f"the {i['provider']} login's refresh token ends at {i['ends_at']} ({i['days_left']} days)"),
+                        "detail": "the access token is renewed from it (§109); nothing renews the refresh token but a sign-in",
+                        "why_it_matters": ("every run that needs this provider holds until a person signs in" if past
+                                           else "past that, every run that needs this provider holds until a person signs in"),
+                        "what_would_fix_it": "sign in again on the panel's 계정 tab"})
     except Exception:
         pass
     # Identities that accumulate. Onboarding an agent creates a managed agent in Preloop and a

@@ -400,9 +400,26 @@ def codexbar_claude_direct():
                if (not item or not wins or (item or {}).get("error")) else {})}
 
 
+def claude_login_refresh():
+    """§109: before the reading, the expired access token is traded for a new one with the login's
+    own refresh token (login_refresh.py — what the CLI does between calls, nothing more), so the
+    reading that follows is taken, not kept, and no run waits for a call to happen first (#44).
+    The summary travels on the observation; what the credential says about its own end does too,
+    so the router's bound is the vendor's number and not a guess."""
+    import login_refresh
+    path = os.path.join(login_dir("claude"), ".credentials.json")
+    s = login_refresh.refresh(path, logins_root=LOGINS, provider="claude",
+                              login=LOGIN_NAMES.get("claude", "claude"), egress=EGRESS)
+    return {"login_refresh": s, **({"refresh_token_expires_at": s["refresh_expires_at"]} if s.get("refresh_expires_at") else {})}
+
+
 if ROUTES.get("claude") == "direct":
     try:
-        write("claude", kept("claude", LOGIN_NAMES.get("claude", "claude"), codexbar_claude_direct))
+        extra = claude_login_refresh()
+    except Exception as e:
+        extra = {"login_refresh": {"outcome": "failed", "error": f"{type(e).__name__}: {e}"[:200]}}
+    try:
+        write("claude", {**kept("claude", LOGIN_NAMES.get("claude", "claude"), codexbar_claude_direct), **extra})
     except Exception as e:
         write("claude", {"provider": "claude", "source": "codexbar", "observed_at": None,
                          "observed_account": None, "executing_account": None,
