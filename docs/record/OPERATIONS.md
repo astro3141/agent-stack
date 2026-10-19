@@ -6064,4 +6064,5 @@ days old likewise; sixteen days old is unknown with "needs a person" and the rem
 `refreshable_age_s` moves the bound; any other reason for age is still `stale`; the remedy
 names the idle login; a credential refreshed nine days ago is named idle in days with the file
 unchanged, three days ago (seconds, not ms) is not, and no file or no field is nothing. Pins at
-the ratchets (51 / 167); static 13/13. The live proof is trading's next expiry morning.
+the ratchets (51 / 167); static 13/13. **Cold-start run 156 green** on b067547. The live proof is
+trading's next expiry morning.
