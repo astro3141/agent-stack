@@ -14,7 +14,12 @@ Observation files (<obs-dir>/<provider>.json), written by collect_obs.py or by a
 Rules, in order, per candidate (policy "candidates" order is preference order):
   1. no observation                      -> ineligible (unknown)
   2. observed_account != executing_account -> ineligible (account_mismatch) — never "close enough"
-  3. observation older than max_age_s     -> ineligible (stale) — a stale number is not a number
+  3. observation older than max_age_s     -> ineligible (stale) — a stale number is not a number;
+     except a reading that aged because the login's access token expired (live_failed_kind
+     login_expired): the first call refreshes that token (measured, §96 and #44), so the last
+     good reading is used as long as it is younger than refreshable_age_s (default 14 days,
+     the vendor's observed refresh-token life), and the verdict says so (§108). Older than that
+     it is unknown: a login idle that long needs a person
   4. a window in require_windows missing   -> ineligible (unknown); other missing windows are
      recorded as "not reported", never assumed empty. require_windows is a list (every
      candidate) or a mapping provider -> list: a vendor that reports no usage figure at all
@@ -26,6 +31,11 @@ First eligible candidate wins. None eligible -> HOLD: the run does not start (fa
 """
 import json, math, os, sys
 from datetime import datetime, timezone
+
+# How old a kept reading may be and still be used behind an expired access token (§108): the
+# vendor's refresh token has been observed to live about two weeks (#44); it is not published,
+# and nothing here reads it. A profile may set quota.refreshable_age_s.
+REFRESHABLE_AGE_S = 14 * 86400
 
 
 def valid_percent(u):
@@ -95,11 +105,25 @@ def evaluate(cand, obs, policy, now):
         # knowable" and the panel's standing risk name it, with the remedy (#44). Measured
         # three times in two days before this: every run that needed claude held on "stale".
         if obs.get("live_failed_kind") == "login_expired":
-            return {**r, "eligible": False, "login_expired": True,
-                    "why": f"unknown: the login's token expired — the last reading is {round(age)}s old "
-                           f"(> {policy['max_age_s']}s) and nothing here refreshes it; sign in on the panel"}
-        return {**r, "eligible": False, "why": f"stale: {round(age)}s old > {policy['max_age_s']}s"}
-    if obs.get("live_failed_kind") == "login_expired":
+            # §108 (#44, trading's and novel-v2's measurement): the access token lives 8 h and any
+            # call through the CLI refreshes it, so the token being expired says nothing about
+            # whether a call would run — until the refresh token itself has lapsed, which the
+            # vendor does not publish and nothing here can read. So the last good reading stands
+            # (its quota numbers are the last known, not the current) up to refreshable_age_s,
+            # and the first call is the measurement: it refreshes, or it meets the vendor's
+            # refusal, which the door leaves beside the login (§88) and the next route holds on.
+            # Said as `unknown:` only past that bound: a login idle that long needs a person.
+            # Before §108 this said "nothing here refreshes it; sign in" — false, measured.
+            bound = policy.get("refreshable_age_s", REFRESHABLE_AGE_S)
+            if age > bound:
+                return {**r, "eligible": False, "login_expired": True,
+                        "why": f"unknown: the login's token expired and its last good reading is {round(age)}s old "
+                               f"(> {bound}s, the refresh token's observed life) — a login idle that long needs "
+                               f"a person; sign in on the panel"}
+            r["login_expired"], r["refreshable"] = True, True
+        else:
+            return {**r, "eligible": False, "why": f"stale: {round(age)}s old > {policy['max_age_s']}s"}
+    elif obs.get("live_failed_kind") == "login_expired":
         # still young enough to use, and the login behind it is already dead: said beside the
         # verdict, so the panel can show it before the reading ages out
         r["login_expired"] = True
@@ -126,6 +150,10 @@ def evaluate(cand, obs, policy, now):
         # nothing to be within: the profile required no window of this provider, and it reported
         # none. Eligible, and the record says on what basis — identity and freshness only.
         return {**r, "eligible": True, "why": "within limits (no usage window reported; none required of this provider)"}
+    if r.get("refreshable"):
+        return {**r, "eligible": True,
+                "why": f"within limits as last read {round(age)}s ago — the login's access token expired since "
+                       f"and the first call refreshes it (§108); a refusal that call meets is left for the next route"}
     return {**r, "eligible": True, "why": "within limits"}
 
 

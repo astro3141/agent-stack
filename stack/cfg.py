@@ -107,6 +107,9 @@ def validate_profile(p, name, env):
         errs.append(f"profile {name}: quota.reuse_s must be a non-negative integer (seconds)")
     elif isinstance(q.get("max_age_s"), int) and rs >= q["max_age_s"]:
         errs.append(f"profile {name}: quota.reuse_s ({rs}) must be below quota.max_age_s ({q['max_age_s']})")
+    ra = q.get("refreshable_age_s")
+    if ra is not None and not (isinstance(ra, int) and not isinstance(ra, bool) and ra > 0):
+        errs.append(f"profile {name}: quota.refreshable_age_s must be a positive integer (seconds), when set")
     req = q.get("require_windows") or []
     if isinstance(req, dict):          # per provider: {claude: [weekly], grok: []}
         for n, ws in req.items():
