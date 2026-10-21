@@ -23,6 +23,13 @@ before, and the next collection tries again.
 import json, os, time, urllib.error, urllib.request
 
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"     # Claude Code 2.1.287, TOKEN_URL
+# The CLI sends client_id and scope on every refresh: the credential's own when it has them, its
+# constants when it does not (an older credential carries neither). §109 sent them only when the
+# file had them, and the vendor answered the first live expiry with HTTP 400 "Invalid request
+# format" (#44, 2026-10-21, §110). Both read from the 2.1.287 binary.
+CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+DEFAULT_SCOPES = ["user:profile", "user:inference", "user:sessions:claude_code", "user:mcp_servers",
+                  "user:file_upload", "user:plugins"]       # qZe() with PLUGINS_SCOPE_REGISTERED, in its order
 TIMEOUT_S = 30
 # a token this close to its end is renewed now rather than at its end: a reading and the call it
 # admits are minutes apart, and an access token that expires between them is the hold this exists for
@@ -67,18 +74,18 @@ def state(cred, now=None):
 
 
 class Refused(Exception):
-    """The vendor refused the refresh for the account's sake: the sentence is the remedy."""
+    """The vendor refused the refresh for the account's sake (`invalid_grant`: a revoked or dead
+    refresh token, an account it will not serve): the sentence is the remedy. Any other 4xx is a
+    request the stack built wrongly, and that is a failure of this code, not of the login."""
 
 
 def exchange(cred, egress=None, post=None):
     """One POST to the token endpoint. Returns the vendor's answer (access_token, expires_in,
     refresh_token?, refresh_token_expires_in?, scope?). Raises Refused on the vendor's 4xx with
     its words, any other exception on transport."""
-    body = {"grant_type": "refresh_token", "refresh_token": cred["refreshToken"]}
-    if cred.get("clientId"):
-        body["client_id"] = cred["clientId"]
-    if cred.get("scopes"):
-        body["scope"] = " ".join(cred["scopes"])
+    body = {"grant_type": "refresh_token", "refresh_token": cred["refreshToken"],
+            "client_id": cred.get("clientId") or CLIENT_ID,
+            "scope": " ".join(cred["scopes"] if cred.get("scopes") else DEFAULT_SCOPES)}
     if post is not None:
         return post(body)
     handlers = [urllib.request.ProxyHandler({k.lower().replace("_proxy", ""): v for k, v in (egress or {}).items()
@@ -91,14 +98,27 @@ def exchange(cred, egress=None, post=None):
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         text = e.read().decode("utf-8", "replace")[:400]
-        if 400 <= e.code < 500:
-            try:
-                j = json.loads(text)
-                words = f"{j.get('error')}: {j.get('error_description') or ''}".strip(": ")
-            except ValueError:
-                words = text
-            raise Refused(f"the vendor refused the token refresh (HTTP {e.code}, {words})")
-        raise
+        raise classify(e.code, text)
+
+
+def classify(code, text):
+    """What a non-2xx answer is: `invalid_grant` is the vendor refusing the login (Refused, the
+    §88 note); every other answer is this request's or the vendor's failure (RuntimeError, no
+    note, tried again next time). The words are kept either way. Two shapes are read: OAuth's
+    {error, error_description} and the API's {type: error, error: {type, message}}."""
+    try:
+        j = json.loads(text)
+    except ValueError:
+        j = {}
+    e = j.get("error")
+    if isinstance(e, dict):
+        err, desc = str(e.get("type") or ""), str(e.get("message") or "")
+    else:
+        err, desc = str(e or ""), str(j.get("error_description") or "")
+    words = f"{err}: {desc}".strip(": ") or text[:200]
+    if err == "invalid_grant":
+        return Refused(f"the login's refresh token was refused by the vendor (invalid_grant: {desc or 'no reason given'})")
+    return RuntimeError(f"the token refresh request failed (HTTP {code}, {words[:200]})")
 
 
 def save_cas(path, expected_refresh_token, answer, now=None):
@@ -174,8 +194,10 @@ def refresh(path, logins_root=None, provider="claude", login="claude", egress=No
             if logins_root:
                 try:
                     import execution
+                    note = f"{e} — sign in on the panel"
+                    assert execution.login_refusal(note)      # the words must be the note's own kind (§110)
                     execution.note_refusal(logins_root, provider, login,
-                                           {"status": "FAILED", "failure": f"{e} — sign in on the panel", "run_id": "login_refresh"})
+                                           {"status": "FAILED", "failure": note, "run_id": "login_refresh"})
                 except Exception:
                     pass
         except Exception as e:

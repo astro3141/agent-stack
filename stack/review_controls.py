@@ -1888,6 +1888,8 @@ def refresh_controls():
                 out, code = {"access_token": "at-new2", "expires_in": 28800}, 200
             elif mode["answer"] == "invalid_grant":
                 out, code = {"error": "invalid_grant", "error_description": "refresh token has been revoked"}, 400
+            elif mode["answer"] == "bad-request":          # the vendor's answer to §109's request on 2026-10-21 (#44)
+                out, code = {"type": "error", "error": {"type": "invalid_request_error", "message": "Invalid request format"}}, 400
             else:
                 out, code = {"error": "server"}, 503
             if mode.get("race"):
@@ -1898,20 +1900,9 @@ def refresh_controls():
     srv = hs.HTTPServer(("127.0.0.1", 0), Tok)
     th.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_address[1]}/v1/oauth/token"
-    def post(body):
-        import urllib.request, urllib.error
-        req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                return json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            text = e.read().decode()
-            if 400 <= e.code < 500:
-                j = json.loads(text)
-                raise lr.Refused(f"the vendor refused the token refresh (HTTP {e.code}, {j.get('error')}: {j.get('error_description')})")
-            raise
+    lr.TOKEN_URL = url                       # the module's own request path, headers and error reading, against the local endpoint
     def go(**kw):
-        return lr.refresh(str(cred), logins_root=str(root), provider="claude", login="claude", post=post, now=now, **kw)
+        return lr.refresh(str(cred), logins_root=str(root), provider="claude", login="claude", egress={}, now=now, **kw)
     # fresh: nothing asked
     write_cred(3600); n = len(seen)
     s0 = go()
@@ -1921,8 +1912,18 @@ def refresh_controls():
     write_cred(-60); mode["answer"] = "ok"
     s1 = go()
     c1 = json.loads(cred.read_text())
-    check("refresh: an expired access token is traded — the body carries the file's refresh token, client id and scopes",
-          seen[-1][2] == {"grant_type": "refresh_token", "refresh_token": "rt-1", "client_id": "cid-1", "scope": "user:inference user:profile"}, seen[-1][2])
+    check("refresh: an expired access token is traded — the body carries the file's refresh token, client id and scopes, as JSON",
+          seen[-1][2] == {"grant_type": "refresh_token", "refresh_token": "rt-1", "client_id": "cid-1", "scope": "user:inference user:profile"}
+          and seen[-1][1].get("Content-Type") == "application/json", (seen[-1][1], seen[-1][2]))
+    # §110 (#44): a credential without clientId or scopes — an older one — still sends both, the CLI's own defaults
+    cred.write_text(json.dumps({"claudeAiOauth": {"accessToken": "at-old", "refreshToken": "rt-1", "expiresAt": int((now - 60) * 1000),
+                                                  "refreshTokenExpiresAt": int((now + 10 * 86400) * 1000)}}))
+    s1b = go()
+    check("refresh (§110): a credential that carries no client id and no scopes still sends the CLI's own client id and default scopes — the first live expiry was refused for their absence",
+          s1b["outcome"] == "refreshed" and seen[-1][2]["client_id"] == lr.CLIENT_ID and seen[-1][2]["scope"] == " ".join(lr.DEFAULT_SCOPES)
+          and lr.CLIENT_ID == "9d1c250a-e61b-44d9-88ed-5944d1962f5e" and "user:inference" in lr.DEFAULT_SCOPES, (s1b, seen[-1][2]))
+    write_cred(-60); mode["answer"] = "ok"
+    go()
     check("refresh: the answer is written as the CLI writes it — new access and refresh tokens, expiresAt and refreshTokenExpiresAt in ms from now, scopes, the rest untouched, mode kept",
           s1["outcome"] == "refreshed" and c1["claudeAiOauth"]["accessToken"] == "at-new" and c1["claudeAiOauth"]["refreshToken"] == "rt-2"
           and abs(c1["claudeAiOauth"]["expiresAt"] / 1000 - (now + 28800)) < 2 and abs(c1["claudeAiOauth"]["refreshTokenExpiresAt"] / 1000 - (now + 12 * 86400)) < 2
@@ -1938,10 +1939,16 @@ def refresh_controls():
     write_cred(-60); mode["answer"] = "invalid_grant"
     s3 = go(); c3 = json.loads(cred.read_text())["claudeAiOauth"]
     note = json.load(open(ex.refusal_path(str(root), "claude", "claude")))
-    check("refresh: the vendor's refusal writes nothing and leaves the door's note with the vendor's words — the router then says a person is needed",
+    check("refresh: the vendor's refusal (invalid_grant) writes nothing and leaves the door's note with the vendor's words — the router then says a person is needed",
           s3["outcome"] == "refused" and c3["accessToken"] == "at-old" and "invalid_grant" in note["failure"] and "sign in on the panel" in note["failure"]
           and ex.login_refusal(note["failure"]), (s3, note))
     os.remove(ex.refusal_path(str(root), "claude", "claude"))
+    # §110: a 400 that is not invalid_grant is this request's failure — nothing written, no note, the vendor's words kept
+    write_cred(-60); mode["answer"] = "bad-request"
+    s3b = go()
+    check("refresh (§110): a 400 that is not invalid_grant — the vendor's \"Invalid request format\" — is a failure of the request, not a refusal of the login: nothing written, no note, the words kept",
+          s3b["outcome"] == "failed" and "invalid_request_error: Invalid request format" in s3b.get("error", "")
+          and json.loads(cred.read_text())["claudeAiOauth"]["accessToken"] == "at-old" and not os.path.exists(ex.refusal_path(str(root), "claude", "claude")), s3b)
     # transport failure: nothing written, no note
     mode["answer"] = "500"
     s4 = go()
@@ -1957,7 +1964,7 @@ def refresh_controls():
     write_cred(-60, refresh_in_s=-5); n = len(seen)
     s6 = go()
     write_cred(-60, rt=""); s7 = go()
-    s8 = lr.refresh(str(root / "none.json"), logins_root=str(root), post=post, now=now)
+    s8 = lr.refresh(str(root / "none.json"), logins_root=str(root), egress={}, now=now)
     check("refresh: an ended refresh token, a missing one and a missing file make no request and say which",
           (s6["outcome"], s7["outcome"], s8["outcome"], len(seen) == n) == ("refresh_expired", "no_refresh_token", "no_credential", True) and "person signs in" in s6.get("error", ""), (s6, s7, s8))
     check("refresh: a token within five minutes of its end is renewed now, not at its end",

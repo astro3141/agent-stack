@@ -141,11 +141,7 @@ CodexBar's `--source cli` for claude refreshes nothing (measured §100: it answe
 Claude usage: Missing Current session` and the credentials file is byte-for-byte what it was), so
 the call above was the only remedy short of signing in again — and since §109 the collector
 renews the token without a call (`login_refresh.py`), so the manual call is for a check you want
-green before a collection runs, nothing more. One case still measured open (#44): a call pinned with `--model`
-sets the model on the session before the prompt, and whether that step fails on an expired
-token (then no call refreshes it, and the run fails before any model turn) is a measurement
-trading owes; until then a pinned call on an expired token may fail where an unpinned one
-refreshes.
+green before a collection runs, nothing more. (A call pinned with `--model` was measured on an expired token on 2026-10-21, #44: `COMPLETED`, one turn — the CLI renews the token inside the call, pin or not; the 10/19 `set_config_option -32603` is unexplained and watched.)
 
 An update made while the login is expired ends the same way: every step done, `FAIL  every
 provider's state is knowable`, exit 1 — the update's checks are the bring-up's. The script says so;
