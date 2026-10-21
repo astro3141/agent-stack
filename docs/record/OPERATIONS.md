@@ -6169,5 +6169,5 @@ hypothesis is rejected; the 10/19 failure is unexplained and watched. A third sa
 person signs in once before it; `ops_health` names the date from 10/29.
 
 **Measured.** review_controls 335/335 (`refresh` 12, through the real request path); pins at the
-ratchets (51 / 167); static 13/13. The live proof is the next expiry: the summary says
-`refreshed`.
+ratchets (51 / 167); static 13/13. **Cold-start run 160 green** on f97ac51. The live proof is the next
+expiry: the summary says `refreshed`.
