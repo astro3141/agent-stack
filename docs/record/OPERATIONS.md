@@ -6127,3 +6127,47 @@ credential's refresh token has two days left; once it has ended, unknown, dated;
 carries the collector's outcome; the wall is named two days ahead in days and not ten days ahead.
 Pins at the ratchets (51 / 167); static 13/13. **Cold-start run 158 green** on dd3351b. The live proof
 is the next 02:4x: the summary says `refreshed` and the 18:40 route reads fresh.
+
+## 110. §109's first live expiry: the vendor refused the request's shape, not the login — client_id and scope are always sent now; only `invalid_grant` is a refusal (#44, 2026-10-21)
+
+trading met the first real expiry on 10/21 08:40Z (access token expired 17:41Z the day before):
+`login_refresh` ran before the reading and the vendor answered **HTTP 400
+`invalid_request_error: "Invalid request format"`**; a door call on the same credential nine
+minutes later completed and the CLI renewed the token inside it. So the endpoint, the egress and
+the credential were fine; the request the stack built was not the CLI's. Read against the 2.1.287
+binary: the CLI sends `client_id` and `scope` on every refresh — the credential's own
+(`clientId`, `scopes`) when the file has them, its constants when it does not (`CLIENT_ID
+9d1c250a-…`, the default scope list `user:profile user:inference user:sessions:claude_code
+user:mcp_servers user:file_upload user:plugins`). §109 sent them only when the file had them,
+and this credential, written before the CLI stored those fields, had neither. The controls ran
+the request against a local endpoint that accepted anything, so they could not see it.
+
+The second finding was the note: §109 said the vendor's refusal leaves the §88 note, and the
+sentence it wrote ("the vendor refused the token refresh …") matched none of
+`execution.REFUSAL_WORDS`, so nothing was left — harmless this time (a 400 of the stack's own
+making must not hold the router) and wrong by the spec for the case it was built for.
+
+**What changed.**
+- `login_refresh.py` always sends `client_id` and `scope`: the file's, else the CLI's constants
+  (both measured, both named in the module).
+- Only `invalid_grant` is a refusal (`Refused`, the §88 note, the router's "a person is needed");
+  the note's sentence is "the login's refresh token was refused by the vendor (invalid_grant: …)
+  — sign in on the panel", words `execution.login_refusal` recognises, asserted before it is
+  written. Every other non-2xx — the API's `{type: error, error: {type, message}}` shape included
+  — is a failure of the request: nothing written, no note, the vendor's words kept in the
+  summary, tried again at the next collection.
+- The `refresh` control group now drives the module's own request path (`TOKEN_URL` pointed at
+  the local endpoint; headers, JSON body and error reading as shipped) instead of a stand-in
+  `post`, and adds the two cases: a credential without `clientId`/`scopes` sends the defaults; the
+  vendor's `invalid_request_error` 400 is `failed`, nothing written, no note.
+
+**Measured, by trading, the question §108 left open.** A call pinned with `--model
+claude-sonnet-5` on an expired token: `COMPLETED`, one turn, `tool_denied 0` — the CLI renews the
+token inside the call, pin or not. The "expired token + model pin → set_config_option -32603"
+hypothesis is rejected; the 10/19 failure is unexplained and watched. A third sample of
+`refreshTokenExpiresAt` unchanged by use (2026-11-01T16:55Z ±2 s): the wall is fixed, and a
+person signs in once before it; `ops_health` names the date from 10/29.
+
+**Measured.** review_controls 335/335 (`refresh` 12, through the real request path); pins at the
+ratchets (51 / 167); static 13/13. The live proof is the next expiry: the summary says
+`refreshed`.
