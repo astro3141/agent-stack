@@ -1869,6 +1869,17 @@ const req = JSON.parse(readFileSync(process.argv[2], "utf8"));
 let p; try { p = JSON.parse(req.prompt); if (typeof p !== "object" || p === null || !("say" in p)) p = { say: req.prompt }; } catch { p = { say: req.prompt }; }
 mkdirSync(req.evidence_dir, { recursive: true });
 if (process.env.CTL_CALLS) appendFileSync(process.env.CTL_CALLS, req.run_id + "\n");
+// §111: a session-setup failure — the adapter's failure.phase "setup", no turn, no events — for
+// the first `setup_fail` calls under this run id (the door's own retry keeps the id)
+const seen = process.env.CTL_CALLS ? readFileSync(process.env.CTL_CALLS, "utf8").split("\n").filter((l) => l === req.run_id).length : 1;
+if (p.setup_fail && seen <= p.setup_fail) {
+  const out = { run_id: req.run_id, status: "FAILED", provider: req.provider, text: "", wall_ms: 3, permissions: [], mcp_denials: [], turn: null,
+    failure: { message: 'Failed session/set_config_option for model "claude-sonnet-5": Couldn\'t confirm model "claude-sonnet-5" with the API. Try again. (ACP -32603, adapter reported "Internal error")',
+               phase: "setup", ...(p.retryable === false ? { retryable: false } : {}) } };
+  writeFileSync(join(req.evidence_dir, "result.json"), JSON.stringify(out));
+  process.stdout.write(JSON.stringify(out) + "\n");
+  process.exit(0);
+}
 const ev = [{ type: "status", tag: "usage_update" }];
 for (let i = 0; i < (p.tool_calls || 0); i++) {
   ev.push({ type: "tool_call", tag: "tool_call", title: i === 0 && p.web ? "WebSearch" : "Read", toolCallId: "t" + i, status: "pending" });
@@ -1889,6 +1900,7 @@ if (p.write) { mkdirSync(req.cwd, { recursive: true }); writeFileSync(join(req.c
 writeFileSync(join(req.evidence_dir, "events.jsonl"), ev.map((e) => JSON.stringify(e)).join("\n") + "\n");
 const out = { run_id: req.run_id, status: p.status || "COMPLETED", provider: req.provider, text: p.say, wall_ms: 7,
   permissions: [], mcp_denials: [], model_route: req.model_route, native_tools: req.native_tools, allowed_tools: req.allowed_tools,
+  ...(p.fail ? { failure: { message: p.fail, phase: "turn" } } : {}),
   turn: { stopReason: p.stop || "end_turn", _meta: { quota: { token_count: { totalTokens: 11 }, model_usage: [{ model: "m-1", token_count: { totalTokens: 11 } }] } } } };
 writeFileSync(join(req.evidence_dir, "result.json"), JSON.stringify(out));
 process.stdout.write(JSON.stringify(out) + "\n");
@@ -1983,6 +1995,23 @@ def controls_shape():
     check("… both attempts kept: result and events of the first beside the second's",
           sorted(f for f in os.listdir(ev("c5")) if ".a1." in f), ["events.a1.jsonl", "result.a1.json"])
     check("… and both attempts' cost summed", (r.get("measurements") or {}).get("total_tokens"), 22)
+    # §111 (#103): a failure before the prompt went out — session/new, session/set_config_option —
+    # is the adapter's phase "setup": made again once, at no model cost; the record counts it
+    r, n = door("c9", say('{"verdict":"buy","confidence":0.7}', setup_fail=1))
+    check("a call that failed before the prompt went out (phase setup) is made again once: COMPLETED, attempts 2, both outcomes, the answer (§111)",
+          (r.get("status"), r.get("attempts"), n, r.get("attempt_outcomes"), r.get("produced"), r.get("answer"), (r.get("measurements") or {}).get("total_tokens")),
+          ("COMPLETED", 2, 2, ["FAILED", "COMPLETED"], True, {"verdict": "buy", "confidence": 0.7}, 11))
+    a1 = os.path.join(ev("c9"), "result.a1.json")
+    check("… the first attempt's result kept with its phase; it left no events",
+          ((json.load(open(a1)).get("failure") or {}).get("phase") if os.path.isfile(a1) else None, os.path.exists(os.path.join(ev("c9"), "events.a1.jsonl"))),
+          ("setup", False))
+    r, n = door("c9b", say('{"verdict":"buy","confidence":0.7}', setup_fail=2))
+    check("… twice is the answer: FAILED, attempts 2, the runtime's words carried",
+          (r.get("status"), r.get("attempts"), n, r.get("attempt_outcomes"), "set_config_option" in (r.get("failure") or "")), ("FAILED", 2, 2, ["FAILED", "FAILED"], True))
+    r, n = door("c9c", say('{"verdict":"buy","confidence":0.7}', setup_fail=1, retryable=False))
+    check("… not when the runtime says it is not retryable: one call", (r.get("status"), r.get("attempts"), n), ("FAILED", 1, 1))
+    r, n = door("c9d", say("", status="FAILED", fail="the stream ended"))
+    check("a failure in the turn is not a setup failure: one call, the words carried", (r.get("status"), r.get("attempts"), n, r.get("failure")), ("FAILED", 1, 1, "the stream ended"))
     r, n = door("c6", b"", provider="codex", stdin="ask about {WS} and 한글\n")
     req = request("c6", "codex")
     check("the prompt from stdin, {WS} replaced where it appears, the closed environment on the request",

@@ -26,8 +26,9 @@ against the schema here, the same for every vendor. Valid → COMPLETED, the ans
 file and carried as `answer`; invalid → INVALID_OUTPUT with every break named, and no retry — a
 failure the model made is not retried (CONTRACT.md). With a schema, `produced` means a valid
 answer arrived. The prompt file may be `-` for stdin. Retried once, as any call is: a login
-refresh; and, with a schema and no file written, a text that is not JSON at all (a cut stream,
-not an answer). The query kind (§89) was these two bundled into one, with the stack deciding how
+refresh; with a schema and no file written, a text that is not JSON at all (a cut stream, not an
+answer); and a call that failed before the prompt went out (the adapter's `failure.phase`
+"setup": session/new, session/set_config_option — §111, #103). The query kind (§89) was these two bundled into one, with the stack deciding how
 they are used; now the profile and the option each say their own thing, and the record says both.
 
 Where it runs is the role's business, not the caller's: a principal that declares an egress
@@ -327,7 +328,20 @@ def not_json(res):
         return True
 
 
-if (r.get("status") != "COMPLETED" and "refresh" in msg.lower()) or not_json(r):
+def setup_failed(res):
+    """§111 (#103): the adapter says the call failed before the prompt went out — its
+    `failure.phase` is "setup": session/new (acpx's 60 s bound) or session/set_config_option (the
+    CLI confirms a pinned model with one unretried API probe under 15 s, and calls the miss
+    retryable; the flag does not survive the adapter boundary). No model turn ran and nothing was
+    shown to the model, so the call is made again once, at no model cost — unless the runtime
+    says the failure is not retryable. Measured by trading: 4 in ~130 calls, each one's next call
+    completed."""
+    f = res.get("failure")
+    return (res.get("status") != "COMPLETED" and isinstance(f, dict) and f.get("phase") == "setup"
+            and f.get("retryable") is not False)
+
+
+if (r.get("status") != "COMPLETED" and "refresh" in msg.lower()) or not_json(r) or setup_failed(r):
     # the first attempt is kept, not replaced: its adapter result beside the second's, and what it
     # cost in the measurements below (review 3: `attempts=2` alone lost the first result and time)
     first = r
@@ -341,6 +355,8 @@ if (r.get("status") != "COMPLETED" and "refresh" in msg.lower()) or not_json(r):
         pass
     if "refresh" in msg.lower():
         time.sleep(20)
+    elif setup_failed(r):
+        time.sleep(5)
     r = run_once()
     attempts = 2
 

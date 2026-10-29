@@ -278,7 +278,7 @@ with `execution.FIELDS`); declare what you route on and copy the lines, do not r
       retryable_elsewhere: {type: boolean}
       evidence_dir: {type: string}
       profile: {type: string}
-      attempts: {type: number}               # 2 when the one bounded login-refresh retry ran
+      attempts: {type: number}               # 2 when the one bounded retry ran: a login refresh, a cut stream, a setup failure (§111)
       failure: {type: string}                # why, when status is not COMPLETED
       ledger_error: {type: string}
       turns: {type: number}                  # model turns the events show: 1, plus one per round of tool calls answered (§107); a retry is another call
@@ -350,10 +350,13 @@ agent_task.py <provider> <route> <label> <prompt|-> <answer.json> [<profile> [<l
   came from the text, and **no retry** — an answer that broke its schema is the model's doing,
   and the stack never retries a failure the model produced (CONTRACT.md). A fan-out member sees
   it as `invalid`, which its default `retry_when` does not retry; say `["invalid"]` to.
-- **What is retried, once:** a login the vendor calls a refresh (as for any call) and, when the
+- **What is retried, once:** a login the vendor calls a refresh (as for any call); when the
   answer had to come from the text, a text that is not JSON at all — a cut stream is a transport
-  fault, not an answer. Both are counted in `attempts`, both attempts' results kept
-  (`result.a1.json`, `events.a1.jsonl`).
+  fault, not an answer; and, for any call, a failure before the prompt went out (the adapter's
+  `failure.phase` is `setup`: acpx's `session/new` bound, the CLI's model probe behind
+  `session/set_config_option` — no model turn ran, nothing was shown; §111, #103) unless the
+  runtime marks it not retryable. All are counted in `attempts`, both attempts' results kept
+  (`result.a1.json`, `events.a1.jsonl` when the first attempt had events).
 - **The schema** is a JSON Schema whose root is `"type": "object"` — the shape the three vendors'
   own schema modes require too — using the keywords the door checks: `type`, `enum`, `const`,
   `properties`, `required`, `additionalProperties`, `items`, `minItems`, `maxItems`, `minimum`,
@@ -737,6 +740,15 @@ the package is four steps, and the fourth is the one that pays for the other thr
 
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
+
+**§111 (2026-10-29 — a call that failed before the prompt went out is made again once; #103).**
+- The adapter's `failure` now says where it failed: `phase: "setup"` (session/new,
+  session/set_config_option — no model turn ran) or `"turn"`, and carries acpx's `retryable`
+  when it set one. The door makes a setup-phase failure's call again once after 5 s, unless
+  `retryable` is false. `attempts: 2`, `attempt_outcomes` as for the other retries; the first
+  attempt's result stays as `result.a1.json`. Measured by trading: 4 in ~130 calls (3 of them
+  the CLI's one unretried model probe under 15 s, 1 acpx's 60 s session/new bound), each one's
+  next call completed. No record field is new: contract stays 4.
 
 **§107 (2026-10-16 — a refused tool call returns to the model; `tool_denied`; contract 4; #97).**
 - A closed call's tool call that was **refused** is no longer `TOOLS_USED`: the record counts it

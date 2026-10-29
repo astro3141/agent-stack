@@ -6171,3 +6171,54 @@ person signs in once before it; `ops_health` names the date from 10/29.
 **Measured.** review_controls 335/335 (`refresh` 12, through the real request path); pins at the
 ratchets (51 / 167); static 13/13. **Cold-start run 160 green** on f97ac51. The live proof is the next
 expiry: the summary says `refreshed`.
+
+## 111. A call that failed before the prompt went out is made again once — the adapter names the phase, the door retries setup only (#103, 2026-10-29)
+
+trading reported four transient failures in ~130 door calls since §107, all in the ACP session's
+setup, none in a model turn: three `session/set_config_option … Couldn't confirm model
+"claude-sonnet-5" with the API (ACP -32603, adapter "Internal error")` (10/19 ×2, 10/29) and one
+`Claude ACP session creation timed out before session/new completed` (10/26). The 10/19 pair
+spent epoch MI's two-call budget and erased that day; the others were absorbed by a desk with a
+retry budget. Each one's next call, seconds later, completed. The question asked: an upstream
+fix, or one setup-only retry at the door.
+
+**Measured.**
+- The first sentence is the CLI's (2.1.287 binary, `set_model`): a pinned model is confirmed
+  with one real `messages` request (`max_tokens: 1`, `maxRetries: 0`, `querySource:
+  "model_validation"`) under a 15 s deadline (`S = 15000`); a miss returns `{valid: false,
+  error: "Couldn't confirm model … with the API. Try again.", retryable: true}`. The SDK's
+  `setModel` rejects, claude-agent-acp (0.85.1, and 0.99.0 unchanged) throws a plain `Error`
+  from `query.setModel`, so the `retryable` flag is gone at the adapter boundary; acpx reports
+  `-32603` with the details. The §110 pinned-call measurement stands: the pin itself works; the
+  probe is one unretried round-trip that sometimes misses.
+- The second is acpx's: `CLAUDE_ACP_SESSION_CREATE_TIMEOUT_MS = 6e4` on `session/new`,
+  `ClaudeAcpSessionCreateTimeoutError` with `retryable: true`, env override
+  `ACPX_CLAUDE_ACP_SESSION_CREATE_TIMEOUT_MS`; no retry inside `ensureSession`. Same in 0.21.1.
+- So (a): no upstream fix on this path — acpx 0.19.5…0.21.1 and claude-agent-acp 0.86…0.99
+  change nothing here, and the CLI's probe is by design one attempt that the caller retries
+  (its own message says "Try again"). Claude Code past 2.1.287 was not read (the installer could
+  not run in this session); the 2.1.287 probe is what the image runs.
+- Both failures happen before the prompt is handed to a turn: no model call, no events, nothing
+  shown to the model. A retry there costs a second session start (seconds) and, for a pin, the
+  CLI's one-token probe again.
+
+**What changed.**
+- `run-agent.mjs`: `failure` carries `phase` — `"setup"` until `startTurn` has the prompt,
+  `"turn"` after — and acpx's `retryable` when it set one. Nothing else in the result moves.
+- `agent_task.py`: a setup-phase failure is made again once after 5 s unless `retryable` is
+  false — the same bounded retry as the login refresh and the cut stream: `attempts: 2`,
+  `attempt_outcomes`, the first attempt's result kept as `result.a1.json` (it has no events).
+  A failure in the turn is not retried, as before. Contract stays 4: no new record field.
+- The trial stand-in fails setup for the first N calls of a run id (`setup_fail`, `retryable`)
+  and can fail a turn (`fail`); five checks in the shape group: retried and completed, both
+  outcomes and cost; the kept first result with its phase and no events; twice is the answer;
+  not when the runtime says not retryable; a turn failure stays one call.
+- Docs: packages.md (record comment, the retried list, changelog), CONTRACT.md's retry row,
+  a runbook entry with both sentences and the knob.
+
+trading's own two-call budget is untouched: the door's retry is inside one call, counted in
+its record, and a member's `retry_when` sees one outcome as before.
+
+**Measured.** Shape group green with the stand-in (five new checks); static 13/13; pins at the
+ratchets (51 / 167). **Cold-start run 163 green** on 95ce8bd. The live proof is the next setup miss:
+`attempts: 2`, `attempt_outcomes: ["FAILED", "COMPLETED"]`, `result.a1.json` with `phase: "setup"`.

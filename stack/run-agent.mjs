@@ -12,6 +12,9 @@
 //                 SDK's `tools` option does not reach the agent through acpx, and `allowedTools`
 //                 is the SDK's auto-allow list, which the stack sent until §104 believing it was
 //                 a restriction. Whether the model reached for a tool is read from the events.
+// result: … failure: { message, code?, phase: "setup" | "turn", retryable? } — phase "setup" is a
+//                 failure before the prompt went out (session/new, session/set_config_option), no
+//                 model turn run; the door retries that once (§111, #103).
 //
 // Everything vendor-specific lives in stack/adapter/providers/<name>.mjs. The caller (Conductor),
 // Preloop and MLflow see the same request and result shape whichever provider runs.
@@ -265,6 +268,12 @@ async function main() {
   const t0 = Date.now();
   const acc = accumulator();                 // text, usage, mcpDenials — folded in result.mjs
   let result, handle, failure;
+  // §111 (#103): where a failure happened. "setup" until the prompt is handed to the turn —
+  // session/new (acpx's 60 s bound) and session/set_config_option (the CLI's one unretried model
+  // probe under 15 s) fail here, with no model turn run and nothing shown to the model — so the
+  // door may make the call again at no model cost; "turn" after. acpx's own `retryable` travels
+  // when it set one (the session/new timeout says true), so the door can honour a "false".
+  let phase = "setup";
   try {
     // A fresh session key per run: acpx keys sessions on (agent, cwd, name) with no account
     // or policy, so reuse across runs could carry one account's session into another's.
@@ -284,13 +293,15 @@ async function main() {
       handle, text: req.prompt, mode: "prompt", requestId: `${req.run_id}-1`,
       onPermissionRequest: (r, { signal }) => askPreloop(r, { provider: req.provider, prof, token: hook.hook.token, runId: req.run_id, cwd: req.cwd, signal, log, mcpOnly, nativeAllow: req.native_allow || [], closed }),
     });
+    phase = "turn";
     for await (const ev of turn.events) {
       take(acc, ev);
       appendFileSync(join(evDir, "events.jsonl"), JSON.stringify(ev) + "\n");
     }
     result = await turn.result;
   } catch (e) {
-    failure = { message: String(e?.message ?? e), code: e?.code };
+    failure = { message: String(e?.message ?? e), code: e?.code, phase,
+                ...(typeof e?.retryable === "boolean" ? { retryable: e.retryable } : {}) };
   }
   let status = null;
   try { if (handle) status = await runtime.getStatus({ handle }); } catch { /* best effort */ }
