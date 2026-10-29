@@ -6218,3 +6218,7 @@ fix, or one setup-only retry at the door.
 
 trading's own two-call budget is untouched: the door's retry is inside one call, counted in
 its record, and a member's `retry_when` sees one outcome as before.
+
+**Measured.** Shape group green with the stand-in (five new checks); static 13/13; pins at the
+ratchets (51 / 167). **Cold-start run 163 green** on 95ce8bd. The live proof is the next setup miss:
+`attempts: 2`, `attempt_outcomes: ["FAILED", "COMPLETED"]`, `result.a1.json` with `phase: "setup"`.
