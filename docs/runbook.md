@@ -278,6 +278,24 @@ no observation — so it never happens by itself.
 **Still missing, and known:** the observer's login has no path through the panel, while the routing
 logins do. It is the one human step of a fresh install that only exists as a command.
 
+## A call fails before the prompt goes out: `session/set_config_option` -32603, `session/new` timed out
+
+Two sentences, both from the ACP session's setup, both transient (OPERATIONS §111, #103):
+
+```
+Failed session/set_config_option for model "…": Couldn't confirm model "…" with the API. Try again. (ACP -32603, adapter reported "Internal error")
+Claude ACP session creation timed out before session/new completed. This matches the known persistent-session stall …
+```
+
+The first is the CLI's: a pinned model (`--model`) is confirmed with one API probe (a one-token
+`messages` call, no retries) under a 15 s deadline, and the CLI calls the miss retryable; the
+flag does not survive claude-agent-acp, so acpx reports an internal error. The second is acpx's
+own 60 s bound on `session/new` (`ACPX_CLAUDE_ACP_SESSION_CREATE_TIMEOUT_MS` raises it). Neither
+ran a model turn. The door makes the call again once (`attempts: 2`, the first attempt's result
+in `result.a1.json` with `failure.phase: "setup"`); a second miss is the call's answer, and the
+next call is independent. Nothing to do unless they come in a row on one login: then read the
+egress proxy's log for the token endpoint and `api.anthropic.com` at that minute.
+
 ## A run is going and will not end
 
 **Look:** `run_workflow.py show <id>` says `running`, and the step has not changed for a long time.
