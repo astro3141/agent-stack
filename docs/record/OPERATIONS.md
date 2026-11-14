@@ -6243,3 +6243,50 @@ need — and that is §113 (`docker/apt/apt.local`).
 stack` checks `pdftoppm` answers in the image (`the image carries poppler for the CLI's PDF
 reading`), so an image built without it is named before a step's text does; packages.md says a
 PDF needs no library of the package's. An update rebuilds the image (`release.sh update`).
+
+## 113. An instance's OS packages are its own: `docker/apt/apt.local`, the §101 shape for apt (2026-11-14)
+
+§112 answered the question PR #107 raised — does every tool a package wants mean a stack change —
+by layer, and found the layer with no answer: an OS package that only one instance's packages
+need. A Python library has had its instance file since §101; a Debian package had only the
+Dockerfile, which is the stack's code and a PR to the stack owner. This is the same mechanism for
+apt, so the next `tesseract` or `ffmpeg` is a line the operator writes, not a release the stack
+makes.
+
+**What changed.**
+- `docker/apt/apt.local` (git-ignored, absent on a fresh clone; `docker/apt/README.md` tracked
+  beside it, so the directory is in the build context): one Debian package per line, `name` or
+  `name=version`, comments after `#`. The Dockerfile copies the directory and, when the file has
+  a line, installs them after the stack's own apt line; what the image ends with is left in
+  `/opt/apt/installed.txt`. The stack's own packages stay in the Dockerfile: a binary the CLI's
+  tools need is the stack's (poppler, §112).
+- `scripts/up.sh`: `apt_local_report` — `none`, `ok`, or `line N is not a package: …` — read
+  before any build; a flag, a path or two names on a line would reach `apt-get` as an argument
+  and are refused there; `--check` has the line (`the instance's OS packages are package names`).
+- `scripts/release.sh`: `docker/apt/apt.local` is the first of the three instance inputs
+  (`INSTANCE_INPUTS`): a member of the record when present, removed by a format-4 rollback so
+  absence is restored too, copied into an update's candidate worktree as python.local is;
+  `apt.installed` kept beside `python.freeze`. Record format stays 4: a record made before this
+  carries no apt.local, and restoring its absence is the right reading of that record.
+- `scripts/backup.sh` / `restore.sh`: the file is a member of `instance-inputs.tar.gz`.
+- `stack/packages.py`: `requires.apt: [name, "name=version"]`; `needs_apt()` answers from
+  `dpkg-query` (None where there is no dpkg — a host, not the image — so a declared package reads
+  as unknown, never as present); `packages.py apt` prints installed / `MISSING — put `<line>` in
+  docker/apt/apt.local and run scripts/up.sh --recreate` / unknown, the candidates under the
+  table, `--candidates` only the lines; a line that is not a package name is dropped from the
+  rows, as a bad module name is. `apt` joins `KNOWN_REQUIRES`.
+- `stack/run_workflow.py start` refuses a run whose package declares a package the image has not
+  got (rc 3, `why` and `where` per package, as for a module); unknown refuses nothing.
+- Docs: packages.md (the manifest line, the paragraph beside the Python one, the `requires` table
+  row, the instance files list, the changelog), commands.md, update-day.md.
+- The cold start writes `tree` into apt.local before the build, reads `tree --version` back from
+  the image and `tree=` from `installed.txt`, sees the `--check` line, records a release with both
+  inputs and `apt.installed`, deletes both files, rolls back, and requires both back and the
+  binary still answering from the kept image.
+
+**Not changed, and why.** No version pin required, unlike python.local: a Debian version string
+is the archive's and leaves it within weeks, so a pinned line would fail the next build through
+no fault of the operator; what the image carries is recorded (`apt.installed`) and the kept image
+is the lock, as for Python. No per-package install at run time: the governed runtime has no
+egress to the archives by design (§62). No automatic install from the manifest: the manifest
+names the line, the operator writes it, approval is the file (§101's rule).

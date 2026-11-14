@@ -1521,6 +1521,23 @@ def pylocal_controls():
           report("pdfplumber==0.11.10\npypdf>=6\n") == "line 2 is not pinned: pypdf>=6"
           and report("-r other.txt\n").startswith("line 1 is not pinned"), report("pdfplumber==0.11.10\npypdf>=6\n"))
 
+    # §113: the same for the instance's OS packages (docker/apt/apt.local)
+    fna = upsh[upsh.index("apt_local_report() {"):upsh.index("  echo ok\n}") + len("  echo ok\n}")]
+    def areport(text):
+        f = root / "apt.local"
+        if text is None:
+            f = root / "absent-apt"
+        else:
+            f.write_text(text)
+        return run(fna, f"apt_local_report '{f}'")
+    check("apt.local: no file is `none`; package names, pinned or not (comments, blanks aside) are `ok`",
+          areport(None) == "none" and areport("# mine\n\ntree  # dirs\npoppler-utils=22.12.0-2+b1\nlibfoo++2\n") == "ok",
+          (areport(None), areport("tree\n")))
+    check("apt.local: a line that is not a package is named with its number — a flag, a path, a space",
+          areport("tree\n--force-yes\n") == "line 2 is not a package: --force-yes"
+          and areport("/bin/sh\n").startswith("line 1 is not a package")
+          and areport("tree curl\n").startswith("line 1 is not a package"), areport("tree\n--force-yes\n"))
+
     rel = (WORK / "scripts" / "release.sh").read_text()
     fn2 = rel[rel.index('INSTANCE_INPUTS="'):rel.index("norm_host() {")]
     def rel_fn(cmd):
@@ -1536,6 +1553,12 @@ def pylocal_controls():
     check("release: a format-4 record removes them before its archive is restored — absence is restored too",
           rel_fn(f"restore_instance_inputs 4 '{ws}'") == "as recorded, absence included"
           and not (ws / "docker" / "python" / "python.local").exists())
+    (ws / "docker" / "apt").mkdir(parents=True)
+    (ws / "docker" / "apt" / "apt.local").write_text("tree\n")
+    check("release: apt.local is a member when present, first of the three (§113), and a format-4 rollback removes it too",
+          rel_fn(f"instance_inputs_present '{ws}'") == "docker/apt/apt.local"
+          and rel_fn(f"restore_instance_inputs 4 '{ws}'") == "as recorded, absence included"
+          and not (ws / "docker" / "apt" / "apt.local").exists())
     bk = (WORK / "scripts" / "backup.sh").read_text()
     fn3 = bk[bk.index("instance_inputs() {"):bk.index('INPUT_FILES="')]
     def bk_fn(cmd):
@@ -1543,6 +1566,9 @@ def pylocal_controls():
     (ws / "docker" / "egress" / "allow.local").write_text("x\n")
     check("backup: the inputs that exist are members (allow.local here, python.local gone)",
           bk_fn(f"instance_inputs '{ws}'") == "docker/egress/allow.local")
+    (ws / "docker" / "apt" / "apt.local").write_text("tree\n")
+    check("backup: apt.local is a member when present (§113)",
+          bk_fn(f"instance_inputs '{ws}'") == "docker/apt/apt.local docker/egress/allow.local")
 
     sp = il.spec_from_file_location("pk_pylocal", str(HERE / "packages.py"))
     pk = il.module_from_spec(sp); sp.loader.exec_module(pk)
@@ -1575,6 +1601,26 @@ def pylocal_controls():
     rc, out2 = quiet(pk.cmd_python, ["--candidates"])
     check("packages.py python --candidates: only the lines, to copy",
           out2.splitlines() == ["zz-not-here==1.2.3", "zz-open   # not pinned: ==<version> first"], out2)
+    # §113: requires.apt, answered from what the runtime has — a stand-in for dpkg here
+    (proot / "zz-pl" / "manifest.yaml").write_text(
+        "name: zz-pl\nentry: workflow.yaml\nrequires:\n  apt:\n    - bash\n    - zz-not-here\n"
+        "    - \"poppler-utils=22.12.0-2+b1\"\n    - \"/bin/sh\"\n")
+    pk.apt_installed = lambda: {"bash", "poppler-utils"}
+    rows = pk.needs_apt().get("zz-pl") or []
+    check("manifest: requires.apt reads a name and a name=version; present is dpkg's answer; a line that is no package is dropped",
+          [(e["package"], e["present"]) for e in rows]
+          == [("bash", True), ("zz-not-here", False), ("poppler-utils=22.12.0-2+b1", True)], rows)
+    rc, out3 = quiet(pk.cmd_apt, [])
+    check("packages.py apt: installed / MISSING with the line for apt.local; the candidates under the table",
+          "bash" in out3 and "MISSING — put `zz-not-here` in docker/apt/apt.local" in out3
+          and "candidates for docker/apt/apt.local" in out3 and "\n  zz-not-here\n" in out3 and "up.sh --recreate" in out3, out3)
+    rc, out4 = quiet(pk.cmd_apt, ["--candidates"])
+    check("packages.py apt --candidates: only the lines", out4.splitlines() == ["zz-not-here"], out4)
+    pk.apt_installed = lambda: None
+    rows = pk.needs_apt().get("zz-pl") or []
+    rc, out5 = quiet(pk.cmd_apt, [])
+    check("no dpkg to ask: every row is unknown, none a candidate, said so",
+          all(e["present"] is None for e in rows) and pk.apt_candidates({"zz-pl": rows}) == [] and "unknown" in out5, out5)
     shutil.rmtree(root, ignore_errors=True)
 
 

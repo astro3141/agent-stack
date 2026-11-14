@@ -115,7 +115,7 @@ tool_in_image() { docker run --rm --entrypoint sh "$1" -c "$(tool_cmd "$2")" 2>/
 # The instance's own inputs to the image and the proxy (OPERATIONS §101): untracked, so a fresh
 # clone has none; members of a record from format 4 on, so a rollback puts back what the release
 # had — and takes away what it had not, since the next bring-up rebuilds from these files.
-INSTANCE_INPUTS="docker/python/python.local docker/egress/allow.local"
+INSTANCE_INPUTS="docker/apt/apt.local docker/python/python.local docker/egress/allow.local"
 instance_inputs_present() {  # workspace → the inputs that exist there, as tar members
   for _f in $INSTANCE_INPUTS; do [ -f "$1/$_f" ] && printf '%s ' "$_f"; done; :
 }
@@ -228,12 +228,18 @@ cmd_record() {
   docker run --rm -v "$(m "$DEST"):/in:ro" alpine tar tzf /in/config.tar.gz >/dev/null \
     || fail "the configuration archive did not verify"
   say "configuration" "$(du -h "$DEST/config.tar.gz" | cut -f1) (sources only)"
-  say "instance inputs" "${INPUTS:-none (no python.local, no allow.local)}"
+  say "instance inputs" "${INPUTS:-none (no apt.local, no python.local, no allow.local)}"
   # what the image's venv resolved (docker/python/*, §101): readable beside the kept image
   if docker exec "$AGENT" cat /opt/python/freeze.txt > "$DEST/python.freeze" 2>/dev/null && [ -s "$DEST/python.freeze" ]; then
     say "python" "$(wc -l < "$DEST/python.freeze" | tr -d ' ') resolved versions (python.freeze)"
   else
     rm -f "$DEST/python.freeze"; say "python" "no freeze in this image (built before §101)"
+  fi
+  # what the image's OS packages ended as (docker/apt/*, §113): readable beside the kept image
+  if docker exec "$AGENT" cat /opt/apt/installed.txt > "$DEST/apt.installed" 2>/dev/null && [ -s "$DEST/apt.installed" ]; then
+    say "apt" "$(wc -l < "$DEST/apt.installed" | tr -d ' ') packages in the image (apt.installed)"
+  else
+    rm -f "$DEST/apt.installed"; say "apt" "no package list in this image (built before §113)"
   fi
 
   {
@@ -326,6 +332,8 @@ cmd_update() {
   # certificate, copied so the candidate is built from the inputs the workspace builds from
   [ -f "$HERE/docker/python/python.local" ] && mkdir -p "$(u "$CAND_DOCKER")/python" \
     && cp "$HERE/docker/python/python.local" "$(u "$CAND_DOCKER")/python/"
+  [ -f "$HERE/docker/apt/apt.local" ] && mkdir -p "$(u "$CAND_DOCKER")/apt" \
+    && cp "$HERE/docker/apt/apt.local" "$(u "$CAND_DOCKER")/apt/"
   docker build --quiet -t "$CAND_IMAGE" -f "$CAND_DOCKER/agent.Dockerfile" "$CAND_DOCKER" >/dev/null \
     || fail "the candidate build failed; nothing was changed"
   say "built" "$CAND_IMAGE"

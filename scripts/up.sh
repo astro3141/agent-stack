@@ -123,6 +123,24 @@ python_local_report() {  # file
   echo pinned
 }
 
+# The instance's own OS packages go into the image at build too (docker/apt/apt.local, OPERATIONS
+# §113): one Debian package per line, `name` or `name=version`. A line that is not that would
+# reach apt-get as an argument; it is refused here, before any build. Prints `none` when there is
+# no file, `ok` when every line is a package, else the first line that is not.
+apt_local_report() {  # file
+  [ -f "$1" ] || { echo none; return 0; }
+  _n=0
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    _n=$((_n+1))
+    _t="$(printf '%s' "$_line" | sed 's/[[:space:]]*#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ -n "$_t" ] || continue
+    if printf '%s' "$_t" | grep -Eq '^[a-z0-9][a-z0-9+.-]+(=[A-Za-z0-9.+:~-]+)?$'; then :; else
+      echo "line $_n is not a package: $_line"; return 0
+    fi
+  done < "$1"
+  echo ok
+}
+
 # Apply this stack's policy, and when Preloop refuses it, say what it said. The result line alone
 # ("apply failed") sent a reader to the admin container's state file; the cold-start runner failed
 # three times before the reason was read from there (a value Preloop 0.15.0 does not accept, §63).
@@ -158,6 +176,12 @@ if [ "$MODE" != "--check" ]; then
   case "$_pl" in none|pinned) ;;
     *) echo "docker/python/python.local: $_pl" >&2
        echo "  every line is one distribution pinned with == (comments and blank lines aside); scripts/packages.py python prints the candidates" >&2
+       exit 1;;
+  esac
+  _al="$(apt_local_report "$HERE/docker/apt/apt.local")"
+  case "$_al" in none|ok) ;;
+    *) echo "docker/apt/apt.local: $_al" >&2
+       echo "  every line is one Debian package, name or name=version (comments and blank lines aside); scripts/packages.py apt prints the candidates" >&2
        exit 1;;
   esac
   if [ "$BUILD" = "--no-build" ]; then   # a rollback: the kept images, as they are (§101)
@@ -373,6 +397,10 @@ echo "== the image's inputs"
 _plf="$HERE/docker/python/python.local"
 check "the instance's Python libraries are pinned (docker/python/python.local)" \
       "$( [ -f "$_plf" ] && echo pinned || echo none )" "$(python_local_report "$_plf")"
+# docker/apt/apt.local is built in the same way (§113); a line that is not a package fails the bring-up
+_alf="$HERE/docker/apt/apt.local"
+check "the instance's OS packages are package names (docker/apt/apt.local)" \
+      "$( [ -f "$_alf" ] && echo ok || echo none )" "$(apt_local_report "$_alf")"
 echo "== isolation"
 # The addresses the checks below probe are the generated settings' (config/generated/runtime.json,
 # generated above), read once here — the same ones every step reads, written in environment.yaml
