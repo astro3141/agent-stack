@@ -6293,3 +6293,10 @@ no fault of the operator; what the image carries is recorded (`apt.installed`) a
 is the lock, as for Python. No per-package install at run time: the governed runtime has no
 egress to the archives by design (§62). No automatic install from the manifest: the manifest
 names the line, the operator writes it, approval is the file (§101's rule).
+
+**Measured.** §101 review group 19/19 (the new checks: `apt_local_report` none / ok / `line 2 is not a
+package: --force-yes`; apt.local a member first of three, removed by a format-4 rollback, a backup
+member; `requires.apt` rows from a dpkg stand-in, the table, `--candidates`, unknown without dpkg);
+static 13/13; pins unchanged (51 / 167). **Cold-start run 168 green** on 72d3d3b: `tree` built in from
+apt.local, read back from the image and `installed.txt`, the `--check` line, the release's three
+inputs and `apt.installed`, the rollback restoring both files.
