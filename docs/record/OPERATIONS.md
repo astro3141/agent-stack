@@ -6243,3 +6243,6 @@ need — and that is §113 (`docker/apt/apt.local`).
 stack` checks `pdftoppm` answers in the image (`the image carries poppler for the CLI's PDF
 reading`), so an image built without it is named before a step's text does; packages.md says a
 PDF needs no library of the package's. An update rebuilds the image (`release.sh update`).
+
+**Measured.** Cold-start run 167 green on 7657e80: `the image carries poppler for the CLI's PDF
+reading (pdftoppm version 22.12.0)`, stack 26/26; review 335/335, trial 559/559; pins unchanged.
