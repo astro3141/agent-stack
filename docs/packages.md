@@ -110,6 +110,10 @@ installed for you at run time. What you get is an answer and a refusal — `pack
 whether each module is importable, and a run whose package lacks one is refused at the start, naming
 the module, instead of dying on an ImportError inside a step.
 
+**A PDF needs no library of yours.** The model's own Read tool renders a page with `pdftoppm`,
+which the agent image carries since §112 (a dependency of the CLI the stack owns, not of any
+package); a step that must parse one itself still declares its library as below.
+
 **Where it comes from is the instance's own list, not the stack's code (§101).** The operator puts
 the distribution, pinned (`pdfplumber==0.11.10`), in `docker/python/python.local` — git-ignored,
 absent on a fresh clone, beside `docker/egress/allow.local` — and runs `scripts/up.sh --recreate`.
@@ -740,6 +744,11 @@ the package is four steps, and the fourth is the one that pays for the other thr
 
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
+
+**§112 (2026-11-14 — the agent image carries poppler; the CLI's Read opens a PDF; #107).**
+- `pdftoppm` is in the image, so a model step can read a PDF page by page with the CLI's own
+  Read tool. Nothing to declare; a step that parses a PDF itself still names its library.
+  `verify.sh --level stack` checks the binary is there. An update rebuilds the image.
 
 **§111 (2026-10-29 — a call that failed before the prompt went out is made again once; #103).**
 - The adapter's `failure` now says where it failed: `phase: "setup"` (session/new,

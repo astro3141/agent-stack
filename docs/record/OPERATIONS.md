@@ -6222,3 +6222,24 @@ its record, and a member's `retry_when` sees one outcome as before.
 **Measured.** Shape group green with the stand-in (five new checks); static 13/13; pins at the
 ratchets (51 / 167). **Cold-start run 163 green** on 95ce8bd. The live proof is the next setup miss:
 `attempts: 2`, `attempt_outcomes: ["FAILED", "COMPLETED"]`, `result.a1.json` with `phase: "setup"`.
+
+## 112. The agent image carries poppler: the CLI's Read opens a PDF (#107, 2026-11-14)
+
+devflow-draft's pilot (`pilot3-u30`) had to read the official criterion from an 873-page PDF and
+could not: Claude Code's Read tool renders a PDF page with `pdftoppm`, and the agent image had no
+poppler. The drafter left the criterion as a `contract_gap` and the run said nothing about why.
+PR #107 (the devflow session's) adds `poppler-utils` to the image's apt line, measured on a test
+image: 22.12.0 renders p.62–63 of the guide.
+
+**Why this is the stack's and not an instance line.** The question raised with it: does every
+tool a package wants mean a stack change? No, by layer. A tool the model calls is the CLI's own
+(Read already reads PDFs); a library a package's step imports is the instance's
+`docker/python/python.local` (§101), no stack change; an OS binary the CLI's own tool needs is a
+dependency of a runtime the stack owns, so the stack carries it, once, for every instance with a
+Claude role. What was missing was the fourth case — an OS package only one instance's packages
+need — and that is §113 (`docker/apt/apt.local`).
+
+**What changed.** `poppler-utils` in `docker/agent.Dockerfile` (PR #107); `verify.sh --level
+stack` checks `pdftoppm` answers in the image (`the image carries poppler for the CLI's PDF
+reading`), so an image built without it is named before a step's text does; packages.md says a
+PDF needs no library of the package's. An update rebuilds the image (`release.sh update`).
