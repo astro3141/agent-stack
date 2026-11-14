@@ -30,7 +30,7 @@ Nothing here interprets the workflow. This module answers three questions and no
 installed, where is its entry point, and what does it declare that the stack must set up. The
 graph, the steps and the meaning stay the package's own.
 """
-import json, os, re, sys
+import subprocess, json, os, re, sys
 
 STACK_ROOT = os.environ.get("AGENTSTACK_ROOT", "/work")   # the tree, as settings.ROOT names it
 ROOT = os.environ.get("AGENTSTACK_PACKAGES", os.path.join(STACK_ROOT, "packages"))
@@ -51,7 +51,7 @@ NAME = re.compile(r"[a-z][a-z0-9-]{1,39}")
 # The keys of `requires:` something in this stack reads. A key outside this set is a comment —
 # and two packages carried one for weeks (`principals`, `host_paths`: docs/record/PACKAGE-MATRIX.md),
 # each believing the stack checked something it never looked at. `list` now says so by name.
-KNOWN_REQUIRES = {"capabilities", "env", "egress", "python", "stack", "state"}
+KNOWN_REQUIRES = {"apt", "capabilities", "env", "egress", "python", "stack", "state"}
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
 
 
@@ -397,6 +397,84 @@ def candidates(got):
     return out
 
 
+# a Debian package as docker/apt/apt.local takes it (§113): a name, or name=version
+APT_PKG = re.compile(r"[a-z0-9][a-z0-9+.-]+(=[A-Za-z0-9.+:~-]+)?")
+
+
+def apt_installed():
+    """The Debian packages this runtime has, by name — None where dpkg is not there to ask (a
+    host that is not the image), so a declared package reads as unknown, never as present."""
+    try:
+        p = subprocess.run(["dpkg-query", "-W", "-f=${binary:Package}\n"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    return {l.strip().split(":")[0] for l in p.stdout.splitlines() if l.strip()}
+
+
+def needs_apt(name=None):
+    """What each package needs installed in the image as an OS package, and whether the runtime has
+    it — never installing it (§113, the §101 shape for apt: the package declares, the stack answers,
+    the operator writes the line in docker/apt/apt.local and brings the stack up).
+
+        requires:
+          apt: [tesseract-ocr, "poppler-utils=22.12.0-2+b1"]
+
+    A row is {package, present}: present True/False from dpkg, None where there is no dpkg to ask."""
+    have = apt_installed()
+    out = {}
+    for pkg, p in sorted(installed().items()):
+        if not p["usable"] or (name and pkg != name):
+            continue
+        rows = []
+        for m in ((p.get("requires") or {}).get("apt") or []):
+            spec = str(m).strip()
+            if not APT_PKG.fullmatch(spec):
+                continue
+            base = spec.split("=")[0]
+            rows.append({"package": spec, "present": None if have is None else base in have})
+        if rows:
+            out[pkg] = rows
+    return out
+
+
+def where_from_apt(e):
+    """Where a missing OS package comes from, said to a person: the line in docker/apt/apt.local
+    and a bring-up (§113)."""
+    return f"put `{e['package']}` in docker/apt/apt.local and run scripts/up.sh --recreate"
+
+
+def apt_candidates(got):
+    """The lines for docker/apt/apt.local: declared, not installed (unknown is not a candidate)."""
+    return [e["package"] for items in got.values() for e in items if e["present"] is False]
+
+
+def cmd_apt(a):
+    rest = [x for x in a if not x.startswith("--")]
+    got = needs_apt(rest[0] if rest else None)
+    if "--json" in a:
+        print(json.dumps(got, ensure_ascii=False))
+    elif "--candidates" in a:
+        for c in apt_candidates(got):
+            print(c)
+    elif not got:
+        print("no installed package declares an OS package")
+    else:
+        for pkg, items in got.items():
+            for e in items:
+                state = ("installed" if e["present"] else "unknown — no dpkg here to ask; read it in the agent container"
+                         if e["present"] is None else "MISSING — " + where_from_apt(e))
+                print(f"{pkg:<12} {e['package']:<28} {state}")
+        c = apt_candidates(got)
+        if c:
+            print("\ncandidates for docker/apt/apt.local (declared by a package, not installed):")
+            for line in c:
+                print("  " + line)
+            print("the operator copies them there and runs scripts/up.sh --recreate (OPERATIONS §113)")
+    return 0
+
+
 def cmd_python(a):
     rest = [x for x in a if not x.startswith("--")]
     got = needs_python(rest[0] if rest else None)
@@ -634,6 +712,8 @@ if __name__ == "__main__":
     rows = installed()
     if a[:1] == ["python"]:
         sys.exit(cmd_python(a[1:]))
+    if a[:1] == ["apt"]:
+        sys.exit(cmd_apt(a[1:]))
     if a[:1] == ["egress"]:
         rest = [x for x in a[1:] if not x.startswith("--")]
         got = egress_of(rest[0] if rest else None)

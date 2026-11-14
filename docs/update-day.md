@@ -120,7 +120,7 @@ scripts/up.sh --check
 them up without a rebuild (`up.sh --recreate --no-build`), then checks that every container runs
 the recorded image id: the image is what ran, and nothing is reconstructed. It also restores the
 release's *configuration* — `config/`, `policy/`, and from a format-4 record the instance's own
-inputs, `docker/python/python.local` and `docker/egress/allow.local`, absence included. That half
+inputs, `docker/apt/apt.local`, `docker/python/python.local` and `docker/egress/allow.local`, absence included. That half
 is for the **next** bring-up, which builds from the tree again (`up.sh` always does): with the
 inputs restored it reproduces the release; without them it would drift from it with nothing said.
 The record also keeps `python.freeze`, what the image's venv resolved, to read. An update's

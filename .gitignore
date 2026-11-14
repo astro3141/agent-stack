@@ -88,6 +88,9 @@ docker/egress/allow.local
 # operator's approval list, built into /opt/venv by up.sh, recorded with each release; the
 # stack's own are tracked beside it (docker/python/stack.txt).
 docker/python/python.local
+# The OS packages this instance's packages need in the image (OPERATIONS §113): the same shape,
+# one Debian package per line, installed by the build after the stack's own (docker/apt/README.md).
+docker/apt/apt.local
 docker/egress/profiles/*.allow
 !docker/egress/profiles/closed.allow
 !docker/egress/profiles/probe.allow

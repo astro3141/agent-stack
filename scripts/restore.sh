@@ -246,7 +246,7 @@ fi
 # the instance's own inputs (docker/python/python.local, docker/egress/allow.local — §101):
 # put back where the build and the proxy read them; the next up.sh builds from them
 if untar_host instance-inputs "$STAGE/x-inputs"; then
-  for f in docker/python/python.local docker/egress/allow.local; do
+  for f in docker/apt/apt.local docker/python/python.local docker/egress/allow.local; do
     [ -f "$STAGE/x-inputs/$f" ] || continue
     mkdir -p "$WORKSPACEU/$(dirname "$f")"
     cp "$STAGE/x-inputs/$f" "$WORKSPACEU/$f"

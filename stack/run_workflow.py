@@ -239,6 +239,22 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
                     "dependency belongs in the package instead.",
             "where": {e["module"]: _pk.where_from(e) for _, e in lacking}}, ensure_ascii=False))
         return 3
+    # The same for an OS package the package declares (requires.apt, §113): refused at the start
+    # when the image has not got it; unknown (no dpkg to ask) refuses nothing.
+    try:
+        lacking_apt = [(pkg, e) for pkg, rows in _pk.needs_apt().items()
+                       for e in rows if e["present"] is False and pkg == mine]
+    except Exception:
+        lacking_apt = []
+    if lacking_apt:
+        print(json.dumps({
+            "error": "this workflow's package needs an OS package the image has not got: "
+                     + ", ".join(e["package"] for _, e in lacking_apt),
+            "why": {e["package"]: f"{pkg} declares it in requires.apt" for pkg, e in lacking_apt},
+            "hint": "the operator puts the package in docker/apt/apt.local and runs scripts/up.sh "
+                    "--recreate (OPERATIONS §113); packages.py apt prints the candidates.",
+            "where": {e["package"]: _pk.where_from_apt(e) for _, e in lacking_apt}}, ensure_ascii=False))
+        return 3
     # The stack revision the package says it needs at least (requires.stack.min). Only a floor this
     # checkout verifiably does not contain refuses; "unverifiable" is reported by `packages.py
     # stack` and refuses nothing, because it says nothing about the stack's age.

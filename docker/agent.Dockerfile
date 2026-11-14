@@ -22,6 +22,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates git jq procps iproute2 dnsutils sudo bubblewrap poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# This instance's own OS packages (docker/apt/apt.local, OPERATIONS §113): the stack's are the line
+# above; what only this instance's packages need is in the git-ignored file, one Debian package per
+# line (`name` or `name=version`), read by up.sh before the build and installed here. What the
+# image ends with is left in installed.txt for the release record (apt.installed).
+COPY apt/ /opt/apt/
+RUN if [ -f /opt/apt/apt.local ] && grep -q '^[^#[:space:]]' /opt/apt/apt.local; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        $(sed 's/#.*//' /opt/apt/apt.local | tr -s '[:space:]' ' ') \
+      && rm -rf /var/lib/apt/lists/*; fi \
+    && dpkg-query -W -f='${Package}=${Version}\n' > /opt/apt/installed.txt \
+    && chmod -R a+rX /opt/apt
+
 # A host that intercepts TLS (an endpoint-security product with a root of its own; the first
 # host did, FINDINGS-278 F10) gives the build that root as docker/ca/<name>.crt, git-ignored
 # (docker/ca/README.md). The directory is copied whether or not it holds one, so an ordinary

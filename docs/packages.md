@@ -99,6 +99,7 @@ workflows:                    # or `entry: workflow.yaml` for a single one
 requires:
   capabilities: [tool_rights, egress, record, admission]   # only what your steps use (also `approvals`, probed with the rest): a package with no model call declares [] and runs on a fresh install before any login (hello-lane)
   python: [pydantic, {import: pdfplumber, dist: "pdfplumber==0.11.10"}]   # modules you import that the image must carry — with the distribution, when you know it
+  apt: [tesseract-ocr]          # Debian packages your steps run that the image must carry (§113)
 runbook: RUNBOOK.md           # your operating document — the panel links it under the workflow
 ```
 
@@ -109,6 +110,13 @@ stack will and will not do with it: no container here can reach PyPI (OPERATIONS
 installed for you at run time. What you get is an answer and a refusal — `packages.py python` says
 whether each module is importable, and a run whose package lacks one is refused at the start, naming
 the module, instead of dying on an ImportError inside a step.
+
+**An OS package goes the same way (§113).** A binary your step runs (`tesseract`, `ffmpeg`) is a
+Debian package in `docker/apt/apt.local` — one per line, `name` or `name=version`, git-ignored,
+built into the agent image by `scripts/up.sh --recreate` after the stack's own. Declare it as
+`requires.apt`, and `packages.py apt` says whether the image has it and prints the lines to copy;
+a run whose package lacks one is refused at the start. The stack's own packages stay in the
+Dockerfile: a binary the CLI's own tools need is the stack's (poppler, §112), not yours.
 
 **A PDF needs no library of yours.** The model's own Read tool renders a page with `pdftoppm`,
 which the agent image carries since §112 (a dependency of the CLI the stack owns, not of any
@@ -432,6 +440,7 @@ whose package needs what the stack has not got. These are the keys something rea
 | `env` | environment variables, by name and purpose — never a value | `packages.py needs`, the panel |
 | `egress` | hosts the package's scripts reach | `packages.py egress` (an audit, not a control) |
 | `python` | modules the image must carry — a name, or `{import: <module>, dist: "<distribution>==<version>"}` so the line for `docker/python/python.local` can be printed | `packages.py python` (and `--candidates`), `run_workflow.py start` |
+| `apt` | Debian packages the image must carry — `name` or `name=version`, the line for `docker/apt/apt.local` (§113) | `packages.py apt` (and `--candidates`), `run_workflow.py start` |
 | `stack` | the oldest stack revision the package runs on: `stack: {min: <commit>}` | `packages.py stack`, `run_workflow.py start` |
 | `state` | `state: true` — the package keeps state outside any run, under its own directory (below); `state: "<where>"` — it keeps state with the work, elsewhere, and this says where; `state: {here: true, with_the_work: "<where>"}` — both (#53) | `packages.py state` |
 
@@ -572,6 +581,8 @@ docker/egress/allow.local   one regex per line, git-ignored: the hosts this pack
                             content, never a package's; the two merge at bring-up, §60)
 docker/python/python.local  one pinned distribution per line, git-ignored: the libraries this
                             instance's packages need in the image (built in by up.sh, §101)
+docker/apt/apt.local        one Debian package per line (name or name=version), git-ignored: the
+                            OS packages this instance's packages need in the image (§113)
 ```
 
 Declare the hosts in your manifest as well — `requires: {egress: [api.example.com]}`. That is an
@@ -744,6 +755,15 @@ the package is four steps, and the fourth is the one that pays for the other thr
 
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
+
+**§113 (2026-11-14 — an instance's OS packages are its own: `docker/apt/apt.local`, `requires.apt`).**
+- The §101 shape for Debian packages: the operator's git-ignored list is built into the agent
+  image after the stack's own, read by `up.sh` before the build (a line that is not a package
+  name fails the bring-up; `--check` has the line), kept by a release (`apt.installed` beside
+  `python.freeze`; the file as a member, restored by a rollback, absence included) and by a backup.
+- `requires.apt: [name, "name=version"]` in the manifest; `packages.py apt` says installed /
+  MISSING with the line to copy / unknown where there is no dpkg to ask; `--candidates` prints
+  the lines; `run_workflow.py start` refuses a run whose package lacks one, as for a module.
 
 **§112 (2026-11-14 — the agent image carries poppler; the CLI's Read opens a PDF; #107).**
 - `pdftoppm` is in the image, so a model step can read a PDF page by page with the CLI's own
