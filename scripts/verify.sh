@@ -346,6 +346,14 @@ case "$r" in
     case "$r" in *"Cannot find"*|*"ERR_MODULE"*|*"ERR_REQUIRE"*) bad "the adapter cannot load its toolchain" "$r";; *) ok "the adapter loads with the pinned toolchain (acpx $(docker exec "$STACK-agent" sh -c 'node -p "require(\"/opt/npm-global/lib/node_modules/acpx/package.json\").version"' 2>/dev/null | nocr))";; esac;;
   *) bad "the adapter did not answer in its own shape" "$r";;
 esac
+# The CLI's own Read tool renders a PDF page with pdftoppm (poppler); without it in the image a
+# model step cannot open a PDF, and nothing said so until the step's text did (devflow-draft,
+# OPERATIONS §112). The stack owns the CLI, so it owns what the CLI's tools need.
+pv="$(docker exec "$STACK-agent" sh -c 'pdftoppm -v 2>&1 | head -1' 2>/dev/null | nocr)"
+case "$pv" in
+  *pdftoppm*) ok "the image carries poppler for the CLI's PDF reading ($pv)";;
+  *) bad "the image has no pdftoppm (poppler-utils): a model step cannot read a PDF" "${pv:-not found}";;
+esac
 
 if [ "$LEVEL" = stack ]; then
   echo; echo "stack: $((CHECKS-FAILS))/$CHECKS passed"
