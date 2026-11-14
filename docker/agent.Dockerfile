@@ -15,8 +15,11 @@
 # toolchain; a release is a revision plus image ids plus configuration (scripts/release.sh).
 FROM python:3.13-slim-bookworm
 
+# poppler-utils: Claude Code reads a PDF page by page with pdftoppm, and a draft has to read the
+# official criteria (KISA guide PDF) itself — without it the drafter could not open p.62 of U-30 and
+# left the criterion as a contract gap (devflow-draft pilot3-u30).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates git jq procps iproute2 dnsutils sudo bubblewrap \
+      curl ca-certificates git jq procps iproute2 dnsutils sudo bubblewrap poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # A host that intercepts TLS (an endpoint-security product with a root of its own; the first
