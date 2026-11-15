@@ -6438,3 +6438,8 @@ operator works on is theirs; the update says what it did and what moves it witho
 **Measured.** The servers review check gains the record, the same content with newer clocks
 (nothing stale against the record; two named without one), changed content (the clock rule),
 a missing and a broken record, and the command's two forms as up.sh calls them.
+**Cold-start run 175 green** on 8e1d665: every `stack/**/*.py` touched → `none`; a new file → `expected
+none, got agentstack-broker agentstack-agent-probe agentstack-agent-closed agentstack-replay`, the
+bring-up restarting them, `none` after, and `none` again once the file was removed. Static 14/14,
+pins unchanged (51 / 167). The live proof is the next update: the workspace line, then a
+`git checkout main` with the server line still `none`.
