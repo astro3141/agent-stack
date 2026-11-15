@@ -1693,6 +1693,30 @@ def servers_controls():
           ss.stale(str(root / "stack"), lines) == ["s-broker"], ss.stale(str(root / "stack"), lines))
     check("servers: docker's RFC 3339 with nanoseconds is read to the second, and a bad one is None",
           ss.started("2026-10-06T06:33:47.491710600Z") == 1791268427 and ss.started("yesterday") is None)
+    # §117: content first. The record up.sh writes when it starts the servers; the same content
+    # rewritten later (every clock newer than every server) names nobody; changed content does
+    rec_path = root / "servers-code.json"
+    rec = ss.write_record(str(rec_path), str(root / "stack"), lines, now=1_700_000_000)
+    check("servers: the record is the tree's fingerprint, when, and the servers' names",
+          (rec["fingerprint"] == ss.fingerprint(str(root / "stack")), rec["at"], rec["servers"],
+           ss.read_record(str(rec_path)) == rec), (True, "2023-11-14T22:13:20Z", ["s-broker", "s-agent-closed", "s-odd", "s-only"], True))
+    os.utime(root / "stack" / "broker.py", (1_800_000_000, 1_800_000_000))              # rewritten, same bytes, long after every server
+    check("servers: the same content with newer clocks is not stale against the record; without a record the clock rule names it",
+          (ss.stale(str(root / "stack"), lines, ss.read_record(str(rec_path))), ss.stale(str(root / "stack"), lines, None)),
+          ([], ["s-broker", "s-agent-closed"]))
+    (root / "stack" / "broker.py").write_text("y")
+    check("servers: changed content falls back to the clock rule — the servers that started before it are named",
+          ss.stale(str(root / "stack"), lines, ss.read_record(str(rec_path))) == ["s-broker", "s-agent-closed"])
+    check("servers: a missing or broken record is no record", ss.read_record(str(root / "none.json")) is None
+          and ((root / "bad.json").write_text("[1]") or ss.read_record(str(root / "bad.json")) is None))
+    (root / "stack" / "broker.py").write_text("x")
+    cli = subprocess.run([sys.executable, str(HERE / "stale_servers.py"), str(root / "stack"), "--record", str(rec_path)],
+                         input="\n".join(lines), capture_output=True, text=True, timeout=30)
+    cli2 = subprocess.run([sys.executable, str(HERE / "stale_servers.py"), str(root / "stack"), "--write", str(root / "w.json")],
+                          input="\n".join(lines), capture_output=True, text=True, timeout=30)
+    check("servers: the command compares against --record and writes with --write, as up.sh calls it",
+          (cli.stdout.strip(), cli.returncode, cli2.returncode, ss.read_record(str(root / "w.json"))["fingerprint"] == rec["fingerprint"]),
+          ("", 0, 0, True))
 
     brk = (WORK / "stack" / "broker.py").read_text()
     fn_src = brk[brk.index("def runner_answer(url, job, timeout):"):brk.index("class H(BaseHTTPRequestHandler):")]

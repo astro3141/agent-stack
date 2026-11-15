@@ -490,6 +490,13 @@ names the server.
 (`== stack servers started before this code — restarting: …`). A running brokered call on a
 restarted server ends with the process; bring the stack up between runs.
 
+**Since §117 the judgement is by content.** `up.sh` records a fingerprint of `stack/**/*.py` when
+it starts or restarts the servers (`evidence/ops/servers-code.json`); a tree with the same
+fingerprint has no stale server whatever the files' clocks say. A `git checkout` of the same
+content, a fast-forward after an update, a copy — none of these name a server any more (the live
+instance's `--check` named six after one, 2026-11-15). The clock rule still decides when the
+content changed or there is no record.
+
 ## Disk keeps growing
 
 ```bash

@@ -96,12 +96,24 @@ in_agent_stdin() { docker exec -i "$STACK-agent" sh -c "$1" 2>/dev/null; }
 # as long-lived processes; a bring-up that rebuilt no image leaves them on the code they started
 # with (devflow, #91: half the path on §102, a brokered call COMPLETED with no schema). This names
 # the ones whose process predates the newest stack file: the bring-up restarts them, --check says.
-stale_servers() {
+# The judgement is by content first (§117): what the servers run is recorded when this script
+# starts or restarts them (evidence/ops/servers-code.json, a fingerprint of stack/**/*.py), and a
+# tree with the same fingerprint has no stale server whatever the files' clocks say — a `git
+# checkout` of the same content tripped the clock rule on the live instance. Without a record, or
+# with the content changed, the clock rule decides.
+SERVERS_RECORD=/work/evidence/ops/servers-code.json
+server_lines() {
   docker ps --filter "name=^${STACK}-" --format '{{.Names}}' 2>/dev/null | while read -r c; do
     case "$(docker inspect -f '{{join .Config.Cmd " "}}' "$c" 2>/dev/null)" in
       *"/work/stack/"*) echo "$c $(docker inspect -f '{{.State.StartedAt}}' "$c" 2>/dev/null)";;
     esac
-  done | in_agent_stdin "$PY_IN_AGENT /work/stack/stale_servers.py /work/stack"
+  done
+}
+stale_servers() {
+  server_lines | in_agent_stdin "$PY_IN_AGENT /work/stack/stale_servers.py /work/stack --record $SERVERS_RECORD"
+}
+record_servers() {   # what the servers run now: written after they were started or restarted
+  server_lines | in_agent_stdin "$PY_IN_AGENT /work/stack/stale_servers.py /work/stack --write $SERVERS_RECORD" || true
 }
 
 # The instance's own Python libraries go into the image at build (docker/python/python.local,
@@ -215,6 +227,7 @@ if [ "$MODE" != "--check" ]; then
     echo "== stack servers started before this code — restarting:${_stale:+ }${_stale% }"
     docker restart $_stale >/dev/null || exit 1
   fi
+  record_servers    # the code they run now, for the next --check to compare by content (§117)
   echo "== Preloop (+ PoC network attachment)"
   docker compose --project-directory "$PRELOOP_DIR" -p "$PRELOOP_PROJECT" \
     -f "$PRELOOP_DIR/docker-compose.yaml" -f "$PRELOOP_DIR/docker-compose.auth.yaml" \

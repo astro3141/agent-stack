@@ -6403,3 +6403,38 @@ where it means content. Left as a candidate: a fingerprint of the files the serv
 recorded when up.sh starts them, compared on `--check`; and `release.sh update` ending with the
 line that the tree is detached at the target while `main` is behind (`git branch -f main
 $(git rev-parse HEAD) && git checkout main` moves the branch without rewriting a file).
+
+## 117. The stale-server check judges by content, and an update says where the branch is (2026-11-15)
+
+After the 11/15 update the operator did what the tree invites — `git checkout main`, then a
+fast-forward — and `up.sh --check` named six servers (`agentstack-agent-probe … agentstack-broker
+agentstack-replay`) as started before this checkout's code. The update itself had passed the line
+(`none`). The checkout had rewritten the changed files twice, there and back, with the same
+content and new modification times, and `stale_servers.py` judged by the newest `.py` mtime
+against each server's start (§103). Not a coverage gap of §103; a check reading a clock where it
+means content.
+
+**What changed.**
+- `stale_servers.py`: `fingerprint(root)` — one sha256 over every `.py` under the stack
+  directory, relative path and bytes in path order. `up.sh` writes `evidence/ops/servers-code.json`
+  (`fingerprint`, `at`, `servers`) right after it starts or restarts the servers (`--write`),
+  and the check compares (`--record`): a tree whose fingerprint is the record's has no stale
+  server, whatever the clocks say; otherwise, or without a record, the clock rule as before. A
+  server restarted by hand after a change is still judged right by the clock rule (it started
+  after the change).
+- `release.sh update` ends with the workspace line when a branch is behind: `detached at <rev>;
+  main is at <x> — git branch -f main <rev> && git checkout main moves it without rewriting a
+  file`. The update's semantics are unchanged: a release is a revision.
+- The cold start reproduces the operator's case — every `stack/**/*.py` touched, nothing changed
+  — and requires `ok`; the real-change case now writes a new file under `stack/` (content the
+  servers never read) instead of touching one, requires the FAIL, the restart, the `ok`, and after
+  the file is removed the `ok` again by the clock rule.
+- Docs: runbook (the §103 entry's new paragraph), update-day.md (the tree after an update).
+
+**Not changed, and why.** No fingerprint recorded by each server itself: four programs would
+carry it where one script starts them. No automatic move of the branch: which branch the
+operator works on is theirs; the update says what it did and what moves it without a rewrite.
+
+**Measured.** The servers review check gains the record, the same content with newer clocks
+(nothing stale against the record; two named without one), changed content (the clock rule),
+a missing and a broken record, and the command's two forms as up.sh calls them.
