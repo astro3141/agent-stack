@@ -633,6 +633,7 @@ def login_of(name):
 
         login:
           argv: [gh, auth, login, --hostname, github.com, --web]
+          reconnect_argv: [gh, auth, refresh, --hostname, github.com]   # optional: renew a connected login (§115)
           home_env: [GH_CONFIG_DIR]
           done_when: {file: hosts.yml}
           purpose: one line for the screen
@@ -651,7 +652,14 @@ def login_of(name):
     done = (d.get("done_when") or {}).get("file") or ""
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", str(done)):
         return {}
-    return {"package": name, "argv": argv,
+    # How the login is renewed when it is already connected (§115, #106): the package's own argv for
+    # that — its flow removes what it minted and mints again; the platform never touches the file.
+    # The same character rule as argv; a line that breaks it leaves the login offered and the
+    # renewal not (the panel says so), rather than disabling the login.
+    rc = [str(x) for x in (d.get("reconnect_argv") or [])]
+    if not rc or not all(SAFE_ARG.fullmatch(x) for x in rc):
+        rc = []
+    return {"package": name, "argv": argv, "reconnect_argv": rc,
             "home_env": [str(x) for x in (d.get("home_env") or []) if re.fullmatch(r"[A-Z][A-Z0-9_]{1,40}", str(x))],
             "done_when_file": str(done), "purpose": str(d.get("purpose") or "")}
 

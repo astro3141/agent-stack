@@ -579,7 +579,12 @@ async function pkgLoginState(pkg) {
   const el = $("#pkg-login-state"); if (!el) return;
   const r = await fetch(`/api/packages/${pkg}/login`).then((x) => x.json()).catch(() => null);
   if (!r) { el.textContent = ""; return; }
-  el.innerHTML = r.state === "connected" ? "연결됨"
+  // a connected login is renewed, not connected again (§115): the button says so and runs the
+  // package's own reconnect flow; a package that declares none is told so in words
+  const b = $("#pkg-login");
+  if (b) { b.textContent = r.state === "connected" ? "재연결" : "연결";
+           b.onclick = () => (r.state === "connected" ? pkgReconnect(pkg) : pkgLogin(pkg)); }
+  el.innerHTML = r.state === "not_offered" ? esc(r.error || "재연결을 선언하지 않은 패키지") : r.state === "connected" ? "연결됨"
     : r.url ? `열기: <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>`
               + (r.user_code ? ` · 코드 <code>${esc(r.user_code)}</code>` : "")
     : esc(r.state || "");
@@ -591,6 +596,11 @@ async function pkgLoginState(pkg) {
   }
 }
 async function pkgLogin(pkg) { await api(`/api/packages/${pkg}/login`, {}); setTimeout(() => pkgLoginState(pkg), 1500); }
+async function pkgReconnect(pkg) {
+  const r = await api(`/api/packages/${pkg}/reconnect`, {});
+  if (r && r.state === "not_offered") { $("#pkg-login-state").textContent = r.error || ""; return; }
+  setTimeout(() => pkgLoginState(pkg), 1500);
+}
 $("#wf").onchange = renderInputs;
 // ---- runs
 async function loadRuns() {

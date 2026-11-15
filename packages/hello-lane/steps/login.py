@@ -12,7 +12,9 @@ write whatever the service mints. The shape the platform needs is the same eithe
   print a URL and a code, ask for the code back, write the file the manifest names.
 
 What a repeat of this step does (OPERATIONS §17): "guarded" — a login directory that already holds
-the file is reported as connected and the flow is not started again.
+the file is reported as connected and the flow is not started again. `--reconnect` (§115) is the
+renewal the panel's 재연결 runs: this step removes the file it minted and runs the flow again — the
+platform never touches the file, the flow that wrote it does.
 """
 REPEATABLE = "guarded"
 import json
@@ -29,6 +31,9 @@ def main():
         print("HELLO_LOGIN_DIR is not set: the platform points it at this login's directory")
         return 2
     path = os.path.join(HOME, TOKEN)
+    if "--reconnect" in sys.argv[1:] and os.path.isfile(path):
+        os.remove(path)
+        print("renewing: the earlier token is removed, a new one follows")
     if os.path.isfile(path) and os.path.getsize(path) > 0:
         print("already logged in")
         return 0
