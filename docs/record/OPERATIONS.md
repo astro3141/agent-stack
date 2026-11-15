@@ -6327,6 +6327,9 @@ that always passed, braces and quotes, a path, 201 characters, shell characters,
 that mechanism, and with the rule widened a request that fits a line needs nothing; one that does
 not is a file either way. The bound stays at 200: an argv element is not where a document goes.
 
+**Measured.** `inputs_controls` 7/7; review 350/350, trial 565/565; pins unchanged (51 / 167); static
+13/13. **Cold-start run 171 green** on 38bfe53 (with §115).
+
 ## 115. A package login is renewed from the panel: `login.reconnect_argv` (#106, 2026-11-15)
 
 devflow's GitHub App gained a permission (Gists); the token it had kept the permissions it was
@@ -6357,3 +6360,5 @@ would have the platform touch a credential file for the first time.
 line in `reconnect_argv` (login offered, renewal not), the ops route recorded as
 `login_helper reconnect pkg:hello-lane` and nothing else, and the step driven twice on a temporary
 login directory. devflow's `github_login.py --reconnect` fits the key as it stands.
+**Cold-start run 171 green** on 38bfe53 (trial 565/565, stack 26/26). The live proof is devflow's
+next permission change: `reconnect_argv` declared, 재연결 pressed, the probe answering 422.
