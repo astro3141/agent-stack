@@ -59,6 +59,12 @@ scripts/verify.sh --level full              # the checks, the three control suit
                                             # controls and floors, then hello-lane, auto and novel-a
 ```
 
+After the update the workspace is **detached at the target revision** — a release is a revision,
+not a branch — and the branch you work on is where it was; `update` says so at the end, with the
+move that rewrites no file (`git branch -f main <rev> && git checkout main`). A plain `git checkout
+main` from there rewrites the changed files twice, there and back; that is harmless since §117
+(the stale-server check compares content, not clocks).
+
 Every tool is the image's (`/opt`, #34, §76): the rebuild and the recreate that `update` does are
 what change claude-code, Conductor, the Preloop CLI and the provider CLIs alike, and `update` lists
 what will change before it moves anything (`will change claude '2.1.278' -> '2.1.287'`). There is

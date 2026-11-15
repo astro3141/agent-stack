@@ -109,15 +109,29 @@ jobs:
 
       # A server whose process predates the code it serves (§103, #91): made stale by touching a
       # stack file, named by --check, restarted by the bring-up, clean after.
+      # §117: the same content rewritten (a git checkout, a fast-forward) is not a stale server —
+      # the live instance's --check named six after one. Every stack file touched, nothing changed.
+      - name: the stack's files rewritten with the same content are not stale servers
+        run: |
+          set -o pipefail
+          sleep 1; find stack -name '*.py' -exec touch {} +
+          (bash scripts/up.sh --check 2>&1 || true) | grep "the stack's servers run this checkout's code" | tee /tmp/servers.log
+          grep -q "ok    the stack's servers run this checkout's code" /tmp/servers.log
+          test -s evidence/ops/servers-code.json
+
+      # a real change: a new file under stack/ is content the servers never read
       - name: a stale stack server is named by --check and restarted by up.sh
         run: |
           set -o pipefail
-          sleep 1; touch stack/profile_runner.py
-          (bash scripts/up.sh --check 2>&1 || true) | grep "the stack's servers run this checkout's code" | tee /tmp/servers.log
+          sleep 1; printf '# a change the running servers never read (cold start, §103/§117)\n' > stack/zz_cold_start_change.py
+          (bash scripts/up.sh --check 2>&1 || true) | grep "the stack's servers run this checkout's code" | tee -a /tmp/servers.log
           grep -q "FAIL  the stack's servers run this checkout's code" /tmp/servers.log
           (bash scripts/up.sh 2>&1 || true) | grep -E "stack servers started before this code|the stack's servers run this checkout's code" | tee -a /tmp/servers.log
           grep -q "restarting:" /tmp/servers.log
           grep -q "ok    the stack's servers run this checkout's code" /tmp/servers.log
+          rm stack/zz_cold_start_change.py
+          (bash scripts/up.sh --check 2>&1 || true) | grep "the stack's servers run this checkout's code" | tee -a /tmp/servers.log
+          test "$(grep -c "ok    the stack's servers run this checkout's code" /tmp/servers.log)" = 3
 
       # The stack is up and nobody is signed in: exactly the `stack` level of scripts/verify.sh —
       # the checks, the three control suites, package locks and controls, one hello-lane run.

@@ -393,6 +393,14 @@ update_move() {
     echo "  scripts/release.sh rollback --to <tag>   (scripts/release.sh list)" >&2
     exit 1; }
   for t in $TOOLS; do say "$t" "$(tool_running "$t")"; done
+  # The workspace is now detached at the target (a release is a revision, not a branch); the branch
+  # the operator works on is where it was. Said here, with the move that rewrites no file — a
+  # `git checkout <branch>` from here rewrites the changed files twice (there and back), which the
+  # §103 check read as stale servers until §117 compared content.
+  _branch="$(git_here for-each-ref --format='%(refname:short) %(objectname:short)' refs/heads/main refs/heads/master 2>/dev/null | head -1)"
+  if [ -n "$_branch" ] && [ "${_branch##* }" != "$(git_here rev-parse --short HEAD)" ]; then
+    say "workspace" "detached at $(git_here rev-parse --short HEAD); ${_branch%% *} is at ${_branch##* } — git branch -f ${_branch%% *} $(git_here rev-parse --short HEAD) && git checkout ${_branch%% *} moves it without rewriting a file"
+  fi
   echo
   echo "update done. If it misbehaves, go back with:"
   echo "  scripts/release.sh rollback --to <tag>   (scripts/release.sh list)"
