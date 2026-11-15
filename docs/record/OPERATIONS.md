@@ -6383,7 +6383,8 @@ requirement the stack had and never said.
   running stack they run in the agent container and need nothing) — are skipped by name when it
   is 0, so the one cause is one FAIL and not four with tracebacks. Measured with a one-word
   interpreter without its site-packages: 9/11 with two tracebacks before, one named FAIL and
-  three skips after; 14/14 with PyYAML.
+  three skips after; 14/14 with PyYAML. **Cold-start run 173 green** on 9ba501c: the runner's host check says
+  `python with PyYAML  python3`, verify `the host's Python has PyYAML`, stack 27/27, review 353/353.
 - docs/install.md: the host table has the row.
 - The review `instance` group runs `yaml_py` on this host and on a host whose interpreters import
   no yaml (`-S`, an empty PATH), and the gate with both interpreters.
