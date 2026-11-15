@@ -236,10 +236,14 @@ with `rows` is stored and counted as **zero**, so the record reads as "nothing k
 **5. Refuse, do not degrade.** If what the step needs is absent, say so in the output and let the
 workflow's graph decide. A step that carries on with less produces a result nobody can read back.
 
-**6. Data comes in by name, not by path.** Run inputs are letters, digits, dot, underscore, hyphen
-and space (arguments reach Conductor as an argv list and are never shell-interpreted), so a path
-cannot be an input. Put the file in the **hand-in directory** — `/work/handoff/` — and pass its
-name:
+**6. Data comes in by name, not by path.** A run input is a short value: letters of any script
+and digits, space and the sentence punctuation `. , : ! ? ( ) _ -`, up to 200 characters (§114 —
+until then "letters" meant ASCII, and a request in Korean was refused). Arguments reach Conductor
+as an argv list and are never shell-interpreted, so what is refused is refused by shape: braces,
+quotes, slashes and shell characters. A path cannot be an input, and neither can free text that
+needs more than that — a longer request, a document, anything with those characters. Put the file
+in the **hand-in directory** — `/work/handoff/` — and pass its name; the refusal says so whatever
+it refused:
 
 ```bash
 cp acyc-2026-04-10.json <repo>/handoff/
@@ -624,6 +628,7 @@ the way it drives a provider's login (OPERATIONS §44).
 login:
   purpose: one line, shown on the screen
   argv: [gh, auth, login, --hostname, github.com, --web]   # a program and its arguments
+  reconnect_argv: [gh, auth, refresh, --hostname, github.com]   # optional: how a connected login is renewed (§115)
   home_env: [GH_CONFIG_DIR]      # pointed at this login's own directory
   done_when: {file: hosts.yml}   # connected when this is there
 ```
@@ -633,6 +638,15 @@ the URL and the device code off its output, hands back the one-time code the ope
 through a FIFO, never to disk, never logged — and calls it connected when your file appears.
 **Nothing here ever opens that file**: whatever the flow mints is written by the thing that ran it,
 and read back only by your steps, through `home_env`.
+
+**Renewing a login (§115).** A token keeps the permissions it was granted: when the app behind it
+gains one (devflow's GitHub App gained *Gists*, #106), the login has to be authorised again, and a
+connected login's **연결** does nothing — `done_when` is there, so the flow reports "already logged
+in", by design. Declare `reconnect_argv`: the panel shows **재연결** on a connected package login,
+the way it does for a provider, and runs exactly that. Your flow removes what it minted and mints
+again (`packages/hello-lane/steps/login.py --reconnect` is the worked example); the platform runs
+the argv and touches no file in the login directory, now as before. A package that declares none
+is told so on the screen, in words, and nothing is run.
 
 Two limits worth knowing. The program has to exist in the governed runtime image, so this is for a
 CLI the stack already carries or a step of your own (`packages/hello-lane/steps/login.py` is a worked
@@ -755,6 +769,18 @@ the package is four steps, and the fourth is the one that pays for the other thr
 
 Newest first. "Nothing to change" means the contract above already covers it; it is listed so a
 behaviour you notice has a name.
+
+**§115 (2026-11-15 — a package login is renewed from the panel: `login.reconnect_argv`; #106).**
+- Declare `reconnect_argv` beside `argv`: a connected package login shows **재연결**, and the
+  panel runs exactly that (`POST /api/packages/<name>/reconnect`). Your flow removes what it
+  minted and mints again; the platform touches no file. Without the key the button says so and
+  runs nothing. hello-lane's `login.py --reconnect` is the worked example.
+
+**§114 (2026-11-15 — a run input takes a sentence in any script; #105).**
+- The value rule is shape, not alphabet: letters of any script and digits, space and
+  `. , : ! ? ( ) _ -`, up to 200. Braces, quotes, slashes and shell characters are still refused.
+  Every refusal names the hand-in as the way in, not only a path's; over 200 says the length.
+  A package that built a `request_file=` hand-in keeps working; a short request needs none now.
 
 **§113 (2026-11-14 — an instance's OS packages are its own: `docker/apt/apt.local`, `requires.apt`).**
 - The §101 shape for Debian packages: the operator's git-ignored list is built into the agent

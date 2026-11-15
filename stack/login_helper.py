@@ -38,8 +38,20 @@ def package_login(target):
     return packages.login_of(target[4:]) or None
 
 
-def provider_cmd(provider, home):
-    """The official login command and environment. Nothing else is ever executed."""
+def not_offered(pkg):
+    """Why a package login cannot be renewed from the panel (§115): the manifest names no
+    `reconnect_argv`. None when it can."""
+    if pkg and not pkg.get("reconnect_argv"):
+        return (f"{pkg['package']} declares no login.reconnect_argv: a connected login is renewed by "
+                "the package's own flow, and the manifest has to name it (docs/packages.md, "
+                "\"Renewing a login\")")
+    return None
+
+
+def provider_cmd(provider, home, reconnect=False):
+    """The official login command and environment. Nothing else is ever executed. `reconnect` is
+    the renewal of a connected login (§115): a package's `reconnect_argv`, a provider's own login
+    command again (their CLIs replace what they hold)."""
     env = {**os.environ, **settings.egress_env(RT)}
     pkg = package_login(provider)
     if pkg:
@@ -48,6 +60,11 @@ def provider_cmd(provider, home):
         env.update({k: str(home) for k in pkg["home_env"]})
         env["HOME"] = str(home / "home")
         (home / "home").mkdir(parents=True, exist_ok=True)
+        if reconnect:
+            why = not_offered(pkg)
+            if why:
+                raise SystemExit(json.dumps({"error": why}))
+            return list(pkg["reconnect_argv"]), env
         return list(pkg["argv"]), env
     if provider == "claude":
         env["CLAUDE_CONFIG_DIR"] = str(home)
@@ -114,11 +131,15 @@ def parse(text, provider):
     return {"url": url, "user_code": code, "needs_code": needs_code, "success_text": ok}
 
 
-def cmd_start(provider, login):
+def cmd_start(provider, login, reconnect=False):
     p = paths(provider, login)
     st = json.loads(p["state"].read_text()) if p["state"].exists() else {}
     if st.get("pid") and Path(f"/proc/{st['pid']}").exists():
         return {"state": "running", "note": "a login is already in progress"}
+    if reconnect:
+        why = not_offered(package_login(provider))
+        if why:
+            return {"state": "not_offered", "error": why}
     p["home"].mkdir(parents=True, exist_ok=True)
     os.chmod(p["home"], 0o700)
     for f in ("log", "fifo"):
@@ -129,7 +150,7 @@ def cmd_start(provider, login):
         time.sleep(1.5)
         return {"state": "started"}
     os.setsid()
-    cmd, env = provider_cmd(provider, p["home"])
+    cmd, env = provider_cmd(provider, p["home"], reconnect)
     pid, fd = pty.fork()
     if pid == 0:
         os.execvpe(cmd[0], cmd, env)
@@ -232,6 +253,9 @@ if __name__ == "__main__":
                           "rule": "a provider (claude | codex | grok), or pkg:<name> for an "
                                   "installed package that declares `login:` in its manifest"}))
         sys.exit(2)
-    out = {"start": cmd_start, "status": cmd_status, "code": cmd_code, "cancel": cmd_cancel}[action](provider, login)
+    if action == "reconnect":                     # §115: renew a connected login
+        out = cmd_start(provider, login, reconnect=True)
+    else:
+        out = {"start": cmd_start, "status": cmd_status, "code": cmd_code, "cancel": cmd_cancel}[action](provider, login)
     if out is not None:
         print(json.dumps(out))

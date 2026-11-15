@@ -22,6 +22,7 @@ Routes
   GET  /api/packages                      what each installed package needs, and the login it declares
   GET  /api/packages/<name>/login         where that login stands: url, code, state
   POST /api/packages/<name>/login         start it     POST …/code {"code": "..."}     POST …/cancel
+  POST /api/packages/<name>/reconnect     renew a connected login with the package's reconnect_argv (§115)
 """
 import json, os, re, subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -266,12 +267,17 @@ class H(BaseHTTPRequestHandler):
             if not isinstance(code, str) or not code.strip() or len(code) > 2000:
                 return self._send(400, {"error": "missing code"})
             return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "code", prov, login], stdin=code))
-        m = re.fullmatch(r"/api/packages/([a-z][a-z0-9-]{1,39})/(login|code|cancel)", p)
+        m = re.fullmatch(r"/api/packages/([a-z][a-z0-9-]{1,39})/(login|code|cancel|reconnect)", p)
         if m:
             pkg, act = m.groups()
             target = "pkg:" + pkg
             if act == "login":
                 return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "start", target],
+                                             timeout=60))
+            if act == "reconnect":
+                # a connected login renewed by the package's own flow (reconnect_argv, §115): the
+                # helper refuses when the manifest names none, and this passes that answer on
+                return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "reconnect", target],
                                              timeout=60))
             if act == "cancel":
                 return self._send(200, jexec([PY, f"{STACK}/login_helper.py", "cancel", target]))

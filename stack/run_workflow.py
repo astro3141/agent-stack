@@ -140,7 +140,39 @@ def described():
 
 
 WORKFLOWS = known()
-SAFE = re.compile(r"[A-Za-z0-9._\- ]{0,200}")
+# A run input's value (§114, #105). It reaches Conductor as one element of an argv list and is never
+# shell-interpreted, so the rule is about shape, not escaping: letters of any script and digits
+# (\w — Hangul is letters; the rule read "letters" and meant ASCII until devflow's request was
+# refused), space and sentence punctuation. What stays out is what has another meaning on the
+# way: braces (templates), quotes and shell characters, slashes (a path is handed in by name,
+# docs/packages.md item 6). Up to 200 characters: longer free text goes in as a hand-in too.
+SAFE = re.compile(r"[\w .,:!?()\-]{0,200}")
+SAFE_RULE = ("a value is letters (any script) and digits, space and . , : ! ? ( ) _ - — up to 200 "
+             "characters; arguments reach Conductor as an argv list and are never shell-interpreted, "
+             "so braces, quotes, slashes and shell characters are refused by shape, not escaped")
+HAND_IN = ("put the text or file in the hand-in directory and pass its name as the input "
+           "(docs/packages.md item 6, step.handoff)")
+
+
+def input_problem(k, v):
+    """Why a `k=v` pair is refused, as the answer the caller reads, or None when it is taken. A
+    refusal names the rule, what broke it (the characters, or the length) and where the data goes
+    instead — for every refusal, not only a path's (#105: a Korean sentence got an empty hint)."""
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,29}", k):
+        return {"error": f"invalid input name {k!r}", "rule": "an input name is [a-z][a-z0-9_] of up to 30"}
+    if SAFE.fullmatch(v):
+        return None
+    bad = sorted({c for c in v if not SAFE.fullmatch(c)})
+    out = {"error": f"invalid value for input {k!r}", "rule": SAFE_RULE, "refused_characters": bad}
+    if len(v) > 200:
+        out["length"] = len(v)
+    if "/" in v or "\\" in v:
+        out["hint"] = "a path cannot be passed as an input; " + HAND_IN
+    elif bad:
+        out["hint"] = "free text with those characters is a hand-in: " + HAND_IN
+    else:
+        out["hint"] = f"free text over 200 characters ({len(v)}) is a hand-in: " + HAND_IN
+    return out
 
 
 # The run's state (meta, launcher, checkpoints) and its event log have readers of their own:
@@ -282,19 +314,9 @@ def cmd_start(ui, workflow, profile, pairs, allow_unrecorded=False, suite="", ca
         # A refusal that does not name the rule sends the reader into the source: a path in
         # `packet_from` was refused as "invalid input" and finding out that `/` is not allowed
         # meant opening this file (reported from the second machine, OPERATIONS §33).
-        if not re.fullmatch(r"[a-z][a-z0-9_]{0,29}", k):
-            print(json.dumps({"error": f"invalid input name {k!r}",
-                              "rule": "an input name is [a-z][a-z0-9_] of up to 30"})); return 2
-        if not SAFE.fullmatch(v):
-            bad = sorted({c for c in v if not SAFE.fullmatch(c)})
-            print(json.dumps({"error": f"invalid value for input {k!r}",
-                              "rule": "a value is letters, digits, dot, underscore, hyphen or "
-                                      "space, up to 200 — arguments reach Conductor as an argv "
-                                      "list and are never shell-interpreted",
-                              "refused_characters": bad,
-                              "hint": ("a path cannot be passed as an input; put the file in the "
-                                       "hand-in directory and pass its name (docs/packages.md)"
-                                       if "/" in v else "")}, ensure_ascii=False)); return 2
+        problem = input_problem(k, v)
+        if problem:
+            print(json.dumps(problem, ensure_ascii=False)); return 2
         inputs[k] = v
     d = run_dir(ui)
     tmp = d / "tmp"

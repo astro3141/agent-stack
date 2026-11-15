@@ -1492,6 +1492,31 @@ def pinkind_controls():
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- 25b. a run input in any script (§114)
+def inputs_controls():
+    """A run input's value is judged by shape, not by alphabet (§114, #105): a sentence in Korean is
+    taken, braces, quotes, slashes and shell characters are refused by name, and every refusal says
+    where the data goes instead. Driven through `input_problem`, the function the start path uses."""
+    rw = importlib.import_module("run_workflow")
+    ok = rw.input_problem("request", "KISA U-17 항목을 점검해 주세요: root 계정, 원격 접속 (ssh) 포함!")
+    check("inputs: a Korean sentence with sentence punctuation is taken", ok is None, ok)
+    check("inputs: the ASCII values that always passed still pass",
+          rw.input_problem("mode", "live") is None and rw.input_problem("packet_from", "acyc-2026-04-10.json") is None)
+    r = rw.input_problem("request", "run {{inputs.x}} and 'quote' it")
+    check("inputs: braces and quotes are refused by name, the rule says shape not alphabet, the hint names the hand-in",
+          r and r["refused_characters"] == ["'", "{", "}"] and "any script" in r["rule"] and "hand-in" in r["hint"], r)
+    r = rw.input_problem("packet_from", "/tmp/acyc.json")
+    check("inputs: a path is refused with the path hint, as before",
+          r and r["refused_characters"] == ["/"] and r["hint"].startswith("a path cannot be passed"), r)
+    r = rw.input_problem("request", "가" * 201)
+    check("inputs: over 200 characters is refused with the length and the hand-in hint, no character blamed",
+          r and r.get("length") == 201 and r["refused_characters"] == [] and "over 200 characters (201)" in r["hint"], r)
+    r = rw.input_problem("request", "a; rm -rf x | cat $HOME `id`")
+    check("inputs: shell characters are refused by shape", r and r["refused_characters"] == ["$", ";", "`", "|"], r)
+    r = rw.input_problem("Bad-Name", "x")
+    check("inputs: a name is still [a-z][a-z0-9_]", r and "invalid input name" in r["error"], r)
+
+
 # ---------------------------------------------------------------- 26. the instance's Python libraries (§101)
 def pylocal_controls():
     """A package's libraries come from the instance's own docker/python/python.local, not the stack's
@@ -2036,6 +2061,7 @@ entry_controls()
 diagram_controls()
 continuation_controls()
 refresh_controls()
+inputs_controls()
 failed = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(failed)}/{len(results)} passed")
 sys.exit(1 if failed else 0)

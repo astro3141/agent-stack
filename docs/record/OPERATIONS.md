@@ -6300,3 +6300,60 @@ member; `requires.apt` rows from a dpkg stand-in, the table, `--candidates`, unk
 static 13/13; pins unchanged (51 / 167). **Cold-start run 168 green** on 72d3d3b: `tree` built in from
 apt.local, read back from the image and `installed.txt`, the `--check` line, the release's three
 inputs and `apt.installed`, the rollback restoring both files.
+
+## 114. A run input takes a sentence in any script: the rule is shape, not alphabet (#105, 2026-11-15)
+
+devflow-draft takes a person's request in their own words and drafts an issue from it; the request
+was in Korean and `run_workflow.py start` refused it — `SAFE` was `[A-Za-z0-9._\- ]{0,200}`, the
+page said "letters", and the `hint` was empty because it named the hand-in only for a value with a
+`/`. devflow read the source to learn that letters meant ASCII and built `request_file=` around it.
+
+**Measured.** A value reaches Conductor as one element of an argv list (`-i k=v`) and is never
+shell-interpreted; the rule protects against shape that has another meaning on the way — braces
+(templates), quotes and shell characters, slashes (a path is handed in by name) — and nothing in
+that reasoning excludes a script. The 200-character bound stays: a value is a short argument, a
+longer text is a hand-in.
+
+**What changed.** `SAFE` is `[\w .,:!?()\-]{0,200}` (`\w` is letters and digits of any script,
+and underscore); `SAFE_RULE` says so, and says what is refused and why. The validation is one
+function, `input_problem(k, v)`, used by the start path and by the controls: a refusal carries the
+rule, `refused_characters`, `length` when over the bound, and a `hint` for every refusal — the
+path's as before, "free text with those characters is a hand-in" for the rest, the length for a
+long one. Docs: packages.md item 6 and the changelog. The trial pin on the rule's text moved to
+the new constant; a review group drives `input_problem` with a Korean sentence, the ASCII values
+that always passed, braces and quotes, a path, 201 characters, shell characters, a bad name.
+
+**Not changed, and why.** No declared free-text input kind (the issue's option a): the hand-in is
+that mechanism, and with the rule widened a request that fits a line needs nothing; one that does
+not is a file either way. The bound stays at 200: an argv element is not where a document goes.
+
+## 115. A package login is renewed from the panel: `login.reconnect_argv` (#106, 2026-11-15)
+
+devflow's GitHub App gained a permission (Gists); the token it had kept the permissions it was
+granted, and the panel offered no way to authorise again: a connected package login's **연결**
+runs the flow, which sees `done_when` and reports "already logged in" — the guarded behaviour,
+by design. The operator renamed `token.json` by hand inside the login directory, which the
+platform says nothing opens. Providers have had **재연결** since §44 (their CLIs replace what
+they hold when run again); a package login had no counterpart.
+
+**What changed.** The issue's option (b), because (a) — the platform moving `done_when` aside —
+would have the platform touch a credential file for the first time.
+- `packages.login_of` reads `login.reconnect_argv`, the same character rule as `argv`; a line
+  that breaks it leaves the login offered and the renewal not (`reconnect_argv: []`), rather than
+  disabling the login.
+- `login_helper.py reconnect pkg:<name>` runs that argv the way `start` runs `argv` (pty, FIFO,
+  the login directory's environment); a package that declares none is answered
+  `{"state": "not_offered", "error": …}` naming the key, and nothing runs. For a provider,
+  reconnect is its login command again, as the button always did.
+- `ops/server.py`: `POST /api/packages/<name>/reconnect`. `hub/index.html`: a connected package
+  login's button reads **재연결** and runs it; `not_offered` is shown in the flow's words.
+- hello-lane's manifest declares `reconnect_argv: [… login.py, --reconnect]`, and the step removes
+  the token it minted before running the flow again — the worked example, measured: a held token
+  is "already logged in" and untouched without the flag; with it, a new token is minted and the
+  code asked once more.
+- Docs: packages.md ("Renewing a login", the yaml line, the changelog).
+
+**Measured.** Trial: the login block gains the hello-lane renewal, a `zz-rc` manifest with a shell
+line in `reconnect_argv` (login offered, renewal not), the ops route recorded as
+`login_helper reconnect pkg:hello-lane` and nothing else, and the step driven twice on a temporary
+login directory. devflow's `github_login.py --reconnect` fits the key as it stands.
