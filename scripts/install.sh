@@ -56,6 +56,17 @@ vnum() { echo "$1" | awk -F. '{printf "%d%03d%03d", $1, $2, $3}'; }
 echo "== the host"
 need "bash"    "$(bash --version 2>/dev/null | head -1 | sed 's/.*version //;s/ .*//')" "install bash"
 need "git"     "$(git --version 2>/dev/null | awk '{print $3}')" "install git"
+# verify.sh's static checks read the tree's yaml with a host Python (§116, #110): a stock Mac has
+# Apple's python3 and no PyYAML, passed this check and then failed verify with a traceback inside
+# two checks. The containers need nothing from the host's Python; this line is for verify.sh alone.
+yaml_py() {   # the first interpreter that imports yaml — $PY, python3, python, py -3 — or nothing
+  local c
+  for c in ${PY:-} python3 python "py -3"; do
+    if [ "$(printf 'import yaml; print(7)' | $c - 2>/dev/null | tr -d '\r')" = 7 ]; then printf '%s' "$c"; return 0; fi
+  done
+  return 1
+}
+need "python with PyYAML" "$(yaml_py || true)" "for verify.sh's static checks: pip install pyyaml, or PY=<an interpreter that has it>; the containers need nothing"
 need "docker"  "$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ,)" "install Docker"
 need "docker daemon" "$(docker info --format '{{.ServerVersion}}' 2>/dev/null)" "start Docker"
 

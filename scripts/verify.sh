@@ -56,6 +56,10 @@ pick_py() {
   return 1
 }
 PY="$(pick_py)" || { echo "no working python on this host (tried python3, python, py -3); set PY=<interpreter>" >&2; exit 2; }
+# The static checks that read yaml need PyYAML in that interpreter (§116, #110): a stock Mac's
+# python3 has none, and the first sign was a traceback inside two checks. It is one check with the
+# remedy below; the checks that need it are then skipped by name, not failed on the same cause.
+if printf 'import yaml' | $PY - >/dev/null 2>&1; then HOST_YAML=1; else HOST_YAML=0; fi
 FAILS=0; CHECKS=0
 ok()   { CHECKS=$((CHECKS+1)); printf '  ok    %s\n' "$1"; }
 bad()  { CHECKS=$((CHECKS+1)); FAILS=$((FAILS+1)); printf '  FAIL  %s\n' "$1"; [ -n "${2:-}" ] && printf '        %s\n' "$2"; }
@@ -75,6 +79,8 @@ case "$LEVEL" in static|stack|full) ;; *) echo "level is static | stack | full" 
 
 # ============================================================================ static
 sect "static — what a checkout can say about itself"
+if [ "$HOST_YAML" = 1 ]; then ok "the host's Python has PyYAML ($PY)"
+else bad "the host's Python ($PY) has no PyYAML" "pip install pyyaml, or PY=<an interpreter that has it> — install.sh --check names it; the containers need nothing; the checks that read yaml on the host are skipped below, by name"; fi
 echo "  cannot see: whether any of it runs. That is the stack level."
 
 # a throwaway runtime, so the step helper and the in-tree controls resolve a workspace that is ours
@@ -104,6 +110,7 @@ PYAST
 )"
 if [ "$(echo "$out" | head -1)" = 0 ]; then ok "every Python file parses"; else bad "a Python file does not parse" "$(echo "$out" | tail -n +2 | head -3 | tr '\n' ';')"; fi
 
+if [ "$HOST_YAML" = 1 ]; then
 out="$($PY - <<'PY' | nocr
 import glob, sys, yaml
 bad = []
@@ -127,6 +134,7 @@ PY
 )"
 n="$(echo "$out" | head -1)"; errs="$(echo "$out" | tail -n +2)"
 if [ -z "$errs" ]; then ok "$n YAML files parse, and every workflow route resolves"; else bad "a YAML file or a workflow graph is broken" "$errs"; fi
+else note "skipped (no PyYAML on the host): YAML files parse, workflow routes resolve"; fi
 
 # A `case` with its `)` patterns inside `$( )` is the one construct macOS's bash 3.2 cannot parse
 # (a known bug of that version; it ended verify.sh on the first Mac host before any check ran,
@@ -140,6 +148,7 @@ steps_without_repeatable() {
 missing="$(steps_without_repeatable)"
 if [ -z "$missing" ]; then ok "every step declares what a repeat of it does (REPEATABLE)"; else bad "steps without REPEATABLE" "$(echo $missing)"; fi
 
+if [ "$HOST_YAML" = 1 ]; then
 out="$($PY - <<'PY' | nocr
 import yaml
 d = yaml.safe_load(open("policy/b-fsmcp.yaml", encoding="utf-8"))
@@ -163,6 +172,7 @@ case "$out" in "allow [] []") ok "policy/b-fsmcp.yaml names every filesystem too
 out="$(AGENTSTACK_PACKAGES="$HERE/packages" AGENTSTACK_PACKAGES_YAML="$HERE/config/packages.yaml" AGENTSTACK_PACKAGES_LOCAL="$HERE/config/packages.local.yaml" AGENTSTACK_ROOT="$(hp "$HERE")" $PY stack/packages.py 2>&1 | nocr)"
 if echo "$out" | grep -q "UNUSABLE\|REFUSED"; then bad "a declared package is unusable or needs a newer stack" "$(echo "$out" | grep 'UNUSABLE\|REFUSED')"; else ok "every declared package is usable: $(echo "$out" | grep -cvE '^\s' ) packages"; fi
 echo "$out" | grep "note:" | sed 's/^/        /' || true
+else note "skipped (no PyYAML on the host): the policy's tool list, the declared packages"; fi
 
 # The step tests and the in-tree packages' controls run with the stack's own interpreter when the
 # stack is up — in the agent container, where the paths and the settings are the runtime's — and
@@ -179,6 +189,7 @@ if stack_up; then
 else
   runpy()  { local id="$1"; shift; CONDUCTOR_SELF_RUN_ID="$id" $PY "$@"; }
   runpyc() { $PY -c "$@"; }
+  RUNPY_HOST=1
   note "step tests and package controls run with the host python ($PY); the stack level uses the runtime's"
 fi
 r="$(runpy verify-static packages/hello-lane/steps/write.py verify 2>&1 | tail -1 | nocr)"
@@ -192,11 +203,14 @@ case "$r" in *TOOL_FAILURE*) ok "the helper turns a crash into the declared outp
 # the contract's own examples, executed (#23): every yaml block parses with no duplicate key, the
 # manifest example is a package the stack's reader accepts, every python block compiles. The
 # script finds docs/packages.md beside itself, so the call is the same in both forms of runpy.
+# (it reads yaml: on a checkout with no stack and no PyYAML on the host it is skipped with the rest, §116)
+if [ "$HOST_YAML" = 1 ] || [ "${RUNPY_HOST:-0}" = 0 ]; then
 out="$(runpy doc-examples stack/doc_examples.py 2>&1 | nocr)"
 case "$out" in
   *"examples ok"*) if echo "$out" | grep -q "^  FAIL"; then bad "an example in docs/packages.md is wrong" "$(echo "$out" | grep '^  FAIL' | head -3 | tr '\n' ';')"; else ok "docs/packages.md: $(echo "$out" | tail -1)"; fi;;
   *) bad "the documented examples could not be checked" "$(echo "$out" | tail -2 | tr '\n' ';')";;
 esac
+else note "skipped (no PyYAML on the host): the documented examples"; fi
 # the adapter's model-free halves, replayed against four runs recorded on the instance (#27):
 # no model, no network — node on the host is enough
 if command -v node >/dev/null 2>&1; then

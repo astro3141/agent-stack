@@ -739,6 +739,28 @@ def instance_controls():
     ins = (WORK / "scripts" / "install.sh").read_text()
     check("instance: the host check counts network headroom before a build can run out",
           "network headroom" in ins and "NEED_NETS=15" in ins and "default-address-pools" in ins)
+    # §116 (#110): the host's PyYAML is asked for by name — the function run here, on this host and
+    # on a host whose interpreters import no yaml
+    fn_y = ins[ins.index("yaml_py() {"):ins.index("  return 1\n}", ins.index("yaml_py() {")) + len("  return 1\n}")]
+    # a stock Mac's python3 stood in for by this interpreter without its site-packages (-S): one
+    # word, as a PY= is, so the loop's word-splitting reads it as one interpreter
+    noyaml = root / "noyaml"; noyaml.write_text(f"#!/bin/sh\nexec {sys.executable} -S \"$@\"\n"); noyaml.chmod(0o755)
+    # a PATH with no python on it at all: only what the function itself calls (tr; printf is bash's)
+    nopy = root / "nopy"; nopy.mkdir(); os.symlink(shutil.which("tr"), nopy / "tr")
+    bash = shutil.which("bash") or "bash"
+    def yaml_py(env_extra):
+        return subprocess.run([bash, "-c", f"{fn_y}\nyaml_py || echo NONE"], capture_output=True, text=True, timeout=60,
+                              env={**os.environ, **env_extra}).stdout.strip()
+    check("install: the host check finds an interpreter that imports yaml, and names it",
+          yaml_py({"PY": sys.executable}) == sys.executable, yaml_py({"PY": sys.executable}))
+    check("install: without one it reports none, and the need line says what to do",
+          yaml_py({"PY": str(noyaml), "PATH": str(nopy)}) == "NONE", yaml_py({"PY": str(noyaml), "PATH": str(nopy)}))
+    vf = (WORK / "scripts" / "verify.sh").read_text()
+    gate = vf[vf.index("if printf 'import yaml' | $PY -"):vf.index("\n", vf.index("if printf 'import yaml' | $PY -"))]
+    def host_yaml(py):
+        return subprocess.run(["bash", "-c", f"PY='{py}'\n{gate}\necho $HOST_YAML"], capture_output=True, text=True, timeout=60).stdout.strip()
+    check("verify: the yaml gate reads 1 with PyYAML and 0 without (the checks that read yaml then skip by name)",
+          (host_yaml(sys.executable), host_yaml(str(noyaml))), ("1", "0"))
     check("instance: 15 is what the composition actually has, plus Preloop's one",
           len(re.findall(r"^  [a-z][a-z-]*:\s*$", comp.split("\nnetworks:\n", 1)[1].split("\n\n")[0], re.M)) + 1 == 15,
           comp.split("\nnetworks:\n", 1)[1].split("\n\n")[0][:200])
