@@ -6362,3 +6362,44 @@ line in `reconnect_argv` (login offered, renewal not), the ops route recorded as
 login directory. devflow's `github_login.py --reconnect` fits the key as it stands.
 **Cold-start run 171 green** on 38bfe53 (trial 565/565, stack 26/26). The live proof is devflow's
 next permission change: `reconnect_argv` declared, 재연결 pressed, the probe answering 422.
+
+## 116. The host's PyYAML is a requirement the stack now states and checks (#110, 2026-11-15)
+
+The live instance's first `verify.sh --level full` after the 11/15 update came back 24/28, and two
+of the four were a traceback inside the checks: `ModuleNotFoundError: No module named 'yaml'` from
+the host's interpreter — a stock Mac's `/usr/bin/python3` with no PyYAML. `install.sh --check` had
+passed (bash, git, docker, compose, headroom, architecture, disk; no Python at all), docs/install.md
+named no Python, and the containers were fine: `packages.sh verify` 20/20 inside the agent. A
+requirement the stack had and never said.
+
+**What changed.**
+- `install.sh --check`: `python with PyYAML` is a `need` line — `yaml_py` is the first of `$PY`,
+  python3, python, `py -3` that imports yaml, named when found; the miss says `pip install
+  pyyaml, or PY=<an interpreter that has it>; the containers need nothing`.
+- `verify.sh`: one gate (`HOST_YAML`) right after the interpreter is picked; the static section
+  opens with a check that says it (`the host's Python has PyYAML`, or `has no PyYAML` with the
+  remedy), and the checks that read yaml on the host — the parse-and-routes check, the policy's
+  tool list, the declared packages, and the documented examples when they run on the host (on a
+  running stack they run in the agent container and need nothing) — are skipped by name when it
+  is 0, so the one cause is one FAIL and not four with tracebacks. Measured with a one-word
+  interpreter without its site-packages: 9/11 with two tracebacks before, one named FAIL and
+  three skips after; 14/14 with PyYAML. **Cold-start run 173 green** on 9ba501c: the runner's host check says
+  `python with PyYAML  python3`, verify `the host's Python has PyYAML`, stack 27/27, review 353/353.
+- docs/install.md: the host table has the row.
+- The review `instance` group runs `yaml_py` on this host and on a host whose interpreters import
+  no yaml (`-S`, an empty PATH), and the gate with both interpreters.
+
+**Not changed, and why.** The issue's third option — running the yaml checks in the agent
+container when the stack is up — would make the static level depend on a running stack for part
+of its answer, which is what the levels exist to keep apart; the host requirement is small, named
+and checked instead.
+
+**Also measured, from the same verify (the operator's report).** The `--check` line `the stack's
+servers run this checkout's code` named six servers after the update; the update itself had
+passed it (`none`), and the operator's `git checkout main` plus fast-forward afterwards rewrote
+files of identical content with new modification times — `stale_servers.py` judges by the newest
+`.py` mtime against each server's start. Not a §103 coverage gap; a check that reads a clock
+where it means content. Left as a candidate: a fingerprint of the files the servers run,
+recorded when up.sh starts them, compared on `--check`; and `release.sh update` ending with the
+line that the tree is detached at the target while `main` is behind (`git branch -f main
+$(git rev-parse HEAD) && git checkout main` moves the branch without rewriting a file).

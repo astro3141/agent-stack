@@ -17,6 +17,7 @@ the policy applied, the principals created and the runtime refused every write t
 | Docker, and a running daemon | everything here is containers |
 | **Docker Compose 2.24+** | the composition uses `env_file: required: false`; older compose fails with a parse error that does not name the feature |
 | bash, git, curl | the scripts, and Preloop's own installer |
+| a Python 3 with **PyYAML** | `verify.sh`'s static checks read the tree's yaml on the host (`pip install pyyaml`, or `PY=<an interpreter that has it>`); nothing that runs needs it — the containers carry their own (§116) |
 | **x86_64**, or arm64 untried | the agent image picks its Node and CodexBar by `TARGETARCH`; every image pulled is multi-arch. amd64 is what this has been built and run on, arm64 is parameterized and has never been built — the host check says so rather than letting a build discover it |
 | ~11GB of images, plus volumes | measured |
 
