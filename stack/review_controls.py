@@ -1392,10 +1392,25 @@ def host_controls():
     """release.sh reads the agent's /work bind source back from docker inspect and compares it with
     the workspace it runs in; each Docker Desktop names the host path its own way, and a form it
     does not know refuses every record, update and rollback on that host (PR #73, the first Mac)."""
-    rel = (WORK / "scripts" / "release.sh").read_text()
-    fn = rel[rel.index("norm_host() {"):rel.index("real_of() {")]
+    # §118 (#113): one copy, scripts/host_path.sh, sourced by release.sh, backup.sh and restore.sh —
+    # the three copies had drifted and a Mac's backup after an update found every path MISSING
+    hp = WORK / "scripts" / "host_path.sh"
     def norm(path):
-        return subprocess.run(["bash", "-c", f"{fn}\nnorm_host '{path}'"], capture_output=True, text=True, timeout=30).stdout
+        return subprocess.run(["bash", "-c", f". '{hp}'\nnorm_host '{path}'"], capture_output=True, text=True, timeout=30).stdout
+    for name in ("release.sh", "backup.sh", "restore.sh"):
+        txt = (WORK / "scripts" / name).read_text()
+        check(f"host: {name} carries no copy of norm_host of its own", "norm_host() {" not in txt)
+    # a container whose image a rebuild removed is named by --check (a stand-in docker answers)
+    up = (WORK / "scripts" / "up.sh").read_text()
+    fn_g = up[up.index("images_gone() {"):up.index("\n}\n", up.index("images_gone() {")) + 3]
+    stub = Path(tempfile.mkdtemp(prefix="agentstack-hostctl-")); (stub / "docker").write_text(
+        "#!/bin/sh\ncase \"$1 $2\" in\n  'ps --filter') printf 'zz-agent\\nzz-broker\\n';;\n"
+        "  'inspect -f') case \"$4\" in zz-agent) echo sha256:gone;; *) echo sha256:here;; esac;;\n"
+        "  'image inspect') [ \"$3\" = sha256:here ];;\nesac\n"); (stub / "docker").chmod(0o755)
+    gone = subprocess.run(["bash", "-c", f"{fn_g}\nimages_gone"], capture_output=True, text=True, timeout=30,
+                          env={**os.environ, "PATH": f"{stub}:{os.environ.get('PATH', '')}", "STACK": "zz"}).stdout.split()
+    check("up.sh --check: a container whose image no longer exists is named, one that still has it is not", gone == ["zz-agent"], gone)
+    shutil.rmtree(stub, ignore_errors=True)
     check("host: Windows Docker Desktop's VM form becomes the drive path (both spellings)",
           norm("/run/desktop/mnt/host/c/Users/x/agent-stack") == "C:/Users/x/agent-stack"
           and norm("/host_mnt/d/work/stack") == "D:/work/stack",
@@ -1586,7 +1601,7 @@ def pylocal_controls():
           and areport("tree curl\n").startswith("line 1 is not a package"), areport("tree\n--force-yes\n"))
 
     rel = (WORK / "scripts" / "release.sh").read_text()
-    fn2 = rel[rel.index('INSTANCE_INPUTS="'):rel.index("norm_host() {")]
+    fn2 = rel[rel.index('INSTANCE_INPUTS="'):rel.index("remove_generated() {")]
     def rel_fn(cmd):
         return run(fn2, cmd)
     ws = root / "ws"

@@ -65,15 +65,11 @@ docker inspect "$AGENT" >/dev/null 2>&1 || fail "no container $AGENT — is this
 
 # ---------------------------------------------------------------- 0. the instance's real paths
 # Docker Desktop reports a bind source either as the host path (D:/Work/…) or in the VM's own
-# form (/run/desktop/mnt/host/d/Work/…, /host_mnt/d/…). Both must come back as the host path.
-norm_host() {
-  case "$1" in
-    /run/desktop/mnt/host/?/*|/host_mnt/?/*)
-      p="${1#/run/desktop/mnt/host/}"; p="${p#/host_mnt/}"
-      d="${p%%/*}"; printf '%s:/%s' "$(printf '%s' "$d" | tr 'a-z' 'A-Z')" "${p#*/}";;
-    *) printf '%s' "$1";;
-  esac
-}
+# form (/run/desktop/mnt/host/d/Work/…, /host_mnt/d/…, /host_mnt/Users/… on a Mac). All must come
+# back as the host path: the one copy the three scripts share (scripts/host_path.sh, §118 — this
+# script's own copy lacked the Mac form, and a backup after an update on a Mac found every path
+# MISSING, #113).
+. "$(dirname "$0")/host_path.sh"
 mount_src() {  # container, destination
   norm_host "$(docker inspect -f "{{range .Mounts}}{{if eq .Destination \"$2\"}}{{.Source}}{{end}}{{end}}" "$1" 2>/dev/null)"
 }

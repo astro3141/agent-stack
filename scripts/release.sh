@@ -136,17 +136,9 @@ remove_generated() {
   docker run --rm -v "$(m "$HERE")/config:/c" alpine rm -rf /c/generated
 }
 
-norm_host() {
-  case "$1" in
-    /run/desktop/mnt/host/?/*|/host_mnt/?/*)
-      p="${1#/run/desktop/mnt/host/}"; p="${p#/host_mnt/}"
-      d="${p%%/*}"; printf '%s:/%s' "$(printf '%s' "$d" | tr 'a-z' 'A-Z')" "${p#*/}";;
-    # macOS Docker Desktop: the VM form is the host's absolute path under /host_mnt,
-    # not a drive letter (/host_mnt/Users/... — measured on the first Mac host, §93 follow-up)
-    /host_mnt/*) printf '/%s' "${1#/host_mnt/}";;
-    *) printf '%s' "$1";;
-  esac
-}
+# norm_host: a bind source as Docker Desktop reports it, back to the host's path — the one copy
+# the three scripts share (scripts/host_path.sh, §118)
+. "$(dirname "$0")/host_path.sh"
 real_of() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"; }
 
 require_same_workspace() {

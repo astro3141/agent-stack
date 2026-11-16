@@ -542,6 +542,16 @@ Two things worth knowing before you need them:
   tool under `/opt`, #34), so the image ids say what runs. Data is not part of a release; that is
   what backup covers.
 
+- **Every host path MISSING in a backup, right after an update** (#113, §118): Docker Desktop
+  reported the workspace's bind source in its VM form (`/host_mnt/Users/…` on a Mac) and
+  `backup.sh` did not turn it back into the host's path. The three scripts now share one
+  normaliser (`scripts/host_path.sh`), so the form no longer matters.
+- **`release.sh record` refuses: "runs image sha256:…, which no longer exists"**: a bring-up's
+  rebuild retagged the image under a running container (Docker Desktop's containerd snapshotter,
+  §65); the stack prunes nothing. `up.sh --check` names the container first (`every container
+  runs an image that still exists`), and `scripts/up.sh --recreate` is the way out, as the
+  refusal says.
+
 Losing the backup key means losing the backup. Keep the key and the archive in different places.
 
 Updating on purpose — once a month, with the drift report, the controls and a rollback point — is

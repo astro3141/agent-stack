@@ -98,16 +98,10 @@ if [ "$VERIFY_ONLY" = 0 ]; then
     return 1
   }
   # Docker Desktop reports a bind source either as the host path (D:/Work/…) or in the VM's own
-  # form (/run/desktop/mnt/host/d/Work/…, /host_mnt/d/…). Unnormalised, the second form matches
-  # nothing and the check silently passes.
-  norm_host() {
-    case "$1" in
-      /run/desktop/mnt/host/?/*|/host_mnt/?/*)
-        p="${1#/run/desktop/mnt/host/}"; p="${p#/host_mnt/}"
-        d="${p%%/*}"; printf '%s:/%s' "$(printf '%s' "$d" | tr 'a-z' 'A-Z')" "${p#*/}";;
-      *) printf '%s' "$1";;
-    esac
-  }
+  # form (/run/desktop/mnt/host/d/Work/…, /host_mnt/d/…, /host_mnt/Users/… on a Mac). Unnormalised,
+  # a VM form matches nothing and the check silently passes. The one copy the three scripts share
+  # (scripts/host_path.sh, §118).
+  . "$(dirname "$0")/host_path.sh"
   # the live instance's own directories: its Preloop install and every bind mount it has
   LIVE_DIRS_FILE="$(mktemp)"
   printf '%s\n' "$LIVE_PRELOOP_DIRU" > "$LIVE_DIRS_FILE"
