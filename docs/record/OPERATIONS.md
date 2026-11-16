@@ -6480,3 +6480,10 @@ and `restore.sh` kept their own copies and were not. Three copies of one functio
 normaliser the form is harmless, and a line about it would ask the operator to care about what
 the scripts now handle. Why `update`'s containers carry the VM form and `up.sh --recreate`'s the
 host form on a Mac is Docker Desktop's, unmeasured and no longer consequential.
+
+**Measured.** `host` group 11/11 (the four forms; no copy of the forms in the three scripts; the loader
+in its three positions; a vanished image named through a stand-in `docker`); static 14/14; pins
+unchanged (51 / 167). Run 177 red on the first form (the hand-over's copy), **cold-start run 178
+green** on b5ae46e: `every container runs an image that still exists … none`, record and rollback
+through the shared file, stack 27/27, review 363/363. The live proof is the next backup after an
+update on the Mac: every host path found.
