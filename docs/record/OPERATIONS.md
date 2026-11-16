@@ -6455,9 +6455,15 @@ and `restore.sh` kept their own copies and were not. Three copies of one functio
 
 **What changed.**
 - `scripts/host_path.sh` is the one `norm_host` (Windows VM forms → the drive path; macOS
-  `/host_mnt/Users/…` → `/Users/…`; anything else as it is), sourced by `release.sh`,
-  `backup.sh` and `restore.sh` as a sibling of the script that runs (`$(dirname "$0")`), so the
-  target revision's script in a hand-over finds its own.
+  `/host_mnt/Users/…` → `/Users/…`; anything else as it is). `backup.sh` and `restore.sh` source
+  it as a sibling. `release.sh` loads it when first needed, because a hand-over (§48) runs the
+  target's script as a copy away from its siblings, and calls `norm_host`
+  (`require_same_workspace`) before the checkout, on a workspace that may predate the file: beside
+  the script, else `$HERE/scripts/`, else `git show $TO:scripts/host_path.sh` — the target
+  revision's own copy, the same revision the running script came from. Found by the cold start
+  (run 177): the first form, a plain sibling source, failed the hand-over controls with
+  `./host_path.sh: No such file or directory`, which is exactly the live update path from a
+  revision before this one.
 - `up.sh --check` names a container whose image no longer exists (`every container runs an
   image that still exists (else: up.sh --recreate)`). The operator asked whether the prune is
   the stack's: it is not — nothing in the scripts prunes; a bring-up builds, and Docker Desktop's
@@ -6465,8 +6471,10 @@ and `restore.sh` kept their own copies and were not. Three copies of one functio
   `release.sh record` already refused such a container with the way out; the check says it
   before a record is attempted.
 - Docs: runbook (two entries under backup/restore). The `host` review group reads the shared
-  file, feeds it the four forms, checks that none of the three scripts carries a copy, and names
-  a vanished image through a stand-in `docker`.
+  file, feeds it the four forms, checks that none of the three scripts carries the forms of its
+  own, drives `release.sh`'s loader in its three positions (beside itself; as a copy with the
+  workspace; as a copy with a workspace that predates the file and a target revision that has it),
+  and names a vanished image through a stand-in `docker`.
 
 **Not changed, and why.** No `--check` line on the *form* of the bind source: with one
 normaliser the form is harmless, and a line about it would ask the operator to care about what

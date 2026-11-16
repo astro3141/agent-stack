@@ -1399,7 +1399,24 @@ def host_controls():
         return subprocess.run(["bash", "-c", f". '{hp}'\nnorm_host '{path}'"], capture_output=True, text=True, timeout=30).stdout
     for name in ("release.sh", "backup.sh", "restore.sh"):
         txt = (WORK / "scripts" / name).read_text()
-        check(f"host: {name} carries no copy of norm_host of its own", "norm_host() {" not in txt)
+        check(f"host: {name} carries no copy of the forms of its own", "/host_mnt/?/*" not in txt)
+    # release.sh loads the copy when first needed (a hand-over runs it as a copy away from its
+    # siblings, §48): beside itself; from the workspace; from the target revision via git show
+    hroot = Path(tempfile.mkdtemp(prefix="agentstack-hostload-"))
+    def via(script, env):
+        return subprocess.run(["bash", "-c", f". '{script}' list >/dev/null 2>&1; norm_host /host_mnt/Users/a/b"],
+                              capture_output=True, text=True, timeout=60, env={**os.environ, **env}).stdout.strip()
+    copy = hroot / "copy" / "release.sh"; copy.parent.mkdir(); copy.write_text((WORK / "scripts" / "release.sh").read_text())
+    repo = hroot / "repo"; (repo / "scripts").mkdir(parents=True); (repo / "scripts" / "host_path.sh").write_text(hp.read_text())
+    g = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True).stdout.strip()
+    g("init", "-q"); g("-c", "user.name=c", "-c", "user.email=c@c", "add", "-A"); g("-c", "user.name=c", "-c", "user.email=c@c", "commit", "-qm", "x")
+    (repo / "scripts" / "host_path.sh").unlink()        # the workspace predates the file; the revision has it
+    check("host: release.sh finds the copy beside itself, from the workspace when run as a copy, and from the target revision when the workspace predates it",
+          (via(WORK / "scripts" / "release.sh", {"RELEASE_DIR": str(hroot / "r")}),
+           via(copy, {"RELEASE_SH_HOME": str(WORK), "RELEASE_DIR": str(hroot / "r")}),
+           via(copy, {"RELEASE_SH_HOME": str(repo), "RELEASE_DIR": str(hroot / "r"), "TO": "HEAD"})),
+          ("/Users/a/b", "/Users/a/b", "/Users/a/b"))
+    shutil.rmtree(hroot, ignore_errors=True)
     # a container whose image a rebuild removed is named by --check (a stand-in docker answers)
     up = (WORK / "scripts" / "up.sh").read_text()
     fn_g = up[up.index("images_gone() {"):up.index("\n}\n", up.index("images_gone() {")) + 3]
