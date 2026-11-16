@@ -6443,3 +6443,47 @@ none, got agentstack-broker agentstack-agent-probe agentstack-agent-closed agent
 bring-up restarting them, `none` after, and `none` again once the file was removed. Static 14/14,
 pins unchanged (51 / 167). The live proof is the next update: the workspace line, then a
 `git checkout main` with the server line still `none`.
+
+## 118. One bind-source normaliser for the three scripts; a container on a vanished image is named (#113, 2026-11-16)
+
+The live Mac's first backup after the 11/15 update failed with every host path MISSING:
+`docker inspect` reported the agent's `/work` bind source as `/host_mnt/Users/…` — the form a
+container created by `release.sh update` carries there, where one created by `up.sh --recreate`
+from the host's shell carries `/Users/…` — and `backup.sh`'s `norm_host` knew the Windows VM
+forms only. `release.sh` had been given the Mac form on the first Mac host (§94); `backup.sh`
+and `restore.sh` kept their own copies and were not. Three copies of one function, drifted.
+
+**What changed.**
+- `scripts/host_path.sh` is the one `norm_host` (Windows VM forms → the drive path; macOS
+  `/host_mnt/Users/…` → `/Users/…`; anything else as it is). `backup.sh` and `restore.sh` source
+  it as a sibling. `release.sh` loads it when first needed, because a hand-over (§48) runs the
+  target's script as a copy away from its siblings, and calls `norm_host`
+  (`require_same_workspace`) before the checkout, on a workspace that may predate the file: beside
+  the script, else `$HERE/scripts/`, else `git show $TO:scripts/host_path.sh` — the target
+  revision's own copy, the same revision the running script came from. Found by the cold start
+  (run 177): the first form, a plain sibling source, failed the hand-over controls with
+  `./host_path.sh: No such file or directory`, which is exactly the live update path from a
+  revision before this one.
+- `up.sh --check` names a container whose image no longer exists (`every container runs an
+  image that still exists (else: up.sh --recreate)`). The operator asked whether the prune is
+  the stack's: it is not — nothing in the scripts prunes; a bring-up builds, and Docker Desktop's
+  containerd snapshotter retags under the running container (§65, measured on update day 1).
+  `release.sh record` already refused such a container with the way out; the check says it
+  before a record is attempted.
+- Docs: runbook (two entries under backup/restore). The `host` review group reads the shared
+  file, feeds it the four forms, checks that none of the three scripts carries the forms of its
+  own, drives `release.sh`'s loader in its three positions (beside itself; as a copy with the
+  workspace; as a copy with a workspace that predates the file and a target revision that has it),
+  and names a vanished image through a stand-in `docker`.
+
+**Not changed, and why.** No `--check` line on the *form* of the bind source: with one
+normaliser the form is harmless, and a line about it would ask the operator to care about what
+the scripts now handle. Why `update`'s containers carry the VM form and `up.sh --recreate`'s the
+host form on a Mac is Docker Desktop's, unmeasured and no longer consequential.
+
+**Measured.** `host` group 11/11 (the four forms; no copy of the forms in the three scripts; the loader
+in its three positions; a vanished image named through a stand-in `docker`); static 14/14; pins
+unchanged (51 / 167). Run 177 red on the first form (the hand-over's copy), **cold-start run 178
+green** on b5ae46e: `every container runs an image that still exists … none`, record and rollback
+through the shared file, stack 27/27, review 363/363. The live proof is the next backup after an
+update on the Mac: every host path found.

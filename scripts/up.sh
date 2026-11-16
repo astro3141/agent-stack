@@ -115,6 +115,16 @@ stale_servers() {
 record_servers() {   # what the servers run now: written after they were started or restarted
   server_lines | in_agent_stdin "$PY_IN_AGENT /work/stack/stale_servers.py /work/stack --write $SERVERS_RECORD" || true
 }
+# A running container can reference an image a later rebuild removed from under it (Docker
+# Desktop's containerd snapshotter retags on a rebuild; measured on update day 1, §65, and twice on
+# the live Mac, #113). The stack prunes nothing; a bring-up builds. `release.sh record` refuses such
+# a container with the way out; this names it first (§118).
+images_gone() {
+  docker ps --filter "name=^${STACK}-" --format '{{.Names}}' 2>/dev/null | while read -r c; do
+    _id="$(docker inspect -f '{{.Image}}' "$c" 2>/dev/null)"
+    [ -n "$_id" ] && ! docker image inspect "$_id" >/dev/null 2>&1 && echo "$c"
+  done
+}
 
 # The instance's own Python libraries go into the image at build (docker/python/python.local,
 # OPERATIONS §101), and every line is pinned: a line without == would resolve differently at every
@@ -404,6 +414,8 @@ echo "== the stack's servers"
 _stale="$(stale_servers | tr '\n' ' ')"
 _stale="${_stale% }"
 check "the stack's servers run this checkout's code (broker, runners)" none "${_stale:-none}"
+_gone="$(images_gone | tr '\n' ' ')"; _gone="${_gone% }"
+check "every container runs an image that still exists (else: up.sh --recreate)" none "${_gone:-none}"
 echo "== the image's inputs"
 # docker/python/python.local is built into the image (§101); a line that is not pinned fails the
 # bring-up, and this says so on a --check too. `none` is a fresh clone.

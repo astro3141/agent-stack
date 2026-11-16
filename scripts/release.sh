@@ -136,16 +136,19 @@ remove_generated() {
   docker run --rm -v "$(m "$HERE")/config:/c" alpine rm -rf /c/generated
 }
 
+# norm_host: a bind source as Docker Desktop reports it, back to the host's path — the one copy
+# the three scripts share (scripts/host_path.sh, §118), loaded when first needed. A hand-over runs
+# this script as a copy away from its siblings (§48), in a workspace that may predate the file, so
+# it is read beside this script, else from the workspace, else from the target revision itself.
 norm_host() {
-  case "$1" in
-    /run/desktop/mnt/host/?/*|/host_mnt/?/*)
-      p="${1#/run/desktop/mnt/host/}"; p="${p#/host_mnt/}"
-      d="${p%%/*}"; printf '%s:/%s' "$(printf '%s' "$d" | tr 'a-z' 'A-Z')" "${p#*/}";;
-    # macOS Docker Desktop: the VM form is the host's absolute path under /host_mnt,
-    # not a drive letter (/host_mnt/Users/... — measured on the first Mac host, §93 follow-up)
-    /host_mnt/*) printf '/%s' "${1#/host_mnt/}";;
-    *) printf '%s' "$1";;
-  esac
+  _hp=""
+  for _f in "$(dirname "${BASH_SOURCE[0]}")/host_path.sh" "$HERE/scripts/host_path.sh"; do
+    [ -f "$_f" ] && { _hp="$(cat "$_f")"; break; }
+  done
+  [ -n "$_hp" ] || [ -z "${TO:-}" ] || _hp="$(git_here show "$TO:scripts/host_path.sh" 2>/dev/null || true)"
+  [ -n "$_hp" ] || fail "scripts/host_path.sh is missing beside this script, in $HERE and in the target revision"
+  eval "$_hp"
+  norm_host "$@"
 }
 real_of() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"; }
 
